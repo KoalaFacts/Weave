@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
-import { auditExistingD1, inspectTimeTravelBookmarks } from '../scripts/audit-existing-d1.ts';
+import { auditExistingD1, inspectTimeTravelBookmarks, inspectHistoricalDemoBinding } from '../scripts/audit-existing-d1.ts';
 import type { StorageDatabase } from '../scripts/latest-schema.ts';
 
 function fixture() {
@@ -234,4 +234,66 @@ test('Time Travel malformed or failed reads are reported as unknown, not proof o
     assert.deepEqual(evidence.map(e=>e.status),['api-error','no-bookmark','no-bookmark','api-error']);
     assert.ok(evidence.every(e=>e.bookmarkSha256===null));
     assert.equal(JSON.stringify(evidence).includes('upstream headers'),false);
+});
+
+
+test('Oct 29 actual Worker version reports the same original D1 only for a verified id',async()=>{
+    const current='3ebbd419-be70-423d-8723-61fe5838ed38';
+    const version='bcd97686-195b-4c5d-a3ea-c402a70c49f4';
+    const sent:string[]=[];
+    const fake:typeof fetch=async(input,init)=>{
+        sent.push(String(input));
+        assert.equal(init?.method,'GET');
+        assert.equal(init?.redirect,'error');
+        assert.equal((init?.headers as Record<string,string>).Authorization,'Bearer protected-token');
+        return Response.json({
+            success:true,result:{id:version,resources:{bindings:[
+                {type:'d1',name:'db',database_id:current},
+                {type:'secret_text',name:'SENSITIVE',text:'do-not-return-private-value'}
+            ]}},
+        });
+    };
+    const result=await inspectHistoricalDemoBinding(
+        'https://api.cloudflare.com/client/v4/accounts/abc', 'protected-token', current,fake,
+    );
+    assert.equal(result.status,'same-database');
+    assert.equal(result.httpStatus,200);
+    assert.equal(result.versionId,version);
+    assert.equal(sent.length,1);
+    assert.ok(sent[0].endsWith('/workers/scripts/demo/versions/'+version));
+    assert.equal(JSON.stringify(result).includes('protected-token'),false);
+    assert.equal(JSON.stringify(result).includes('do-not-return-private-value'),false);
+    assert.equal(JSON.stringify(result).includes(current),false);
+});
+
+test('Oct 29 version with a different D1 is never labelled retained history',async()=>{
+    const fake:typeof fetch=async()=>Response.json({
+        success:true,
+        result:{id:'bcd97686-195b-4c5d-a3ea-c402a70c49f4',
+            resources:{bindings:[{name:'db',type:'d1',id:'aaaabbbb-1111-4222-8333-aaaabbbbcccc'}]}},
+    });
+    const report=await inspectHistoricalDemoBinding(
+        'https://api.cloudflare.com/client/v4/accounts/abc','protected-token',
+        '3ebbd419-be70-423d-8723-61fe5838ed38',fake,
+    );
+    assert.equal(report.status,'different-database');
+});
+
+test('historical Worker unknown response, wrong version, ambiguity and 403 fail closed',async()=>{
+    const version='bcd97686-195b-4c5d-a3ea-c402a70c49f4';
+    const current='3ebbd419-be70-423d-8723-61fe5838ed38';
+    const mk=(result:unknown):typeof fetch=>async()=>Response.json({success:true,result});
+    const base='https://api.cloudflare.com/client/v4/accounts/abc';
+    const all=[
+        {f:mk({id:'unrelated-version',resources:{bindings:[{name:'db',type:'d1',database_id:current}]}}),want:'unverified'},
+        {f:mk({id:version,resources:{bindings:[]}}),want:'unverified'},
+        {f:mk({id:version,resources:{bindings:[{name:'db',type:'d1',database_id:current},{name:'db',type:'d1',database_id:current}]}}),want:'unverified'},
+        {f:async()=>new Response('',{status:403}),want:'permission-denied'},
+        {f:async()=>{throw Error('private credential leaked from cloud')},want:'unverified'},
+    ];
+    for(const {f,want} of all){
+        const report=await inspectHistoricalDemoBinding(base,'protected-token',current,f);
+        assert.equal(report.status,want);
+        assert.equal(JSON.stringify(report).includes('private credential leaked'),false);
+    }
 });
