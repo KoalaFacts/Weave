@@ -12,8 +12,10 @@ a continuously running agent. Setup only checks what is connected.
    or use another app with a similar name. If no Weave tools are available,
    report **installed, not connected** and stop. The connection is the remote
    MCP endpoint in the plugin README (Claude Code bundles it; Codex adds it with
-   `codex mcp add weave --url <endpoint>`; ChatGPT on the web can add it via
-   **Plugins → Add custom MCP server** with per-user OAuth). Installing this
+   `codex mcp add weave --url <endpoint>`; eligible ChatGPT Business or
+   Enterprise/Edu web workspaces can add it via **Plugins → Add custom MCP
+   server** with per-user OAuth and workspace-controlled write permissions).
+   ChatGPT Pro custom MCP permits read/fetch only; it cannot send Weave messages. Installing this
    repository's setup-only marketplace plugin does **not** attach a ChatGPT app.
 2. Call `get_my_profile` with no arguments. A returned `id` proves the client is
    signed in as that Weave account; record it as the expected account.
