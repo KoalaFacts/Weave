@@ -213,6 +213,75 @@ export async function inspectTimeTravelBookmarks(
     return observed;
 }
 
+// Historical Oct 29 trial's observed live Worker version (source deployment log).
+// This comparison proves binding continuity only; it cannot prove any row survived.
+const octoberTrialVersion = 'bcd97686-195b-4c5d-a3ea-c402a70c49f4' as const;
+export interface HistoricalDemoBindingObservation {
+    versionId: typeof octoberTrialVersion;
+    status:'same-database'|'different-database'|'permission-denied'|'not-available'|'unverified';
+    httpStatus:number|null;
+}
+
+export async function inspectHistoricalDemoBinding(
+    api:string,token:string,currentDatabaseId:string,request:typeof fetch=fetch,
+):Promise<HistoricalDemoBindingObservation> {
+    const base={versionId:octoberTrialVersion,httpStatus:null};
+    const uuid=(value:unknown):value is string=>typeof value==='string'
+        && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
+    const record=(value:unknown):Record<string,unknown>|null=>
+        value!==null && typeof value==='object' && !Array.isArray(value)
+            ? value as Record<string,unknown> : null;
+    // Never forward the production token to a caller-controlled URL.
+    if (!/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[0-9a-f]{32}$/i.test(api)
+        || !uuid(currentDatabaseId))
+        return {...base,status:'unverified'};
+    let response:Response;
+    try {
+        response=await request(api+'/workers/scripts/demo/versions/'+octoberTrialVersion,{
+            method:'GET',headers:{Authorization:'Bearer '+token},
+            redirect:'error',signal:AbortSignal.timeout(10000),
+        });
+    } catch {
+        return {...base,status:'unverified'};
+    }
+    const observed={...base,httpStatus:response.status};
+    if (response.status===401 || response.status===403)
+        return {...observed,status:'permission-denied'};
+    if (response.status===404 || response.status===410)
+        return {...observed,status:'not-available'};
+    if (!response.ok) return {...observed,status:'unverified'};
+    try {
+        const body=record(await response.json());
+        if (body?.success!==true) return {...observed,status:'unverified'};
+        const version=record(body.result);
+        if (version?.id!==octoberTrialVersion) return {...observed,status:'unverified'};
+        const raw=record(version.resources)?.bindings;
+        let bindings:unknown[];
+        if (Array.isArray(raw)) bindings=raw;
+        else {
+            const names=record(raw);
+            if (!names) return {...observed,status:'unverified'};
+            bindings=Object.entries(names).map(([name,value])=>{
+                const binding=record(value);
+                return binding ? {...binding,name:binding.name??name} : null;
+            });
+        }
+        const matched=bindings.map(record).filter(binding=>binding?.name==='db');
+        if (matched.length!==1 || matched[0]?.type!=='d1')
+            return {...observed,status:'unverified'};
+        const binding=matched[0];
+        if (binding.database_id!==undefined && binding.id!==undefined
+            && binding.database_id!==binding.id)
+            return {...observed,status:'unverified'};
+        const historicalId=binding.database_id??binding.id;
+        if (!uuid(historicalId)) return {...observed,status:'unverified'};
+        return {...observed,status: historicalId.toLowerCase()===currentDatabaseId.toLowerCase()
+            ? 'same-database' : 'different-database'};
+    } catch {
+        return {...observed,status:'unverified'};
+    }
+}
+
 interface CloudflareResult<T> {success: boolean;result:T;}
 interface Binding {name:string;type:string;id?:string;}
 const workerRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -259,12 +328,15 @@ export async function runRemoteInventory(env: NodeJS.ProcessEnv = process.env) {
         const timeTravelBookmarks = await inspectTimeTravelBookmarks(
             api + '/d1/database/' + database.uuid + '/time_travel/bookmark', env.CLOUDFLARE_API_TOKEN,
         );
+        const historicalWorkerBinding = await inspectHistoricalDemoBinding(
+            api, env.CLOUDFLARE_API_TOKEN, database.uuid,
+        );
         const directory = join(workerRoot, 'test-results', 'read-only-d1');
         await mkdir(directory, {recursive:true});
         const report = {
             sourceSha:env.GITHUB_SHA ?? null, observedAt:new Date().toISOString(),
             storage:'existing-demo-worker-D1', d1Database:{uuid:database.uuid,name:database.name}, ...audit,
-            timeTravelBookmarks, timeTravelRecoveryVerified:false,
+            timeTravelBookmarks, historicalWorkerBinding, timeTravelRecoveryVerified:false,
         };
         await writeFile(join(directory,'result.json'), JSON.stringify(report, null, 2) + '\n', {mode:0o600});
         if (audit.status !== 'observed') throw Error('Live data preservation findings require review; no mutation attempted.');
