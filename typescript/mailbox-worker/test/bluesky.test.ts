@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { start } from './harness.ts';
-import { connectBluesky } from '../src/external-credentials.ts';
+import { connectAccount } from '../src/external-credentials.ts';
+import { publishingProvider } from '../src/publishing.ts';
+const connectBluesky = (env: Env, {handle, appPassword, ...owner}: {humanId: string; authAt: number; agentId: string; handle: string; appPassword: string}) =>
+    connectAccount(env, {...owner, provider: 'bluesky', fields: {handle, appPassword}});
 import { openSecret } from '../src/credential-vault.ts';
-import { blueskyPlan, facets } from '../src/bluesky-provider.ts';
+import { bluesky, facets } from '../src/bluesky-provider.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
 import type { Env } from '../src/database.ts';
 
@@ -35,7 +38,7 @@ async function scenario(run: (s: {h: Harness; b: Fake; env: Env}) => Promise<voi
     }});
     try { await run({h, b, env: environment(h)}); } finally { await h.close(); }
 }
-/** Replaces fetch for Bluesky session creation while `run` executes (connectBluesky runs in this process). */
+/** Replaces fetch for Bluesky session creation while `run` executes (connecting runs in this process). */
 async function withBluesky(respond: (body: {identifier: string; password: string}) => Response, run: (calls: number[]) => Promise<void>) {
     const original = globalThis.fetch, calls: number[] = [];
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -50,7 +53,7 @@ const verifying = (body: {identifier: string; password: string}) => body.identif
 async function connected(h: Harness, env: Env) {
     const agent = await h.register(), humanId = await h.claim(agent);
     await withBluesky(verifying, async () => {
-        assert.deepEqual(await connectBluesky(env, {humanId, authAt: Date.now(), agentId: agent.accountId, handle: '@HSCBeats.bsky.social', appPassword}), {ok: true, handle});
+        assert.deepEqual(await connectBluesky(env, {humanId, authAt: Date.now(), agentId: agent.accountId, handle: '@HSCBeats.bsky.social', appPassword}), {ok: true, accounts: ['@' + handle]});
     });
     return {agent, humanId};
 }
@@ -93,8 +96,11 @@ test('connectBluesky_Refusals_NothingStored', () => scenario(async ({h, env}) =>
     const agent = await h.register(), humanId = await h.claim(agent), other = await h.claim(await h.register());
     const input = (overrides: Record<string, unknown> = {}) => ({humanId, authAt: Date.now(), agentId: agent.accountId, handle, appPassword, ...overrides});
     await withBluesky(verifying, async calls => {
-        for (const [name, value] of [['account password', input({appPassword: 'hunter2-my-real-password'})], ['bad handle', input({handle: 'not a handle'})], ['extra field', {...input(), extra: 1}]] as const)
-            assert.deepEqual(await connectBluesky(env, value as any), {ok: false, reason: name === 'extra field' ? 'not-found' : 'provider-refused'}, name);
+        for (const [name, value] of [['account password', input({appPassword: 'hunter2-my-real-password'})], ['bad handle', input({handle: 'not a handle'})]] as const)
+            assert.deepEqual(await connectBluesky(env, value as any), {ok: false, reason: 'provider-refused'}, name);
+        for (const fields of [{handle, appPassword, extra: '1'}, {handle}, {handle, appPassword: 'x\ny'}])
+            assert.deepEqual(await connectAccount(env, {humanId, authAt: Date.now(), agentId: agent.accountId, provider: 'bluesky', fields: fields as any}), {ok: false, reason: 'not-found'},
+                'exactly the platform\'s fields, as printable text: ' + Object.keys(fields));
         assert.equal(calls.length, 0, 'a value that is not an app password is never sent to Bluesky');
         assert.deepEqual(await connectBluesky(env, input({authAt: Date.now() - 11 * 60_000})), {ok: false, reason: 'stale-authentication'});
         assert.deepEqual(await connectBluesky(env, input({humanId: other})), {ok: false, reason: 'not-found'});
@@ -104,14 +110,16 @@ test('connectBluesky_Refusals_NothingStored', () => scenario(async ({h, env}) =>
     assert.equal(await h.db.prepare('SELECT count(*) n FROM external_credentials').first<number>('n'), 0);
 }));
 
-test('blueskyPlan_Limits_TextGraphemesImagesAndAltText', () => {
-    const image = {mediaId: crypto.randomUUID(), bytes: 1000, sha256: 'a'.repeat(64), alt: 'A cat'};
-    assert.ok(blueskyPlan(JSON.stringify({text: '👍🏽'.repeat(300), media: []})), '300 graphemes even when each is several code points');
-    assert.equal(blueskyPlan(JSON.stringify({text: 'x'.repeat(301), media: []})), null);
-    assert.ok(blueskyPlan(JSON.stringify({text: '', media: [image, image, image, image]})));
-    for (const plan of [{text: 'x', media: [image, image, image, image, image]}, {text: '', media: []}, {text: 'x', media: [{...image, alt: undefined}]},
-        {text: 'x', media: [{...image, bytes: 1_000_001}]}, {text: 'x', media: [], langs: ['en']}])
-        assert.equal(blueskyPlan(JSON.stringify(plan)), null, JSON.stringify(plan).slice(0, 80));
+test('blueskyRules_Limits_TextGraphemesBytesImagesAndNoSchedule', async () => {
+    // Text-only and too-many-media posts are refused before any stored file is read, so no transaction is needed here.
+    const check = (post: unknown) => publishingProvider(bluesky).checkContent!(undefined as never, {accountId: '', operation: 'publish_post', content: JSON.stringify(post), targetAccount: 'did:plc:x'});
+    const image = {mediaId: crypto.randomUUID(), bytes: 1000, sha256: 'a'.repeat(64)};
+    assert.equal(await check({text: '👍🏽'.repeat(300), media: []}), null, '300 graphemes even when each is several code points');
+    assert.match((await check({text: 'x'.repeat(301), media: []}))!, /at most 300 graphemes/);
+    assert.match((await check({text: '👨‍👩‍👧‍👦'.repeat(121), media: []}))!, /3000 bytes/, '121 graphemes of 25 bytes each');
+    assert.match((await check({text: 'x', media: [image, image, image, image, image]}))!, /at most 4 media/);
+    assert.match((await check({text: 'x', media: [], publishAt: new Date(Date.now() + 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z')}))!, /publishAt is not supported/);
+    assert.match((await check({text: 'x', media: [], settings: {__type: 'bluesky'}}))!, /settings are not taken/);
 });
 
 test('facets_LinksAndTags_MarkedAtUtf8ByteOffsets', () => {

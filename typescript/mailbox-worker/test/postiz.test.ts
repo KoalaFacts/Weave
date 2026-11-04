@@ -3,7 +3,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { start } from './harness.ts';
 import { sweepPublications, firstRecheckMs } from '../src/external-publications.ts';
-import { connectPostiz } from '../src/external-credentials.ts';
+import { connectAccount } from '../src/external-credentials.ts';
+const connectPostiz = (env: Env, {apiKey, ...owner}: {humanId: string; authAt: number; agentId: string; apiKey: string}) =>
+    connectAccount(env, {...owner, provider: 'postiz', fields: {apiKey}});
 import { openSecret } from '../src/credential-vault.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
 import type { Env } from '../src/database.ts';
@@ -45,7 +47,7 @@ async function scenario(run: (s: {h: Harness; p: Postiz; env: Env}) => Promise<v
     try { await run({h, p, env: environment(h)}); } finally { await h.close(); }
 }
 
-/** Replaces fetch for Postiz's channel listing while `run` executes (connectPostiz runs in this process). */
+/** Replaces fetch for Postiz's channel listing while `run` executes (connecting runs in this process). */
 async function withIntegrations(respond: () => Response, run: () => Promise<void>) {
     const original = globalThis.fetch;
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -59,7 +61,7 @@ async function connected(h: Harness, env: Env) {
     const agent = await h.register(), humanId = await h.claim(agent);
     await withIntegrations(() => Response.json(integrations), async () => {
         assert.deepEqual(await connectPostiz(env, {humanId, authAt: Date.now(), agentId: agent.accountId, apiKey}),
-            {ok: true, channels: ['tiktok · HSC Beats (@hscbeats)', 'linkedin-page · Koala Facts (@koalafacts)']});
+            {ok: true, accounts: ['tiktok · HSC Beats (@hscbeats)', 'linkedin-page · Koala Facts (@koalafacts)']});
     });
     return {agent, humanId};
 }

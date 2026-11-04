@@ -12,7 +12,8 @@ nothing was deployed.
 
 ## Connect
 
-On `/account`, **Connect Postiz** (per agent) takes the owner's Postiz API key in a
+On `/account`, **Connect Postiz** (per agent; the [publishing router](2026-11-05-publishing-router.md)'s generic
+connect form, posted to `/account/connect`) takes the owner's Postiz API key in a
 password field and needs a GitHub sign-in in the last 10 minutes; a stale session is
 sent to GitHub and the key is dropped. The mailbox lists the key's integrations and
 creates one credential per enabled, supported channel: reference

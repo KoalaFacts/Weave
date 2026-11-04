@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
 import {signedCookieValue,type HumanSession} from "../src/human-session.ts";
-import {destructiveKinds,ownerActionToken,readOwnerAction,type OwnerFormAction} from "../src/owner-forms.ts";
+import {destructiveKinds,ownerActionToken,readConnectForm,readOwnerAction,type OwnerFormAction} from "../src/owner-forms.ts";
 
 const now=1_800_000_000_000;
 const key=randomBytes(32).toString("base64url");
@@ -17,12 +17,12 @@ test("readOwnerAction_RoundTrip_ReturnsAction",async()=>{
     {kind:"confirm-key",requestId:randomUUID()},{kind:"reject-key",requestId:randomUUID()},
     {kind:"revoke-key",agentId,kid:randomBytes(32).toString("base64url")},{kind:"issue-recovery-code",agentId},
     {kind:"confirm-action",requestId:randomUUID(),planDigest:randomBytes(32).toString("base64url")},{kind:"reject-action",requestId:randomUUID()},
-    {kind:"connect-youtube",agentId},{kind:"connect-postiz",agentId},{kind:"connect-bluesky",agentId},{kind:"revoke-credential",agentId,credentialRef:"youtube"}];
+    {kind:"connect-youtube",agentId},{kind:"connect-account",agentId,provider:"postiz"},{kind:"revoke-credential",agentId,credentialRef:"youtube"}];
   for(const action of actions){
     const token=await ownerActionToken(key,humanId,action,now);
     assert.deepEqual(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now+1000),action);
   }
-  assert.deepEqual([...destructiveKinds].sort(),["confirm-action","confirm-binding","confirm-key","connect-bluesky","connect-postiz","connect-youtube","issue-recovery-code","revoke-key"]);
+  assert.deepEqual([...destructiveKinds].sort(),["confirm-action","confirm-binding","confirm-key","connect-account","connect-youtube","issue-recovery-code","revoke-key"]);
 });
 
 test("readOwnerAction_RevokeGrant_RoundTripNotDestructive",async()=>{
@@ -144,4 +144,20 @@ test("readOwnerAction_InvalidUtf8Body_Null",async()=>{
   const request=new Request("https://auth.weave.example/account/action",{method:"POST",
     headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new Uint8Array([0x61,0x63,0x74,0x69,0x6f,0x6e,0x3d,0xff,0xfe])});
   assert.equal(await readOwnerAction(key,request,sessionFor(randomUUID()),now),null);
+});
+
+test("readConnectForm_TokenThenFields_ReturnsProviderAndValues",async()=>{
+  const humanId=randomUUID(),agentId=randomUUID(),session=sessionFor(humanId);
+  const token=await ownerActionToken(key,humanId,{kind:"connect-account",agentId,provider:"bluesky"},now);
+  assert.deepEqual(await readConnectForm(key,form(["action",token],["handle","a.bsky.social"],["appPassword","abcd-efgh-ijkl-mnop"]),session,now+1000),
+    {agentId,provider:"bluesky",fields:{handle:"a.bsky.social",appPassword:"abcd-efgh-ijkl-mnop"}});
+  const other=await ownerActionToken(key,humanId,{kind:"connect-youtube",agentId},now);
+  for(const [name,fields] of [
+    ["no fields",[["action",token]]],["token not first",[["handle","x"],["action",token]]],["empty value",[["action",token],["handle",""]]],
+    ["duplicate field",[["action",token],["handle","a"],["handle","b"]]],["bad name",[["action",token],["user-name","x"]]],
+    ["too many fields",[["action",token],...["a","b","c","d","e"].map(n=>[n,"x"])]],["another form's token",[["action",other],["apiKey","x"]]],
+  ] as [string,[string,string][]][])
+    assert.equal(await readConnectForm(key,form(...fields),session,now+1000),null,name);
+  assert.equal(await readConnectForm(key,form(["action",token],["handle","x"]),sessionFor(randomUUID()),now+1000),null,"another human");
+  assert.equal(await readConnectForm(key,form(["action",token],["handle","x"]),session,now+601_000),"expired");
 });

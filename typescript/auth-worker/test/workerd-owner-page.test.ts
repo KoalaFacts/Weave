@@ -594,20 +594,23 @@ test("connectYoutube_StaleSession_ReauthenticatesBeforeLeavingForGoogle",{timeou
   assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
 });
 
-function postizToken(html:string):string{
-  const token=/<form method="post" action="\/account\/postiz"><input type="hidden" name="action" value="([^"]+)">/.exec(html)?.[1];
-  assert.ok(token,"the page offers Connect Postiz");
+/** The signed token of the Connect form for one platform, found by its button. */
+function connectToken(html:string,label:string):string{
+  const token=new RegExp('<form method="post" action="/account/connect"><input type="hidden" name="action" value="([^"]+)">(?:(?!</form>).)*?<button type="submit">Connect '+label+'</button>').exec(html)?.[1];
+  assert.ok(token,"the page offers Connect "+label);
   return token;
 }
-const postPostiz=async(human:Human,token:string,apiKey:string,authAt?:number)=>shared.mf.dispatchFetch(issuer+"/account/postiz",{method:"POST",redirect:"manual",
-  headers:{"Content-Type":"application/x-www-form-urlencoded",Origin:issuer,Cookie:await sessionCookie(human,authAt)},body:new URLSearchParams({action:token,apiKey}).toString()});
+const postizToken=(html:string)=>connectToken(html,"Postiz");
+const postConnect=async(human:Human,token:string,fields:Record<string,string>,authAt?:number)=>shared.mf.dispatchFetch(issuer+"/account/connect",{method:"POST",redirect:"manual",
+  headers:{"Content-Type":"application/x-www-form-urlencoded",Origin:issuer,Cookie:await sessionCookie(human,authAt)},body:new URLSearchParams({action:token,...fields}).toString()});
+const postPostiz=(human:Human,token:string,apiKey:string,authAt?:number)=>postConnect(human,token,{apiKey},authAt);
 
 test("connectPostiz_OwnerSubmitsKey_ChannelsStoredSealedAndListed",{timeout:90_000},async()=>{
   const human=await seedHuman(),agent=await ownedAgent(human,"publisher");
   const token=postizToken(await (await account(await sessionCookie(human))).text());
   const response=await postPostiz(human,token,postizKey);
   assert.equal(response.status,303);
-  assert.equal(response.headers.get("location"),"/account?result=postiz-connected");
+  assert.equal(response.headers.get("location"),"/account?result=account-connected");
   const rows=(await (await db()).prepare("SELECT credential_ref,target_account,secret IS NOT NULL sealed FROM external_credentials WHERE account_id=?").bind(agent.accountId).all()).results;
   assert.deepEqual(rows,[{credential_ref:"postiz:cm4tiktok00000000000000001",target_account:"tiktok/cm4tiktok00000000000000001",sealed:1}]);
   const page=await (await account(await sessionCookie(human))).text();
@@ -621,23 +624,18 @@ test("connectPostiz_StaleSessionOrSingleFieldPost_NothingStored",{timeout:60_000
   const token=postizToken(await (await account(await sessionCookie(human,stale))).text());
   const response=await postPostiz(human,token,postizKey,stale);
   assert.equal(new URL(response.headers.get("location")!).origin,"https://github.com");
-  assert.equal(result(await postAccount(token,await sessionCookie(human))),"not-found","the key-less /account form cannot connect Postiz");
+  assert.equal(result(await postAccount(token,await sessionCookie(human))),"not-found","the field-less /account form cannot connect Postiz");
   assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
 });
 
-function blueskyToken(html:string):string{
-  const token=/<form method="post" action="\/account\/bluesky"><input type="hidden" name="action" value="([^"]+)">/.exec(html)?.[1];
-  assert.ok(token,"the page offers Connect Bluesky");
-  return token;
-}
-const postBluesky=async(human:Human,token:string,fields:Record<string,string>,authAt?:number)=>shared.mf.dispatchFetch(issuer+"/account/bluesky",{method:"POST",redirect:"manual",
-  headers:{"Content-Type":"application/x-www-form-urlencoded",Origin:issuer,Cookie:await sessionCookie(human,authAt)},body:new URLSearchParams({action:token,...fields}).toString()});
+const blueskyToken=(html:string)=>connectToken(html,"Bluesky");
+const postBluesky=(human:Human,token:string,fields:Record<string,string>,authAt?:number)=>postConnect(human,token,fields,authAt);
 
 test("connectBluesky_OwnerSubmitsAppPassword_AccountStoredSealedAndListed",{timeout:90_000},async()=>{
   const human=await seedHuman(),agent=await ownedAgent(human,"poster");
   const token=blueskyToken(await (await account(await sessionCookie(human))).text());
   const response=await postBluesky(human,token,{handle:"@"+blueskyHandle,appPassword:blueskyPassword});
-  assert.equal(response.headers.get("location"),"/account?result=bluesky-connected");
+  assert.equal(response.headers.get("location"),"/account?result=account-connected");
   const rows=(await (await db()).prepare("SELECT credential_ref,target_account,target_display,secret IS NOT NULL sealed FROM external_credentials WHERE account_id=?").bind(agent.accountId).all()).results;
   assert.deepEqual(rows,[{credential_ref:"bluesky:"+blueskyDid,target_account:blueskyDid,target_display:"@"+blueskyHandle,sealed:1}]);
   const page=await (await account(await sessionCookie(human))).text();
@@ -651,7 +649,9 @@ test("connectBluesky_StaleSessionMissingFieldOrKeylessForm_NothingStored",{timeo
   const token=blueskyToken(await (await account(await sessionCookie(human,stale))).text());
   const response=await postBluesky(human,token,{handle:blueskyHandle,appPassword:blueskyPassword},stale);
   assert.equal(new URL(response.headers.get("location")!).origin,"https://github.com");
-  assert.equal(result(await postBluesky(human,token,{handle:blueskyHandle})),"not-found","the app password is required");
+  assert.equal(result(await postBluesky(human,token,{handle:blueskyHandle},Date.now())),"not-found","the app password is required");
+  assert.equal(result(await postBluesky(human,blueskyToken(await (await account(await sessionCookie(human))).text()),{handle:blueskyHandle,appPassword:blueskyPassword,extra:"x"})),"not-found",
+    "exactly the platform's fields");
   assert.equal(result(await postAccount(token,await sessionCookie(human))),"not-found","the password-less /account form cannot connect Bluesky");
   assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
 });
