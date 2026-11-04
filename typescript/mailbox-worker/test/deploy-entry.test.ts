@@ -56,7 +56,7 @@ test('unrelated issue comments cannot replace a pending protected D1 audit durin
     // audit command also triggers the deploy workflow (whose job skips), so
     // that skipped run must not replace the queued read-only inventory job.
     const workflow=readFileSync(path,'utf8');
-    const top=workflow.split(/^permissions:/m)[0];
+    const top=workflow.split(/^jobs:/m)[0];
     assert.match(top,/concurrency:\\s*\\n\\s*group:/);
     for(const requirement of [
         /github\\.event_name == 'issue_comment'/,
