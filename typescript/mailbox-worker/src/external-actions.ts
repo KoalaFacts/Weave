@@ -106,7 +106,7 @@ export async function proposeExternalAction(env: Env, caller: ActionCaller, inpu
         const provider = findProvider(env, credential.provider);
         if (!provider) conflict('provider-unavailable');
         if (!provider.operations.includes(operation)) invalidField('operation', 'must be a supported operation');
-        const invalid = await provider.checkContent?.(tx, caller.accountId, operation, content);
+        const invalid = await provider.checkContent?.(tx, {accountId: caller.accountId, operation, content, targetAccount: credential.target_account});
         if (invalid) invalidField('content', invalid);
         const waiting = await tx.db.prepare(`SELECT count(*) n FROM external_actions WHERE account_id=? AND status IN ('pending','approved') AND expires_at>CAST(? AS INTEGER)`)
             .bind(caller.accountId, at.toString()).first<number>('n');

@@ -113,12 +113,13 @@ export const youtubeUpload: ExternalProvider & {available(env: Env): boolean} = 
     contractRevision: 'youtube-upload-v1',
     operations: ['upload_video'],
     available: env => youtubeConfigured(env) && !!env.EXTERNAL_MEDIA,
-    async checkContent(tx, accountId, _operation, content) {
+    async checkContent(tx, {accountId, content}) {
         const plan = videoPlan(content);
         if (!plan) return 'must be JSON {title, description, privacyStatus, mediaId, bytes, sha256} within YouTube limits';
         const media = await readMediaRecord(tx, accountId, plan.mediaId);
         // The plan must name the exact uploaded bytes, so the owner approves this file and no other.
-        if (!media || media.bytes !== plan.bytes || media.sha256 !== plan.sha256) return 'must name your uploaded media with its exact bytes and sha256';
+        if (!media || media.bytes !== plan.bytes || media.sha256 !== plan.sha256 || !media.contentType.startsWith('video/'))
+            return 'must name your uploaded video with its exact bytes and sha256';
         return null;
     },
     async execute(env, call) {

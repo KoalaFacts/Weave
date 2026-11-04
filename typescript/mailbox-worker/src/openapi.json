@@ -581,7 +581,7 @@
       "put": {
         "operationId": "uploadExternalMedia",
         "summary": "Upload media for an external action",
-        "description": "Stores the raw request body once under a new mediaId, for use in an upload_video plan. Content-Type must be video/mp4, video/quicktime or video/webm and Content-Length the exact size, at most 100 MiB. The response gives the SHA-256 of the stored bytes; the plan names the mediaId with that size and SHA-256 so the owner approves exactly this file. Unavailable (404) where no media bucket is configured.",
+        "description": "Stores the raw request body once under a new mediaId, for use in an upload_video plan. Content-Type must be video/mp4, video/quicktime, video/webm, image/jpeg, image/png, image/gif or image/webp and Content-Length the exact size, at most 100 MiB. The response gives the SHA-256 of the stored bytes; the plan names the mediaId with that size and SHA-256 so the owner approves exactly this file. Unavailable (404) where no media bucket is configured.",
         "requestBody": {
           "required": true,
           "content": {
@@ -598,6 +598,30 @@
               }
             },
             "video/webm": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/gif": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/webp": {
               "schema": {
                 "type": "string",
                 "format": "binary"
@@ -635,6 +659,68 @@
           },
           "413": {
             "$ref": "#/components/responses/413"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
+    "/v1/external-media/{mediaId}/content": {
+      "get": {
+        "operationId": "fetchSignedExternalMedia",
+        "summary": "Fetch media through a signed provider URL",
+        "description": "Serves one stored file to a publishing provider while it dispatches an approved action. Weave mints these URLs itself; the signature binds the agent, the media and an expiry 15 minutes ahead. Any missing, tampered or expired signature is 404. No agent credential is used.",
+        "security": [
+          {}
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/mediaIdPath"
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          },
+          {
+            "name": "expires",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,16}$"
+            }
+          },
+          {
+            "name": "signature",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored bytes.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
           },
           "503": {
             "$ref": "#/components/responses/503"
@@ -2598,6 +2684,16 @@
       },
       "externalActionIdPath": {
         "name": "actionId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      },
+      "mediaIdPath": {
+        "name": "mediaId",
         "in": "path",
         "required": true,
         "schema": {
@@ -5302,7 +5398,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 8000,
-            "description": "The full content, shown to the owner verbatim. Must not be blank. For publish_text, the text. For upload_video, JSON {title, description, privacyStatus (private, unlisted or public), mediaId, bytes, sha256} naming media from PUT /v1/external-media with its exact size and SHA-256."
+            "description": "The full content, shown to the owner verbatim. Must not be blank. For publish_text, the text. For upload_video, JSON {title, description, privacyStatus (private, unlisted or public), mediaId, bytes, sha256} naming media from PUT /v1/external-media with its exact size and SHA-256. For publish_post (Postiz channels), JSON {text, media: [{mediaId, bytes, sha256}], settings: {__type, ...}, publishAt?} where settings.__type is the channel type and publishAt a future UTC instant."
           }
         }
       },
@@ -5493,7 +5589,11 @@
             "enum": [
               "video/mp4",
               "video/quicktime",
-              "video/webm"
+              "video/webm",
+              "image/jpeg",
+              "image/png",
+              "image/gif",
+              "image/webp"
             ]
           },
           "bytes": {

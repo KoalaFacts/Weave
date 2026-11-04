@@ -19,8 +19,8 @@ import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
 import { executeExternalAction, getExternalAction, keyCaller, proposeExternalAction } from './external-actions.ts';
-import { uploadMedia } from './external-media.ts';
-import { connectExternalCredential, type ConnectCredentialInput, type ConnectCredentialResult } from './external-credentials.ts';
+import { serveSignedMedia, uploadMedia } from './external-media.ts';
+import { connectExternalCredential, connectPostiz, type ConnectCredentialInput, type ConnectCredentialResult, type ConnectPostizInput, type ConnectPostizResult } from './external-credentials.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
 import { recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
 import { putCard } from './cards';
@@ -43,6 +43,7 @@ export class HumanDirectory extends WorkerEntrypoint<Env> {
     ownerOverview(humanId: string): Promise<OwnerOverview> { return ownerOverview(scopedEnv(this.env), humanId); }
     ownerAction(input: OwnerAction): Promise<OwnerActionResult> { return ownerAction(scopedEnv(this.env), input); }
     connectCredential(input: ConnectCredentialInput): Promise<ConnectCredentialResult> { return connectExternalCredential(scopedEnv(this.env), input); }
+    connectPostiz(input: ConnectPostizInput): Promise<ConnectPostizResult> { return connectPostiz(scopedEnv(this.env), input); }
     recordGrant(input: RecordGrantInput): Promise<RecordGrantResult> { return recordGrant(scopedEnv(this.env), input); }
     revokeGrant(input: RevokeGrantInput): Promise<RevokeGrantResult> { return revokeGrant(scopedEnv(this.env), input); }
 }
@@ -103,6 +104,9 @@ export default {
                 const card = await atomic(env.db,tx => directoryAgentCard(tx,cardRoute[1]));
                 return new Response(stringify(card),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'}});
             }
+            // Signed, short-lived media for a provider fetching an approved action's file; no agent credential is involved.
+            const signedMedia = method === 'GET' ? /^\/v1\/external-media\/([0-9a-f-]{36})\/content$/.exec(url.pathname) : null;
+            if (signedMedia) return await serveSignedMedia(env,signedMedia[1],url,Date.now());
             const account = await authenticateAgent(env,request);
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return json(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));

@@ -4,9 +4,12 @@
  */
 import type { Env, Transaction } from './database.ts';
 import { youtubeUpload } from './youtube-provider.ts';
+import { postizPublish } from './postiz-provider.ts';
 
 /** `secret` is the opened credential secret, null for a provider that needs none. It never leaves the provider. */
 export type ProviderCall = {accountId: string; operation: string; content: string; targetAccount: string; actionId: string; secret: string | null};
+/** What a provider checks when a plan is proposed; `targetAccount` is the credential's provider-verified account. */
+export type ProposedPlan = {accountId: string; operation: string; content: string; targetAccount: string};
 /** `rejected` only when the provider confirmed nothing happened. Throw when the outcome is uncertain. */
 export type ProviderResult = {status: 'completed'; receipt: string} | {status: 'rejected'; reason: string};
 export type ExternalProvider = {
@@ -15,7 +18,7 @@ export type ExternalProvider = {
     contractRevision: string;
     operations: readonly string[];
     /** Provider-specific content rules checked when the plan is proposed; the reason it is invalid, or null. */
-    checkContent?(tx: Transaction, accountId: string, operation: string, content: string): Promise<string | null>;
+    checkContent?(tx: Transaction, plan: ProposedPlan): Promise<string | null>;
     execute(env: Env, call: ProviderCall): Promise<ProviderResult>;
 };
 
@@ -45,5 +48,6 @@ const testHttp: ExternalProvider = {
 export function provider(env: Env, name: string): ExternalProvider | null {
     if (name === testHttp.name && env.EXTERNAL_ACTION_TEST_ENDPOINT) return testHttp;
     if (name === youtubeUpload.name && youtubeUpload.available(env)) return youtubeUpload;
+    if (name === postizPublish.name && postizPublish.available(env)) return postizPublish;
     return null;
 }
