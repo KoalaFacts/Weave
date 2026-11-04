@@ -12,7 +12,12 @@ test('explicit publish branch keeps main ancestry and existing verification befo
     assert.equal((workflow.match(/node scripts\/verify-agent-entry\.ts/g)||[]).length,2);
     assert.match(workflow,/github\.event_name == 'push' && github\.ref == 'refs\/heads\/publish\/demo'/);
     assert.match(workflow,/environment: production/);
-    assert.match(workflow,/npm test/);
+    // Release relies on the passed Worker verification run of this exact commit on main, not a repeated suite.
+    assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts/);
+    assert.match(workflow,/verify:[\s\S]*?permissions:\s*\n\s*contents: read\s*\n\s*actions: read/);
+    assert.doesNotMatch(workflow,/npm test/);
+    assert.match(readFileSync(new URL('../../../.github/workflows/worker-browser.yml',import.meta.url),'utf8'),/push:\s*\n\s*branches: \[main\][\s\S]*npm test/,
+        'the gated workflow runs the Worker suite on main pushes');
 });
 test('manual deployment retains maintain choice while publish branch requires completed-only',()=>{
     const workflow=readFileSync(path,'utf8');
