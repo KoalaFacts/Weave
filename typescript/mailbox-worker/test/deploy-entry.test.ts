@@ -52,21 +52,21 @@ test('issue comment release requires owner identity, #236, exact command and pro
 });
 
 test('unrelated issue comments cannot replace a pending protected D1 audit during release',()=>{
-    // GitHub's shared concurrency group permits only one pending member. An
-    // audit command also triggers the deploy workflow (whose job skips), so
-    // that skipped run must not replace the queued read-only inventory job.
+    // GitHub concurrency keeps one pending group member by default. The
+    // audit issue command also invokes an unrelated deploy workflow whose
+    // release job skips; it must not evict the queued protected read.
     const workflow=readFileSync(path,'utf8');
     const top=workflow.split(/^jobs:/m)[0];
-    assert.match(top,/concurrency:\\s*\\n\\s*group:/);
+    assert.match(top,/concurrency:\s*\n\s*group:/);
     for(const requirement of [
-        /github\\.event_name == 'issue_comment'/,
-        /github\\.event\\.issue\\.number != 236/,
-        /github\\.event\\.issue\\.pull_request != null/,
-        /github\\.event\\.comment\\.body != '\\/weave-deploy-demo'/,
-        /github\\.event\\.comment\\.user\\.login != 'ldsenow'/,
-        /github\\.event\\.comment\\.author_association != 'MEMBER'/,
-        /github\\.actor != 'ldsenow'/,
-        /github\\.run_id/,
+        /github\.event_name == 'issue_comment'/,
+        /github\.event\.issue\.number != 236/,
+        /github\.event\.issue\.pull_request != null/,
+        /github\.event\.comment\.body != '\/weave-deploy-demo'/,
+        /github\.event\.comment\.user\.login != 'ldsenow'/,
+        /github\.event\.comment\.author_association != 'MEMBER'/,
+        /github\.actor != 'ldsenow'/,
+        /github\.run_id/,
         /'deploy-weave-worker-demo'/,
         /cancel-in-progress: false/,
     ]) assert.match(top,requirement);
