@@ -19,14 +19,22 @@ test('explicit publish branch keeps main ancestry and existing verification befo
     assert.match(readFileSync(new URL('../../../.github/workflows/worker-browser.yml',import.meta.url),'utf8'),/push:\s*\n\s*branches: \[main\][\s\S]*npm test/,
         'the gated workflow runs the Worker suite on main pushes');
 });
-test('manual deployment retains maintain choice while publish branch requires completed-only',()=>{
+test('generic demo releases cannot select a D1 schema mutation; only the separately pinned migration can',()=>{
     const workflow=readFileSync(path,'utf8');
-    assert.match(workflow,/database_mode:\s*\n\s*description:[^\n]+\n\s*required: true\n\s*type: choice\n\s*default: maintain\n\s*options: \[maintain, completed-only\]/);
-    assert.match(workflow,/WEAVE_DEPLOY_DATABASE_MODE: \$\{\{ github\.event_name == 'push' && 'completed-only' \|\| inputs\.database_mode \}\}/);
-    assert.match(workflow,/WEAVE_DEPLOY_DATABASE_MODE: \$\{\{ github\.event_name == 'issue_comment' && 'completed-only' \|\| inputs\.database_mode \}\}/);
-    assert.doesNotMatch(workflow,/inputs\.database_mode \|\| 'maintain'/,'A manually supplied empty mode must reach the rejecting script unchanged.');
-    assert.doesNotMatch(workflow,/github\.event_name == 'push' && 'maintain'/,'Automatic publish must never perform an unapproved migration.');
-    assert.equal((workflow.match(/node scripts\/verify-public-mcp\.ts/g)||[]).length,2,'Both deployment jobs must probe real public MCP.');
+    assert.doesNotMatch(workflow,/^\s+database_mode:\s*$/m,
+        'Normal manual releases must not expose maintain mode while historic rows are unverified.');
+    assert.equal((workflow.match(/WEAVE_RELEASE_DATABASE_MODE: completed-only/g)||[]).length,2,
+        'Both early and protected production release gates must use completed-only.');
+    assert.equal((workflow.match(/WEAVE_DEPLOY_DATABASE_MODE: completed-only/g)||[]).length,2,
+        'Both actual deploy jobs must refuse schema changes.');
+    assert.doesNotMatch(workflow,/WEAVE_(?:RELEASE|DEPLOY)_DATABASE_MODE:[^\n]*(?:maintain|inputs\.database_mode)/,
+        'None of the generic demo release paths can select maintenance migrations.');
+    assert.equal((workflow.match(/node scripts\/verify-public-mcp\.ts/g)||[]).length,2,
+        'Both deployments must still verify the public MCP endpoint.');
+    const reviewed=readFileSync(new URL('../../../.github/workflows/approved-human-schema-migration.yml',import.meta.url),'utf8');
+    assert.match(reviewed,/confirm_approved_source/);
+    assert.match(reviewed,/WEAVE_DEPLOY_DATABASE_MODE: maintain/,
+        'The exact-source-pinned protected migration entry must remain available.');
 });
 test('the retired Access trial input is absent from the deployment workflow',()=>{
     const workflow=readFileSync(path,'utf8');
