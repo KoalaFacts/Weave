@@ -10,8 +10,14 @@ import { postizPublish } from './postiz-provider.ts';
 export type ProviderCall = {accountId: string; operation: string; content: string; targetAccount: string; actionId: string; secret: string | null};
 /** What a provider checks when a plan is proposed; `targetAccount` is the credential's provider-verified account. */
 export type ProposedPlan = {accountId: string; operation: string; content: string; targetAccount: string};
-/** `rejected` only when the provider confirmed nothing happened. Throw when the outcome is uncertain. */
-export type ProviderResult = {status: 'completed'; receipt: string} | {status: 'rejected'; reason: string};
+/**
+ * `rejected` only when the provider confirmed nothing happened. Throw when the outcome is uncertain. `trackFrom` (epoch
+ * ms) marks a completed effect that the provider finishes later, such as a queued or scheduled post: its publication
+ * state is asked for from that time on.
+ */
+export type ProviderResult = {status: 'completed'; receipt: string; trackFrom?: number} | {status: 'rejected'; reason: string};
+/** A later state of a tracked effect. `error` is the platform's own text: untrusted, bounded and shown as data. */
+export type PublicationState = {state: 'queued' | 'published' | 'failed'; url: string | null; error: string | null};
 export type ExternalProvider = {
     name: string;
     /** Changes whenever approval-relevant dispatch semantics change; approvals bound to another revision are refused. */
@@ -22,6 +28,11 @@ export type ExternalProvider = {
     /** Provider-specific content rules checked when the plan is proposed; the reason it is invalid, or null. */
     checkContent?(tx: Transaction, plan: ProposedPlan): Promise<string | null>;
     execute(env: Env, call: ProviderCall): Promise<ProviderResult>;
+    /**
+     * The current state of tracked effects by receipt, for one credential secret. A receipt the provider no longer
+     * lists is absent from the result. Throws when the provider cannot be asked now.
+     */
+    publicationStates?(secret: string, items: {receipt: string; trackFrom: number}[]): Promise<Map<string, PublicationState>>;
 };
 
 const maxReceipt = 256, maxReason = 256, timeoutMs = 15_000;

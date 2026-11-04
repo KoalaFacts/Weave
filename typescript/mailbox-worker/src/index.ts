@@ -19,6 +19,7 @@ import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
 import { executeExternalAction, getExternalAction, keyCaller, ownerActionMedia, proposeExternalAction } from './external-actions.ts';
+import { sweepPublications } from './external-publications.ts';
 import { getMedia, importMedia, receiveSignedUpload, serveSignedMedia, uploadMedia } from './external-media.ts';
 import { connectExternalCredential, connectPostiz, listAgentCredentials, type ConnectCredentialInput, type ConnectCredentialResult, type ConnectPostizInput, type ConnectPostizResult } from './external-credentials.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
@@ -53,6 +54,8 @@ export default {
     async scheduled(_event: unknown, env: Env): Promise<void> {
         if(env.MAINTENANCE_MODE==='true'||env.RECOVERY_READ_ONLY==='true')return;
         await sweep({...env,db:budgetDatabase(env.db)},true);
+        // Reads only: asks providers how tracked posts turned out.
+        await sweepPublications({...env,db:budgetDatabase(env.db)});
     },
     async fetch(request: Request, env: Env, context: Context): Promise<Response> {
         env = {...env,db:budgetDatabase(env.db)};

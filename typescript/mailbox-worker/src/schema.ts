@@ -162,6 +162,27 @@ export const externalActions = sqliteTable("external_actions", {
     check("external_actions_dispatch",sql`(status IN ('dispatching','completed','unknown'))<=(dispatched_at IS NOT NULL)`)
 ]);
 
+// What the provider later reports about a completed action whose effect finishes after dispatch (a queued or scheduled
+// post). Written when such an action completes; the scheduled sweep asks the provider until the state is final.
+export const externalPublications = sqliteTable("external_publications", {
+    action_id: text("action_id").notNull().primaryKey().references(() => externalActions.action_id, {onDelete:"restrict"}),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    state: text("state").notNull(),
+    url: text("url"),
+    error: text("error"),
+    due_at: exactInteger("due_at").notNull(),
+    checks: integer("checks").notNull(),
+    checked_at: exactInteger("checked_at"),
+    next_check_at: exactInteger("next_check_at"),
+    updated_at: exactInteger("updated_at").notNull(),
+}, t => [
+    index("external_publications_due").on(t.next_check_at),
+    check("external_publications_state",sql`state IN ('queued','published','failed')`),
+    check("external_publications_final",sql`state='queued' OR next_check_at IS NULL`),
+    check("external_publications_url",sql`url IS NULL OR (state='published' AND url GLOB 'https://*')`),
+    check("external_publications_checks",sql`checks>=0`)
+]);
+
 // A key added to a human-owned agent by one of its live keys, held until the owner confirms it.
 export const keyRequests = sqliteTable("key_requests", {
     request_id: text("request_id").notNull().primaryKey(),

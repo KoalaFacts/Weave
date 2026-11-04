@@ -81,6 +81,31 @@ Postiz accepted the schedule, not that the platform published it.
 - Post-creation JSON bodies are limited to 50 MB; recommended video is MP4/H.264/AAC,
   ≤ 30 fps, ≤ 1920×1080 (portrait 1080×1920 for TikTok and Shorts).
 
+## Publication tracking
+
+Postiz queues every post, so a completed action only means Postiz accepted it. When a
+`publish_post` completes, the provider returns `trackFrom` (two minutes after the post
+is due) and the same transaction writes an `external_publications` row in `queued`.
+The 5-minute cron then asks Postiz with `GET /posts?startDate&endDate`. Postiz has no
+read by ID and allows 30 calls an hour, so one listing per agent covers all of that
+agent's due posts, and at most 5 agents are asked per run.
+
+- `PUBLISHED` becomes `published` with `releaseURL` when it is an https URL.
+- `ERROR` becomes `failed`. Postiz's `error` is the platform's own text, so it is
+  stripped of invisible and control characters and bounded to 300 characters.
+- `QUEUE`, `DRAFT` and a post Postiz no longer lists stay `queued`. They are
+  re-checked after 15 minutes, doubling up to 6 hours, and are no longer asked about
+  7 days after they were due.
+- A failed or unanswered listing only postpones the check; it never changes a state
+  or counts as a check.
+- A disconnected credential stops tracking without asking.
+- Tracking only reads: it never dispatches or retries anything.
+
+`get_external_action`, `execute_external_action` and the HTTP reads return
+`publication {state, url, error, checkedAt}` or null. The match assumes the `postId`
+that post creation returns is the listed post's `id`. That is documented by Postiz
+but not yet verified against a real account.
+
 ## Verification
 
 - mailbox-worker `test/postiz.test.ts` (fake Postiz through the Worker's outbound
@@ -100,9 +125,23 @@ Postiz accepted the schedule, not that the platform published it.
   only for files the action names. Removing the "named by this action" check fails
   that test.
 
+- Publication tracking (`test/postiz.test.ts`, the sweep run in this process against a
+  fake Postiz listing, plus one run of the Worker's own cron):
+  - an immediate post is tracked and becomes published with its URL, then is never
+    asked about again;
+  - a platform error becomes failed with a bounded, visible message;
+  - queued and unlisted posts back off, and a failed listing postpones without
+    counting;
+  - tracking stops after the window and when the credential is disconnected;
+  - two posts of one agent take one listing call.
+
+  Mutation checks: removing the error cleanup, the cron call, the stop on a
+  disconnected credential, or the not-asked rule each fail a test.
+
 ## Limits
 
 - One Postiz key per agent; reconnecting replaces every Postiz credential of it.
 - Media is limited to one Worker request body (100 MiB) and is not deleted yet.
-- No Postiz webhook yet: published/failed after a schedule is not recorded.
+- No Postiz webhook: publication state is learned by polling, so it lags by up to the
+  current backoff. The owner page does not show it yet.
 - The Worker that opens the sealed key is the trusted execution path.
