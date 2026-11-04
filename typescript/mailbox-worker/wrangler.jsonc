@@ -11,12 +11,17 @@
     "database_name": "weave-mailbox-demo",
     "database_id": "00000000-0000-0000-0000-000000000000"
   }],
+  "r2_buckets": [{
+    "binding": "EXTERNAL_MEDIA",
+    "bucket_name": "weave-external-media"
+  }],
   "vars": {
     "CLEANUP_MAX_MESSAGES": "0",
     "CLEANUP_TIME_BUDGET_MS": "0",
     "REGISTRATION_ENABLED": "true",
     "REGISTRATION_MAX_ACCOUNTS": "100",
     "REGISTRATION_PER_IP_PER_HOUR": "10",
-    "REGISTRATION_GLOBAL_PER_HOUR": "100"
+    "REGISTRATION_GLOBAL_PER_HOUR": "100",
+    "EXTERNAL_MEDIA_ORIGIN": "https://demo.weave-389.workers.dev"
   }
 }
