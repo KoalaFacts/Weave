@@ -4,6 +4,7 @@ import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, 
 import { maxAgentsPerHuman, requireReadable, writesRefused } from './humans.ts';
 import { rejectKeyRequest } from './key-requests.ts';
 import { revokeGrantIn } from './client-grants.ts';
+import { confirmExternalAction, pendingForOwner, rejectExternalAction, type OwnerExternalAction } from './external-actions.ts';
 import { issueRecoveryCode } from './recovery-codes.ts';
 import { apiTime, nowUtc } from './time.ts';
 
@@ -22,16 +23,18 @@ export type OwnerAddress = {addressId: string; label: string | null; isPublic: b
 /** `revokedGrantIds` are grants revoked in the last 30 days, for the authorization server's token clean-up retry; never rendered. */
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[];
     grants: OwnerGrant[]; addresses: OwnerAddress[]; revokedGrantIds: string[]};
-export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]};
+/** `externalActions` are the pending governed actions of the human's agents, each confirmed by its `planDigest`. */
+export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]; externalActions: OwnerExternalAction[]};
 
 export type OwnerAction = {humanId: string; authAt: number} & (
     | {kind: 'confirm-binding'; requestId: string; keysDigest: string}
-    | {kind: 'reject-binding' | 'confirm-key' | 'reject-key'; requestId: string}
+    | {kind: 'confirm-action'; requestId: string; planDigest: string}
+    | {kind: 'reject-binding' | 'confirm-key' | 'reject-key' | 'reject-action'; requestId: string}
     | {kind: 'revoke-key'; agentId: string; kid: string}
     | {kind: 'issue-recovery-code'; agentId: string}
     | {kind: 'revoke-grant'; grantId: string});
 export type OwnerFailureReason = 'stale-authentication' | 'frozen' | 'not-found' | 'not-pending' | 'expired' | 'agent-limit' | 'already-owned' | 'key-in-use'
-    | 'key-limit' | 'endorser-revoked' | 'requesting-key-revoked' | 'keys-changed' | 'unavailable';
+    | 'key-limit' | 'endorser-revoked' | 'requesting-key-revoked' | 'keys-changed' | 'plan-changed' | 'unavailable';
 export type OwnerFailure = {ok: false; reason: OwnerFailureReason};
 /** What the human-side functions of the owning modules return; `ownerAction` adds the recovery code variant. */
 export type OwnerDecision = {ok: true} | OwnerFailure;
@@ -43,7 +46,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const grantIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const kidPattern = /^[A-Za-z0-9_-]{43}$/;
 const digestPattern = /^[A-Za-z0-9_-]{43}$/;
-const destructive = new Set<string>(['confirm-binding', 'confirm-key', 'revoke-key', 'issue-recovery-code']);
+const destructive = new Set<string>(['confirm-binding', 'confirm-key', 'revoke-key', 'issue-recovery-code', 'confirm-action']);
 const notFound: OwnerFailure = {ok: false, reason: 'not-found'};
 const unavailable: OwnerFailure = {ok: false, reason: 'unavailable'};
 
@@ -54,7 +57,7 @@ const placeholders = (values: unknown[]) => values.map(() => '?').join(',');
 /** Pending requests and the keys of the human's agents. An unknown human sees nothing; a frozen one sees only that. */
 export async function ownerOverview(env: Env, humanId: string, clock: () => bigint = nowUtc): Promise<OwnerOverview> {
     requireReadable(env);
-    const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: []};
+    const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: [], externalActions: []};
     if (typeof humanId !== 'string' || !uuidPattern.test(humanId)) return empty;
     return atomic(env.db, async tx => {
         const nowTicks = clock(), now = nowTicks.toString();
@@ -95,9 +98,11 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
             bindingRequests.push({requestId: row.request_id, agentId: row.account_id, displayName: row.display_name, requestingKid: row.kid, liveKeys,
                 keysDigest: await liveKeysDigest(liveKeys.map(key => key.kid)), createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!});
         }
+        const externalActions = await pendingForOwner(tx, ownedIds, nowTicks);
         return {
             frozen: false as const,
             bindingRequests,
+            externalActions,
             agents: owned.map(agent => ({agentId: agent.account_id, displayName: agent.display_name,
                 keys: keys.filter(key => key.account_id === agent.account_id).map(ownerKey),
                 keyRequests: requests.filter(row => row.account_id === agent.account_id).map(row => ({requestId: row.request_id, kid: row.kid, label: row.label,
@@ -118,7 +123,8 @@ function validShape(input: unknown): OwnerAction | null {
     if (!uuid(action.humanId) || typeof action.authAt !== 'number' || !Number.isSafeInteger(action.authAt)) return null;
     switch (action.kind) {
         case 'confirm-binding': return uuid(action.requestId) && typeof action.keysDigest === 'string' && digestPattern.test(action.keysDigest) ? input as OwnerAction : null;
-        case 'reject-binding': case 'confirm-key': case 'reject-key': return uuid(action.requestId) ? input as OwnerAction : null;
+        case 'confirm-action': return uuid(action.requestId) && typeof action.planDigest === 'string' && digestPattern.test(action.planDigest) ? input as OwnerAction : null;
+        case 'reject-binding': case 'confirm-key': case 'reject-key': case 'reject-action': return uuid(action.requestId) ? input as OwnerAction : null;
         case 'revoke-key': return uuid(action.agentId) && typeof action.kid === 'string' && kidPattern.test(action.kid) ? input as OwnerAction : null;
         case 'issue-recovery-code': return uuid(action.agentId) ? input as OwnerAction : null;
         case 'revoke-grant': return typeof action.grantId === 'string' && grantIdPattern.test(action.grantId) ? input as OwnerAction : null;
@@ -137,6 +143,8 @@ async function decide(tx: Transaction, input: DecidedAction, at: bigint): Promis
         case 'reject-binding': return rejectBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
         case 'confirm-key': return confirmKeyRequest(tx, input.humanId, input.requestId, at);
         case 'reject-key': return rejectKeyRequest(tx, input.humanId, input.requestId, at);
+        case 'confirm-action': return confirmExternalAction(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.planDigest, at);
+        case 'reject-action': return rejectExternalAction(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
         case 'revoke-key': return revokeKeyForOwner(tx, input.humanId, input.agentId, input.kid, at);
         // A protective action: no re-authentication window. The worst a stolen session does is disconnect the owner's own clients.
         case 'revoke-grant': return revokeGrantIn(tx, input.humanId, input.grantId);

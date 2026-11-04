@@ -15,12 +15,13 @@ test("readOwnerAction_RoundTrip_ReturnsAction",async()=>{
   const actions:OwnerFormAction[]=[
     {kind:"confirm-binding",requestId:randomUUID(),keysDigest:randomBytes(32).toString("base64url")},{kind:"reject-binding",requestId:randomUUID()},
     {kind:"confirm-key",requestId:randomUUID()},{kind:"reject-key",requestId:randomUUID()},
-    {kind:"revoke-key",agentId,kid:randomBytes(32).toString("base64url")},{kind:"issue-recovery-code",agentId}];
+    {kind:"revoke-key",agentId,kid:randomBytes(32).toString("base64url")},{kind:"issue-recovery-code",agentId},
+    {kind:"confirm-action",requestId:randomUUID(),planDigest:randomBytes(32).toString("base64url")},{kind:"reject-action",requestId:randomUUID()}];
   for(const action of actions){
     const token=await ownerActionToken(key,humanId,action,now);
     assert.deepEqual(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now+1000),action);
   }
-  assert.deepEqual([...destructiveKinds].sort(),["confirm-binding","confirm-key","issue-recovery-code","revoke-key"]);
+  assert.deepEqual([...destructiveKinds].sort(),["confirm-action","confirm-binding","confirm-key","issue-recovery-code","revoke-key"]);
 });
 
 test("readOwnerAction_RevokeGrant_RoundTripNotDestructive",async()=>{

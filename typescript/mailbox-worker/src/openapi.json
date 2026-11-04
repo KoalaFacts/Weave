@@ -440,6 +440,143 @@
         }
       }
     },
+    "/v1/external-actions": {
+      "post": {
+        "operationId": "proposeExternalAction",
+        "summary": "Propose a governed external action",
+        "description": "Records a pending plan for the agent's human owner to approve on the account page. Nothing is sent to the provider. The owner confirms the exact plan: provider and contract revision, operation, full content, credential reference and revision, and the verified target account. The plan expires 1 hour after creation, for approval and execution together. At most 20 pending or approved actions per agent (429 capacity). Retrying creates another pending plan, which still needs its own approval.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalActionSubmission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalActionView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/fieldInvalid"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "409": {
+            "$ref": "#/components/responses/externalActionConflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
+    "/v1/external-actions/{actionId}": {
+      "get": {
+        "operationId": "getExternalAction",
+        "summary": "Read this agent's external action",
+        "description": "Another agent's action is 404, the same as a missing one.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/externalActionIdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalActionView"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
+    "/v1/external-actions/{actionId}/execute": {
+      "post": {
+        "operationId": "executeExternalAction",
+        "summary": "Execute an approved external action once",
+        "description": "Re-checks the approved plan, commits dispatching, then calls the provider once and records completed, failed or unknown. A plan whose owner, credential revision, target or provider contract changed becomes failed with nothing sent. An action in any other state, including one already dispatched, is returned unchanged: this call never sends twice. The approval adds no authority; the agent's current key is still required. No request body is read.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/externalActionIdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalActionView"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
     "/v1/key-requests": {
       "post": {
         "operationId": "redeemRecoveryCode",
@@ -2393,6 +2530,16 @@
           "pattern": "^[A-Za-z0-9_-]{43}$",
           "description": "RFC 7638 thumbprint of an Ed25519 public key."
         }
+      },
+      "externalActionIdPath": {
+        "name": "actionId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
       }
     },
     "responses": {
@@ -2842,6 +2989,24 @@
           "application/problem+json": {
             "schema": {
               "$ref": "#/components/schemas/fieldProblem"
+            }
+          }
+        }
+      },
+      "externalActionConflict": {
+        "description": "conflict: external action refusal; reason explains which rule applied.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/externalActionConflict"
             }
           }
         }
@@ -5049,6 +5214,199 @@
           "error"
         ],
         "description": "RFC 6749 section 5.2 token error."
+      },
+      "ExternalActionSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "credentialRef",
+          "operation",
+          "content"
+        ],
+        "properties": {
+          "credentialRef": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,64}$",
+            "description": "A live credential of this agent. The target account is the one the credential's provider verified, never one the agent supplies."
+          },
+          "operation": {
+            "type": "string",
+            "description": "An operation the credential's provider supports, e.g. publish_text."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 3000,
+            "description": "The full content to publish, shown to the owner verbatim. Must not be blank."
+          }
+        }
+      },
+      "ExternalActionView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actionId",
+          "provider",
+          "operation",
+          "content",
+          "credentialRef",
+          "credentialRevision",
+          "targetAccount",
+          "status",
+          "createdAt",
+          "expiresAt",
+          "decidedAt",
+          "dispatchedAt",
+          "completedAt",
+          "receipt",
+          "failure"
+        ],
+        "properties": {
+          "actionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "credentialRef": {
+            "type": "string"
+          },
+          "credentialRevision": {
+            "type": "string",
+            "description": "The credential revision the plan is bound to."
+          },
+          "targetAccount": {
+            "type": "string",
+            "description": "The provider-verified account the action acts as."
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "expired",
+              "dispatching",
+              "completed",
+              "failed",
+              "unknown"
+            ],
+            "description": "pending waits for the owner; approved may be executed until expiresAt; pending or approved past expiresAt reads as expired. dispatching was committed before the provider call and its outcome is not recorded yet; unknown means the provider outcome is unconfirmed. Neither is ever dispatched again: read the provider to learn what happened. failed with a null dispatchedAt sent nothing."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+            "description": "UTC timestamp ending in Z."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+            "description": "UTC timestamp ending in Z."
+          },
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "UTC timestamp ending in Z."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dispatchedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "UTC timestamp ending in Z."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "UTC timestamp ending in Z."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The provider's external ID when completed."
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "credential-changed, owner-changed, owner-frozen or plan-changed: the plan no longer held and nothing was sent. provider-rejected: the provider confirmed nothing happened. outcome-unknown: see status unknown."
+          }
+        }
+      },
+      "externalActionConflict": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "title",
+          "code",
+          "field",
+          "reason"
+        ],
+        "properties": {
+          "status": {
+            "const": 409
+          },
+          "title": {
+            "const": "State conflict"
+          },
+          "code": {
+            "const": "conflict"
+          },
+          "field": {
+            "const": "action"
+          },
+          "reason": {
+            "enum": [
+              "unowned-agent",
+              "provider-unavailable"
+            ]
+          }
+        },
+        "description": "unowned-agent: only an agent with a human owner can propose an action, because the owner approves it. provider-unavailable: the credential's provider is not available on this server."
       }
     }
   },

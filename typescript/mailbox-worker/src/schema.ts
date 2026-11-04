@@ -95,6 +95,55 @@ export const bindingRequests = sqliteTable("binding_requests", {
     check("binding_requests_decision",sql`(status='pending')=(decided_at IS NULL)`)
 ]);
 
+// A credential an owned agent may act through for governed external actions. The connect flow records the
+// provider-verified target account; every rotation, re-authorization or replacement writes a new revision.
+export const externalCredentials = sqliteTable("external_credentials", {
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    credential_ref: text("credential_ref").notNull(),
+    provider: text("provider").notNull(),
+    revision: text("revision").notNull(),
+    target_account: text("target_account").notNull(),
+    target_display: text("target_display").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+    updated_at: exactInteger("updated_at").notNull(),
+    revoked_at: exactInteger("revoked_at"),
+}, t => [
+    primaryKey({columns:[t.account_id, t.credential_ref]}),
+    check("external_credentials_ref",sql`length(credential_ref) BETWEEN 1 AND 64`),
+    check("external_credentials_revision",sql`length(revision) BETWEEN 1 AND 64`)
+]);
+
+// One governed external effect: approved by the agent's owner for an exact plan, dispatched at most once.
+// 'dispatching' is committed before the provider is called and stays when its outcome was never recorded.
+export const externalActions = sqliteTable("external_actions", {
+    action_id: text("action_id").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    provider: text("provider").notNull(),
+    contract_revision: text("contract_revision").notNull(),
+    operation: text("operation").notNull(),
+    content: text("content").notNull(),
+    credential_ref: text("credential_ref").notNull(),
+    credential_revision: text("credential_revision").notNull(),
+    target_account: text("target_account").notNull(),
+    plan_digest: text("plan_digest").notNull(),
+    status: text("status").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+    expires_at: exactInteger("expires_at").notNull(),
+    updated_at: exactInteger("updated_at").notNull(),
+    decided_at: exactInteger("decided_at"),
+    decided_by: text("decided_by").references(() => humans.human_id, {onDelete:"restrict"}),
+    dispatched_at: exactInteger("dispatched_at"),
+    completed_at: exactInteger("completed_at"),
+    receipt: text("receipt"),
+    failure: text("failure"),
+}, t => [
+    index("external_actions_account").on(t.account_id, t.status, t.created_at),
+    check("external_actions_status",sql`status IN ('pending','approved','rejected','dispatching','completed','failed','unknown')`),
+    check("external_actions_expiry",sql`expires_at>created_at`),
+    check("external_actions_decision",sql`(status='pending')=(decided_at IS NULL) AND (decided_at IS NULL)=(decided_by IS NULL)`),
+    check("external_actions_dispatch",sql`(status IN ('dispatching','completed','unknown'))<=(dispatched_at IS NOT NULL)`)
+]);
+
 // A key added to a human-owned agent by one of its live keys, held until the owner confirms it.
 export const keyRequests = sqliteTable("key_requests", {
     request_id: text("request_id").notNull().primaryKey(),

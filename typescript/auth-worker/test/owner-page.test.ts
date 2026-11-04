@@ -9,7 +9,7 @@ const now=1_800_000_000_000;
 const kid=()=>randomBytes(32).toString("base64url");
 const human:HumanSession={humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now};
 const iso=(ms:number)=>new Date(ms).toISOString();
-const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],...over});
+const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],externalActions:[],...over});
 const html=(response:Response)=>response.text();
 
 test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
@@ -33,7 +33,7 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   assert.ok(body.includes("still in its 24 h cooling window"));
   assert.ok(body.includes("Signed in as @alice"));
   assert.ok(body.includes('value="tok-confirm"')&&body.includes('value="tok-reject"'));
-  assert.ok(body.includes("Confirming, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes"));
+  assert.ok(body.includes("Confirming, approving an action, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes"));
   assert.ok(body.includes("Revoking a connected client's access does not."));
 });
 
@@ -83,7 +83,7 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,17);
+  assert.equal(Object.keys(ownerResultText).length,18);
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-pending",now))).includes("Access is revoked; token clean-up will be retried on your next visit."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-complete",now))).includes("Access is revoked and token clean-up is complete."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"form-expired",now))).includes("This page expired. Reload it and try again."));
@@ -115,4 +115,21 @@ test("recoveryCodePage_ShowsCodeNoStoreAndRedeemInstructions",async()=>{
   assert.equal(response.headers.get("cache-control"),"no-store");
   const body=await html(response);
   assert.ok(body.includes("code&#60;&#62;1")&&body.includes("/v1/key-requests")&&body.includes("DPoP")&&body.includes("2026-11-01T00:10:00.000Z"));
+});
+
+test("ownerPage_PendingAction_ShowsEscapedContentVerifiedAccountAndBoundForms",async()=>{
+  const actionId=randomUUID(),agentId=randomUUID(),planDigest=kid();
+  const overview=base({agents:[agent({agentId,displayName:"Publisher"})],externalActions:[{actionId,agentId,provider:"test-http",operation:"publish_text",
+    content:'Episode 12\n<script>alert(1)</script>',credentialRef:"linkedin-main",credentialRevision:"rev-7",targetAccount:"urn:li:person:alpha",
+    targetDisplay:"Desk <b>Alpha</b>",planDigest,createdAt:iso(now),expiresAt:iso(now+3_600_000)}]});
+  const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now);
+  assert.ok(tokens.has("confirm-action:"+actionId)&&tokens.has("reject-action:"+actionId));
+  const body=await html(ownerPage(overview,human,tokens,null,now));
+  assert.ok(!body.includes("<script>")&&!body.includes("<b>"),"agent and provider text must be escaped");
+  assert.ok(body.includes("<pre>Episode 12\n&#60;script&#62;alert(1)&#60;/script&#62;</pre>"));
+  assert.ok(body.includes("As Desk &#60;b&#62;Alpha&#60;/b&#62; (<code>urn:li:person:alpha</code>), verified by test-http; credential <code>linkedin-main@rev-7</code>"));
+  assert.ok(body.includes("Publisher (self-reported, not verified) wants to publish_text on test-http"));
+  assert.ok(body.includes("Approve and allow sending once")&&body.includes('value="'+tokens.get("confirm-action:"+actionId)+'"'));
+  const none=await html(ownerPage(base(),human,new Map(),null,now));
+  assert.ok(none.includes("No agent is waiting for an action to be approved."));
 });

@@ -30,6 +30,8 @@ export interface Env {
     REGISTRATION_MAX_ACCOUNTS: string;
     REGISTRATION_PER_IP_PER_HOUR: string;
     REGISTRATION_GLOBAL_PER_HOUR: string;
+    // Enables the test-only external action provider. Never set in a deployed configuration.
+    EXTERNAL_ACTION_TEST_ENDPOINT?: string;
 }
 export interface RecordRow { seq: string; kind: string; owner: string; id: string; data: string; }
 export class Transaction {

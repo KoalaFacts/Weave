@@ -105,8 +105,8 @@ test('overview_ExpiredRequestAndUnknownHuman_Empty', async () => {
         const {requestId} = await requested(h, '555');
         const id = await human(h, '555');
         await expireNow(h, 'binding_requests', requestId);
-        assert.deepEqual(await ownerOverview(environment(h), id), {frozen: false, bindingRequests: [], agents: []});
-        assert.deepEqual(await ownerOverview(environment(h), crypto.randomUUID()), {frozen: false, bindingRequests: [], agents: []});
+        assert.deepEqual(await ownerOverview(environment(h), id), {frozen: false, bindingRequests: [], agents: [], externalActions: []});
+        assert.deepEqual(await ownerOverview(environment(h), crypto.randomUUID()), {frozen: false, bindingRequests: [], agents: [], externalActions: []});
     } finally { await h.close(); }
 });
 

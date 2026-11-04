@@ -18,6 +18,7 @@ import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
 import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
+import { executeExternalAction, getExternalAction, proposeExternalAction } from './external-actions.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
 import { recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
 import { putCard } from './cards';
@@ -117,6 +118,13 @@ export default {
                 const requestId = /^\/v1\/binding-requests\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(url.pathname)?.[1];
                 if (method === 'GET' && requestId !== undefined) return json(await getBindingRequest(env,account,requestId));
                 if (method === 'DELETE' && requestId !== undefined) return json(await cancelBindingRequest(env,account,requestId));
+                fail(404,'unavailable');
+            }
+            if (url.pathname === '/v1/external-actions' || url.pathname.startsWith('/v1/external-actions/')) {
+                if (method === 'POST' && url.pathname === '/v1/external-actions') return json(await proposeExternalAction(env,account,await body(request)));
+                const action = /^\/v1\/external-actions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/execute)?$/.exec(url.pathname);
+                if (method === 'GET' && action && !action[2]) return json(await getExternalAction(env,account,action[1]));
+                if (method === 'POST' && action && action[2]) return json(await executeExternalAction(env,account,action[1]));
                 fail(404,'unavailable');
             }
             if (url.pathname === '/v1/addresses' || /^\/v1\/addresses\/[^/]+$/.test(url.pathname)) {
