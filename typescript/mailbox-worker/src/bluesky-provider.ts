@@ -87,13 +87,27 @@ export function blueskyPlan(content: string): BlueskyPlan | null {
     return {text, media: files};
 }
 
+const closers: Record<string, string> = {')': '(', ']': '[', '}': '{'};
+/** A link without the sentence punctuation after it. A closing bracket stays when the link opened it, as in Function_(mathematics). */
+function trimLink(raw: string): string {
+    let url = raw;
+    while (url.length > 0) {
+        const last = url[url.length - 1];
+        const opener = closers[last];
+        if (opener !== undefined && url.split(opener).length > url.split(last).length - 1) break;
+        if (opener === undefined && !".,;:!?'\"".includes(last)) break;
+        url = url.slice(0, -1);
+    }
+    return url;
+}
+
 type Facet = {index: {byteStart: number; byteEnd: number}; features: Record<string, string>[]};
 /** Clickable links and hashtags: Bluesky renders plain text unless byte ranges mark them. Mentions are left as text. */
 export function facets(text: string): Facet[] {
     const encoder = new TextEncoder(), result: Facet[] = [];
     const byteIndex = (index: number) => encoder.encode(text.slice(0, index)).byteLength;
     for (const match of text.matchAll(/https?:\/\/[^\s<>"]+/g)) {
-        const url = match[0].replace(/[.,;:!?)\]}'"]+$/, '');
+        const url = trimLink(match[0]);
         if (!URL.canParse(url)) continue;
         const start = match.index!;
         result.push({index: {byteStart: byteIndex(start), byteEnd: byteIndex(start + url.length)}, features: [{$type: 'app.bsky.richtext.facet#link', uri: url}]});

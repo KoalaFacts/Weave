@@ -122,6 +122,13 @@ test('facets_LinksAndTags_MarkedAtUtf8ByteOffsets', () => {
         {$type: 'app.bsky.richtext.facet#tag', tag: 'HSC'}, {$type: 'app.bsky.richtext.facet#tag', tag: 'beats'}]);
 });
 
+test('facets_LinkEndingInItsOwnBracket_KeepsTheBracket', () => {
+    const uri = (text: string) => facets(text).map(f => f.features[0].uri);
+    assert.deepEqual(uri('See https://en.wikipedia.org/wiki/Function_(mathematics).'), ['https://en.wikipedia.org/wiki/Function_(mathematics)']);
+    assert.deepEqual(uri('(see https://example.com/a)'), ['https://example.com/a'], 'a bracket the link did not open is the sentence\'s');
+    assert.deepEqual(uri('[https://example.com/x_(y)]!'), ['https://example.com/x_(y)']);
+});
+
 test('executeBlueskyPost_Text_PostsOnceAsTheVerifiedAccount', () => scenario(async ({h, b, env}) => {
     const {agent, actionId} = await approvedPost(h, env, {text: 'New beat out now https://hscbeats.example #HSC', media: []});
     assert.deepEqual(b.calls, [], 'approval alone sends nothing');

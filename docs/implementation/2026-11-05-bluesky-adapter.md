@@ -39,7 +39,8 @@ Content is JSON `{text, media: [{mediaId, bytes, sha256, alt}]}`:
 `list_my_credentials` describes this format for each Bluesky credential.
 
 Links (`https://...`) and `#tags` become clickable facets at their UTF-8 byte
-offsets. Mentions stay plain text.
+offsets. Trailing sentence punctuation is not part of a link, but a closing bracket the
+link itself opened is (`.../Function_(mathematics)`). Mentions stay plain text.
 
 ## Dispatch
 
