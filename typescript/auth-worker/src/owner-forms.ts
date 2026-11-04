@@ -8,17 +8,20 @@ export type OwnerFormAction=
   |{kind:"reject-binding"|"confirm-key"|"reject-key"|"reject-action";requestId:string}
   |{kind:"revoke-key";agentId:string;kid:string}
   |{kind:"issue-recovery-code";agentId:string}
-  |{kind:"revoke-grant";grantId:string};
+  |{kind:"revoke-grant";grantId:string}
+  |{kind:"connect-youtube";agentId:string}
+  |{kind:"revoke-credential";agentId:string;credentialRef:string};
 /** Kinds that need a fresh GitHub authentication before they are offered or applied. Revoking a client's grant is protective and does not. */
 export const destructiveKinds:ReadonlySet<OwnerFormAction["kind"]>=
-  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action"]);
+  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action","connect-youtube"]);
 
 const tokenSeconds=600;
 const maxBodyBytes=4096;
 const memberSets:Record<OwnerFormAction["kind"],readonly string[]>={
   "confirm-binding":["requestId","keysDigest"],"reject-binding":["requestId"],"confirm-key":["requestId"],"reject-key":["requestId"],
   "confirm-action":["requestId","planDigest"],"reject-action":["requestId"],
-  "revoke-key":["agentId","kid"],"issue-recovery-code":["agentId"],"revoke-grant":["grantId"]};
+  "revoke-key":["agentId","kid"],"issue-recovery-code":["agentId"],"revoke-grant":["grantId"],
+  "connect-youtube":["agentId"],"revoke-credential":["agentId","credentialRef"]};
 
 /** A token bound to one human and one exact action; it lives as long as the re-authentication window. */
 export const ownerActionToken=(key:string,humanId:string,action:OwnerFormAction,now:number):Promise<string>=>

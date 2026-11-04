@@ -12,8 +12,9 @@ import {freshAuthentication,readHumanSession,validSigningKey} from "./human-sess
 import {readOwnerAction,destructiveKinds} from "./owner-forms.ts";
 import {ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
 import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
+import {beginYoutubeConnect,completeYoutubeConnect,youtubeCallbackPath,type YoutubeConnectEnv} from "./youtube-connect.ts";
 export {ConsentNonce} from "./nonce-do.ts";
-interface Env extends GithubLoginEnv,RegistrationLimitEnv {
+interface Env extends GithubLoginEnv,RegistrationLimitEnv,YoutubeConnectEnv {
   OAUTH_KV:KVNamespace;
   CONSENT_NONCES:DurableObjectNamespace;
   OAUTH_ISSUER:string;
@@ -265,7 +266,7 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
     const cleaned=!overview.frozen&&await revokeRevokedSdkGrants(api,overview.agents);
     const result=url.searchParams.get("result");
     let tokens:Map<string,string>;
-    try{tokens=await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now);}
+    try{tokens=await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now,!!env.GOOGLE_CLIENT_ID);}
     catch{
       console.error(failureLog.formSigning);
       return messagePage(503,"Temporarily unavailable","Weave cannot show your agents right now. Try again later.");
@@ -278,6 +279,8 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
   if(!action)return accountRedirect("not-found");
   if(destructiveKinds.has(action.kind)&&!freshAuthentication(session,now))
     return beginGithubLogin(env,accountUrl,now,{reauthenticate:{login:session.login}});
+  // Connecting a credential leaves for the provider; the mailbox re-checks ownership and the sign-in window on the way back.
+  if(action.kind==="connect-youtube")return beginYoutubeConnect(env,session,action.agentId,now);
   let result:OwnerActionResult;
   try{result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});}
   catch{return directoryUnavailable();}
@@ -296,6 +299,11 @@ export default class AuthServer extends WorkerEntrypoint<Env>{
     if(path==="/account")return account(req,this.env,server.getOAuthApi(this.env));
     if(path==="/login/github/callback")return req.method==="GET"?completeGithubLogin(this.env,req,Date.now())
       :new Response("Method not allowed",{status:405,headers:{Allow:"GET","Cache-Control":"no-store"}});
+    if(path===youtubeCallbackPath){
+      if(req.method!=="GET")return new Response("Method not allowed",{status:405,headers:{Allow:"GET","Cache-Control":"no-store"}});
+      const now=Date.now();
+      return completeYoutubeConnect(this.env,req,await readHumanSession(this.env.HUMAN_SESSION_KEY,req,now),now);
+    }
     if(path==="/register"){
       const refused=await limitRegistration(this.env,req);
       if(refused)return refused;

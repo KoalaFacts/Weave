@@ -45,7 +45,24 @@ async function fakeGithub(request:Request):Promise<Response>{
 // Fake external action provider for the mailbox worker: completes every post and records it.
 const providerEndpoint="https://provider.example/post";
 const providerCalls:{actionId:string;content:string;targetAccount:string}[]=[];
+// Fake Google for connecting YouTube: the code "yt-<n>" yields a token whose channel is "UC" + 22 copies of n.
+const youtubeScope="https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
+async function fakeGoogle(request:Request):Promise<Response|null>{
+  if(request.method==="POST"&&request.url==="https://oauth2.googleapis.com/token"){
+    const form=new URLSearchParams(await request.text());
+    const n=/^yt-([0-9])$/.exec(form.get("code")??"")?.[1];
+    if(form.get("client_secret")!=="google-test-secret"||!n||!form.get("code_verifier"))return Response.json({error:"invalid_grant"},{status:400});
+    return Response.json({access_token:"ya29.test-"+n,refresh_token:"1//refresh-"+n,scope:youtubeScope,token_type:"Bearer"});
+  }
+  if(request.method==="GET"&&request.url.startsWith("https://www.googleapis.com/youtube/v3/channels?")){
+    const n=/^Bearer ya29\.test-([0-9])$/.exec(request.headers.get("authorization")??"")?.[1];
+    return n?Response.json({items:[{id:"UC"+n.repeat(22),snippet:{title:"Channel "+n}}]}):new Response("{}",{status:401,headers:{"Content-Type":"application/json"}});
+  }
+  return null;
+}
 async function mailboxOutbound(request:Request):Promise<Response>{
+  const google=await fakeGoogle(request);
+  if(google)return google;
   if(request.method!=="POST"||request.url!==providerEndpoint)return new Response("Outbound denied",{status:403});
   const call=await request.json() as {actionId:string;content:string;targetAccount:string};
   providerCalls.push(call);
@@ -70,6 +87,7 @@ function options(storage:string,authEnv:Record<string,unknown>={}){
           GITHUB_CLIENT_ID:{type:"text",value:"Iv1.test-client-id"},
           GITHUB_CLIENT_SECRET:{type:"text",value:githubClientSecret},
           HUMAN_SESSION_KEY:{type:"text",value:sessionKey},
+          GOOGLE_CLIENT_ID:{type:"text",value:"weave-test.apps.googleusercontent.com"},
           MAILBOX:{type:"worker",worker:mailboxName,exportName:"HumanDirectory"},
           ...authEnv
         },
@@ -88,7 +106,10 @@ function options(storage:string,authEnv:Record<string,unknown>={}){
           REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"1000"},
           CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
           CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
-          EXTERNAL_ACTION_TEST_ENDPOINT:{type:"text",value:providerEndpoint}
+          EXTERNAL_ACTION_TEST_ENDPOINT:{type:"text",value:providerEndpoint},
+          GOOGLE_CLIENT_ID:{type:"text",value:"weave-test.apps.googleusercontent.com"},
+          GOOGLE_CLIENT_SECRET:{type:"text",value:"google-test-secret"},
+          EXTERNAL_CREDENTIAL_KEY:{type:"text",value:randomBytes(32).toString("base64url")}
         }
       }
     }]
@@ -504,4 +525,53 @@ test("account_ApproveExternalAction_CredentialRotatedSincePage_PlanChanged",{tim
   assert.equal(result(response),"plan-changed");
   assert.equal((await executeAction(agent,action.actionId)).status,"pending");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
+});
+
+/** Starts connecting YouTube from the owner page and returns Google's redirect, the state and the pending-connection cookie. */
+async function beginConnect(human:Human,agent:Agent){
+  const html=await (await account(await sessionCookie(human))).text();
+  const found=forms(html).filter(x=>x.label==="Connect YouTube");
+  assert.ok(found.length>=1,"the page offers Connect YouTube");
+  const response=await postAccount(found[found.length-1].token,await sessionCookie(human));
+  assert.equal(response.status,302);
+  const location=new URL(response.headers.get("location")!);
+  const cookie=response.headers.getSetCookie().find(x=>x.startsWith("__Host-weave_connect="))!.split(";")[0];
+  return {location,state:location.searchParams.get("state")!,cookie,agent};
+}
+const callback=async(human:Human,state:string,code:string,cookie:string)=>shared.mf.dispatchFetch(issuer+"/connect/youtube/callback?"+
+  new URLSearchParams({state,code}),{redirect:"manual",headers:{Cookie:(await sessionCookie(human))+"; "+cookie}});
+
+test("connectYoutube_OwnerConsents_StoresVerifiedChannelAndPageShowsIt",{timeout:90_000},async()=>{
+  const human=await seedHuman(),agent=await ownedAgent(human,"connector");
+  const {location,state,cookie}=await beginConnect(human,agent);
+  assert.equal(location.origin+location.pathname,"https://accounts.google.com/o/oauth2/v2/auth");
+  assert.equal(location.searchParams.get("redirect_uri"),issuer+"/connect/youtube/callback");
+  assert.equal(location.searchParams.get("access_type"),"offline");
+  assert.equal(location.searchParams.get("code_challenge_method"),"S256");
+  assert.equal(location.searchParams.get("scope"),youtubeScope);
+  const done=await callback(human,state,"yt-4",cookie);
+  assert.equal(done.status,303);
+  assert.equal(done.headers.get("location"),"/account?result=connected");
+  const stored=await (await db()).prepare("SELECT target_account,target_display,secret IS NOT NULL sealed FROM external_credentials WHERE account_id=?")
+    .bind(agent.accountId).first<{target_account:string;target_display:string;sealed:number}>();
+  assert.deepEqual(stored,{target_account:"UC"+"4".repeat(22),target_display:"Channel 4",sealed:1});
+  assert.ok((await (await account(await sessionCookie(human))).text()).includes("youtube as Channel 4 (<code>UC"+"4".repeat(22)+"</code>)"));
+});
+
+test("connectYoutube_WrongStateOrAnotherHuman_FormExpiredNothingStored",{timeout:90_000},async()=>{
+  const human=await seedHuman(),other=await seedHuman(),agent=await ownedAgent(human,"connector");
+  const {state,cookie}=await beginConnect(human,agent);
+  assert.equal(result(await callback(human,"x".repeat(43),"yt-5",cookie)),"form-expired");
+  assert.equal(result(await callback(other,state,"yt-5",cookie)),"form-expired");
+  assert.equal(result(await shared.mf.dispatchFetch(issuer+"/connect/youtube/callback?"+new URLSearchParams({state,error:"access_denied"}),
+    {redirect:"manual",headers:{Cookie:(await sessionCookie(human))+"; "+cookie}})),"connect-cancelled");
+  assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
+});
+
+test("connectYoutube_StaleSession_ReauthenticatesBeforeLeavingForGoogle",{timeout:60_000},async()=>{
+  const human=await seedHuman(),agent=await ownedAgent(human,"connector"),stale=Date.now()-11*60_000;
+  const token=await tokenFor(human,"Connect YouTube",0,stale);
+  const response=await postAccount(token,await sessionCookie(human,stale));
+  assert.equal(new URL(response.headers.get("location")!).origin,"https://github.com");
+  assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
 });

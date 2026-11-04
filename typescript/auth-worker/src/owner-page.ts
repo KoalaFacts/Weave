@@ -1,5 +1,6 @@
 import type {OwnerAddress,OwnerBindingRequest,OwnerGrant,OwnerKey,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import type {OwnerExternalAction} from "../../mailbox-worker/src/external-actions.ts";
+import type {OwnerCredential} from "../../mailbox-worker/src/external-credentials.ts";
 import {freshAuthentication,type HumanSession} from "./human-session.ts";
 import {ownerActionToken} from "./owner-forms.ts";
 
@@ -29,6 +30,12 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "requesting-key-revoked":"The key that made this request has been revoked.",
   "keys-changed":"The agent's keys changed after you opened this page. Review the current keys and confirm again.",
   "plan-changed":"That action or its account changed after you opened this page. Review the current action and approve again.",
+  connected:"Connected. Actions your agent proposes through this account still need your approval.",
+  "connect-cancelled":"Connecting was cancelled; nothing was stored.",
+  "provider-refused":"The provider did not complete the connection; nothing was stored. Try again.",
+  "provider-unavailable":"Connecting this provider is not available on this server.",
+  "missing-scope":"Grant every permission the provider asks for, or the agent cannot post; nothing was stored.",
+  "no-channel":"That Google account has no single YouTube channel to connect. Pick the account or brand channel to post as.",
   "form-expired":"This page expired. Reload it and try again.",
   "cleanup-pending":"Access is revoked; token clean-up will be retried on your next visit.",
   "cleanup-complete":"Access is revoked and token clean-up is complete.",
@@ -87,6 +94,16 @@ function grantsSection(grants:OwnerGrant[],tokens:ReadonlyMap<string,string>):st
     esc(grant.createdAt)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
 }
 
+/** The account each credential acts as is what the provider verified at connect time. */
+function credentialsSection(agentId:string,credentials:OwnerCredential[],tokens:ReadonlyMap<string,string>):string{
+  const connect=form("Connect YouTube","connect-youtube:"+agentId,tokens);
+  const list=credentials.length===0?"<p>No connected accounts.</p>":"<ul>"+credentials.map(credential=>"<li>"+esc(credential.provider)+" as "+
+    esc(credential.targetDisplay)+" (<code>"+esc(credential.targetAccount)+"</code>); credential <code>"+esc(credential.credentialRef)+"@"+
+    esc(credential.revision)+"</code>; connected "+esc(credential.connectedAt)+
+    form("Disconnect","revoke-credential:"+agentId+":"+credential.credentialRef,tokens)+"</li>").join("")+"</ul>";
+  return "<h4>Connected accounts</h4>"+list+connect;
+}
+
 function addressesSection(addresses:OwnerAddress[]):string{
   if(addresses.length===0)return "<h4>Addresses</h4><p>No addresses.</p>";
   return "<h4>Addresses</h4><ul>"+addresses.map(address=>"<li><code>"+esc(address.addressId)+"</code>"+
@@ -107,7 +124,7 @@ function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:Read
       "endorsed by "+fingerprint(request.endorsedBy)+
       "; expires "+esc(request.expiresAt)+form("Confirm","confirm-key:"+request.requestId,tokens)+
       form("Reject","reject-key:"+request.requestId,tokens)+"</li>").join("")+"</ul>"),
-    grantsSection(agent.grants,tokens),addressesSection(agent.addresses),
+    grantsSection(agent.grants,tokens),addressesSection(agent.addresses),credentialsSection(agent.agentId,agent.credentials,tokens),
     "<h4>Lost every key?</h4><p>A recovery code lets the agent add a new key without any existing key. It replaces any earlier code.</p>",
     form("Issue recovery code","issue-recovery-code:"+agent.agentId,tokens),"</section>"
   ].join("")).join("");
@@ -120,8 +137,8 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
   if(overview.frozen)return shell("Your Weave agents",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
   const fresh=freshAuthentication(human,now);
   return shell("Your Weave agents",[head,
-    "<p>Confirming, approving an action, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":
-      "Your current sign-in is older, so you will be asked to sign in again first.")+" Revoking a connected client's access does not.</p>",
+    "<p>Confirming, approving an action, connecting an account, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":
+      "Your current sign-in is older, so you will be asked to sign in again first.")+" Revoking a connected client's access or disconnecting an account does not.</p>",
     "<h2>Binding requests</h2>",bindingSection(overview.bindingRequests,tokens,now),
     "<h2>Actions waiting for approval</h2>",actionsSection(overview.externalActions,overview.agents,tokens),
     "<h2>Your agents</h2>",agentSection(overview,tokens)].join(""));
@@ -140,7 +157,8 @@ export function recoveryCodePage(agentId:string,code:string,expiresAt:string):Re
 }
 
 /** One signed token per form the page can render, keyed as `ownerPage` looks them up. */
-export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOverview,now:number):Promise<Map<string,string>>{
+/** `youtube` is whether this server can connect YouTube; without it no connect form is offered. */
+export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOverview,now:number,youtube:boolean):Promise<Map<string,string>>{
   const tokens=new Map<string,string>();
   if(overview.frozen)return tokens;
   const add=async(name:string,action:Parameters<typeof ownerActionToken>[2])=>{tokens.set(name,await ownerActionToken(key,humanId,action,now));};
@@ -162,6 +180,9 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
       await add("reject-key:"+r.requestId,{kind:"reject-key",requestId:r.requestId});
     }
     for(const g of agent.grants)await add("revoke-grant:"+g.grantId,{kind:"revoke-grant",grantId:g.grantId});
+    for(const c of agent.credentials)
+      await add("revoke-credential:"+agent.agentId+":"+c.credentialRef,{kind:"revoke-credential",agentId:agent.agentId,credentialRef:c.credentialRef});
+    if(youtube)await add("connect-youtube:"+agent.agentId,{kind:"connect-youtube",agentId:agent.agentId});
   }
   return tokens;
 }
