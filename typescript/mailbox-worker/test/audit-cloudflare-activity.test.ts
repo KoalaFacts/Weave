@@ -4,7 +4,6 @@ import { inspectCloudflareAudit } from '../scripts/audit-cloudflare-activity.ts'
 
 const account = '0123456789abcdef0123456789abcdef';
 const db = '3ebbd419-be70-423d-8723-61fe5838ed38';
-const origin = 'https://api.cloudflare.com/client/v4/accounts/' + account;
 const metadata = (input: string) => {
     if (input.endsWith('/workers/subdomain'))
         return Response.json({success:true,result:{subdomain:'weave-389'}});
