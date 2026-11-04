@@ -14,7 +14,10 @@ export async function requireMainVerification(
         throw Error('Exact repository, SHA and GitHub Actions read token are required.');
     const evidence:Record<string,string>={};
     for(const workflow of mandatoryWorkflows){
-        const query=new URLSearchParams({event:'push',branch:'main',head_sha:sha,per_page:'20'});
+        // OAuth is path-filtered on push. A successful manual run at this exact
+        // main SHA is an explicit equivalent; other release gates remain push-only.
+        const query=new URLSearchParams({branch:'main',head_sha:sha,per_page:'20'});
+        if(workflow!=='oauth-auth-worker.yml')query.set('event','push');
         const url='https://api.github.com/repos/'+repo+'/actions/workflows/'+workflow+'/runs?'+query;
         let response:Response;
         try{response=await request(url,{method:'GET',redirect:'error',
@@ -28,9 +31,10 @@ export async function requireMainVerification(
             conclusion?:unknown;html_url?:unknown}[]} | null;
         if(!json||!Array.isArray(json.workflow_runs))
             throw Error('Main '+workflow+' returned malformed run history.');
-        const matching=json.workflow_runs.filter(r=>r.head_sha===sha&&r.head_branch==='main'&&r.event==='push');
+        const matching=json.workflow_runs.filter(r=>r.head_sha===sha&&r.head_branch==='main'&&
+            (r.event==='push'||(workflow==='oauth-auth-worker.yml'&&r.event==='workflow_dispatch')));
         const passed=matching.find(r=>r.status==='completed'&&r.conclusion==='success');
-        if(!passed)throw Error('Main '+workflow+' has no successful exact-SHA push run; no issuer deployment.');
+        if(!passed)throw Error('Main '+workflow+' has no successful exact-SHA main verification; no issuer deployment.');
         evidence[workflow]=typeof passed.html_url==='string'?passed.html_url:'';
     }
     return evidence;
