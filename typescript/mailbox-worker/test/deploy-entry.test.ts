@@ -50,3 +50,24 @@ test('issue comment release requires owner identity, #236, exact command and pro
     assert.doesNotMatch(workflow,/contents: write/);
     assert.doesNotMatch(workflow,/CLOUDFLARE_ACCESS_TRIAL_TOKEN/);
 });
+
+test('unrelated issue comments cannot replace a pending protected D1 audit during release',()=>{
+    // GitHub's shared concurrency group permits only one pending member. An
+    // audit command also triggers the deploy workflow (whose job skips), so
+    // that skipped run must not replace the queued read-only inventory job.
+    const workflow=readFileSync(path,'utf8');
+    const top=workflow.split(/^permissions:/m)[0];
+    assert.match(top,/concurrency:\\s*\\n\\s*group:/);
+    for(const requirement of [
+        /github\\.event_name == 'issue_comment'/,
+        /github\\.event\\.issue\\.number != 236/,
+        /github\\.event\\.issue\\.pull_request != null/,
+        /github\\.event\\.comment\\.body != '\\/weave-deploy-demo'/,
+        /github\\.event\\.comment\\.user\\.login != 'ldsenow'/,
+        /github\\.event\\.comment\\.author_association != 'MEMBER'/,
+        /github\\.actor != 'ldsenow'/,
+        /github\\.run_id/,
+        /'deploy-weave-worker-demo'/,
+        /cancel-in-progress: false/,
+    ]) assert.match(top,requirement);
+});
