@@ -37,7 +37,11 @@ test('read-only audit paginates, targets only the existing demo and never return
             return Response.json({success:true,result:[
                 entry('/accounts/'+account+'/d1/database/'+db+'/query'),
                 {...entry('/accounts/'+account+'/workers/scripts/demo/versions'),'resource':{id:'demo',product:'workers'}},
-                entry('/accounts/'+account+'/d1/database/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/query')
+                entry('/accounts/'+account+'/d1/database/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/query'),
+                {...entry('/accounts/'+account+'/d1/database', '2026-11-02T00:04:02Z'),
+                    resource:{id:db,product:'d1'}, action:{time:'2026-11-02T00:04:02Z',type:'create',result:'success'}},
+                {...entry('/accounts/'+account+'/d1/database', '2026-11-02T00:04:03Z'),
+                    resource:{id:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',product:'d1'}}
             ],result_info:{cursor:'private-cursor'}});
         assert.equal(requested.searchParams.get('cursor'),'private-cursor');
         return Response.json({success:true,result:[
@@ -45,16 +49,18 @@ test('read-only audit paginates, targets only the existing demo and never return
                 '2026-10-29T13:50:00Z','GET'),
             entry('/accounts/'+account+'/d1/database/'+db+'/query',
                 '2026-10-27T00:00:00Z','POST'),
+            entry('/accounts/'+account+'/d1/database/'+db+'/query',
+                '2026-11-02T02:00:00.000Z','POST'),
         ],result_info:{}});
     };
     const result=await inspectCloudflareAudit(account,'private-cloudflare-token',request);
     assert.equal(result.status,'complete');
     assert.equal(result.pages,2);
-    assert.equal(result.totalScanned,5);
-    assert.equal(result.matchedD1,2);
+    assert.equal(result.totalScanned,8);
+    assert.equal(result.matchedD1,3);
     assert.equal(result.matchedWorker,1);
-    assert.equal(result.possibleD1Mutations,1);
-    assert.equal(result.events.length,3);
+    assert.equal(result.possibleD1Mutations,2);
+    assert.equal(result.events.length,4);
     assert.equal(result.historicalRowsVerified,false);
     assert.equal(result.migrationPermitted,false);
     assert.equal(calls.length,5);
