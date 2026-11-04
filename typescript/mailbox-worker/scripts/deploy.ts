@@ -144,19 +144,29 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         throw Error('Invalid first-party OAuth bootstrap permission; no mutation attempted.');
     const firstPartyBootstrap=requestedBootstrap==='true';
     if(firstPartyBootstrap){
-        if(authBinding)throw Error('First-party OAuth bootstrap already has a Service Binding; remove the one-time opt-in.');
         const asIssuer='https://weave-auth-demo.weave-389.workers.dev';
         const resource='https://demo.weave-389.workers.dev/mcp';
         const single=(bindings:Binding[],name:string,type:string,value?:string)=>{
             const matches=bindings.filter(binding=>binding?.name===name);
             return matches.length===1&&matches[0].type===type&&(value===undefined||matches[0].text===value);
         };
-        // Stage issuer, resource and AUTH_SERVER together in the maintenance
-        // upload. Installing only issuer/resource on the live Worker would make
-        // OAuth fail closed. The resource Worker holds no shared AS secret.
-        if(['OAUTH_ISSUER','OAUTH_RESOURCE','OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
+        // A previous approved deployment can already have the *exact* fixed
+        // AS binding. Do not deadlock the one-time activation just because that
+        // link was installed earlier; do not adopt arbitrary third-party links.
+        if(authBinding&&(authBinding.type!=='service'||authBinding.service!=='weave-auth-demo'||
+            authBinding.entrypoint!==undefined||!defaultEnvironment(authBinding.environment)))
+            throw Error('First-party OAuth bootstrap already has a Service Binding outside the approved target.');
+        if(authBinding&&(!single(worker.bindings,'OAUTH_ISSUER','plain_text',asIssuer)||
+            !single(worker.bindings,'OAUTH_RESOURCE','plain_text',resource)))
+            throw Error('Existing first-party OAuth issuer/resource differs from approved values; no mutation attempted.');
+        // Stage issuer, resource and AUTH_SERVER together in maintenance when
+        // absent, or preserve the exact existing set. Mixed legacy introspection
+        // credentials are never eligible for this first-party rollout.
+        if((!authBinding&&['OAUTH_ISSUER','OAUTH_RESOURCE']
+                .some(name=>worker.bindings.some(binding=>binding?.name===name)))||
+           ['OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
              'OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
-                .some(name=>worker.bindings.some(binding=>binding?.name===name)))
+                .some(name=>worker.bindings.some(binding=>binding?.name===name))))
             throw Error('Resource OAuth bootstrap secrets are not preapproved; no mutation attempted.');
         const as=await inspect<WorkerSettings>('/workers/scripts/weave-auth-demo/settings','Approved existing OAuth authorization Worker');
         const kv=as.bindings?.filter(binding=>binding?.name==='OAUTH_KV')??[];
@@ -199,7 +209,9 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             throw Error('Approved OAuth issuer lacks the expected authorization-code, CIMD and PKCE metadata; no mutation attempted.');
         // The shipped AS exports `default class AuthServer`, not a named RPC export.
         // Cloudflare's default WorkerEntrypoint is selected by omitting `entrypoint`.
-        authBinding={name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'};
+        // Do not change the previously installed service target or its
+        // environment; the usual setting/readback checks remain mandatory.
+        if(!authBinding)authBinding={name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'};
     }
     const oauthExisting=new Map<string,Binding>();
     if(authBinding){
