@@ -14,6 +14,21 @@ const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const limit = 200;
 const maxPages = 30;
 const maxEvents = 40;
+const maxD1TimelineEvents = 100;
+// Investigate the un-attributed 2026-11-02 migration ledger timestamp.
+// These are fixed bounds, not a user-controlled query over account activity.
+const focusWindowBounds = {
+    since: '2026-11-01T23:57:00Z',
+    before: '2026-11-02T00:16:00Z',
+} as const;
+
+type D1AuditEvent = {
+    time: string;
+    endpoint: 'database' | 'query' | 'restore' | 'bookmark' | 'other';
+    action: 'create' | 'update' | 'delete' | 'view' | 'other';
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'other';
+    outcome: 'success' | 'failure' | 'other';
+};
 
 export interface AuditActivityEvidence {
     source: 'cloudflare-audit-logs-v2';
@@ -35,6 +50,18 @@ export interface AuditActivityEvidence {
         method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'other';
         outcome: 'success' | 'failure' | 'other';
     }>;
+    // Distinct from the first-40 mixed Worker/D1 sample above: every
+    // matched D1 event in the bounded investigation, until the cap.
+    d1Timeline: D1AuditEvent[];
+    d1TimelineTruncated: boolean;
+    focusWindow: {
+        since: typeof focusWindowBounds.since;
+        before: typeof focusWindowBounds.before;
+        matchedD1: number;
+        nonGetCalls: number;
+        events: D1AuditEvent[];
+        truncated: boolean;
+    };
     historicalRowsVerified: false;
     migrationPermitted: false;
 }
@@ -58,6 +85,9 @@ export async function inspectCloudflareAudit(
         status: 'api-error', httpStatus: null, pages: 0, totalScanned: 0,
         matchedD1: 0, matchedWorker: 0, possibleD1Mutations: 0,
         sampleTruncated: false, events: [],
+        d1Timeline: [], d1TimelineTruncated: false,
+        focusWindow: {...focusWindowBounds, matchedD1: 0,
+            nonGetCalls: 0, events: [], truncated: false},
         historicalRowsVerified: false, migrationPermitted: false,
     };
     const get = async (path: string): Promise<Response> =>
@@ -159,7 +189,32 @@ export async function inspectCloudflareAudit(
                 report.matchedD1++;
                 // POST /query may be read-only. This is a candidate, NOT
                 // evidence of a destructive statement or data disappearance.
-                if (method !== 'GET' && method !== 'other') report.possibleD1Mutations++;
+                const nonGet = method !== 'GET' && method !== 'other';
+                if (nonGet) report.possibleD1Mutations++;
+                // Endpoint categories are a strict allowlist; never export
+                // raw URIs, query strings, SQL, actors or resource IDs.
+                const endpoint: D1AuditEvent['endpoint'] =
+                    normalized === d1Prefix || normalized === prefix + '/d1/database'
+                        ? 'database'
+                        : normalized === d1Prefix + '/query' ? 'query'
+                        : normalized === d1Prefix + '/time_travel/restore' ? 'restore'
+                        : normalized === d1Prefix + '/time_travel/bookmark' ? 'bookmark'
+                        : 'other';
+                const event: D1AuditEvent = {
+                    time: new Date(timeMs).toISOString(), endpoint,
+                    action: kind, method, outcome,
+                };
+                if (report.d1Timeline.length < maxD1TimelineEvents)
+                    report.d1Timeline.push(event);
+                else report.d1TimelineTruncated = true;
+                if (timeMs >= Date.parse(focusWindowBounds.since)
+                    && timeMs < Date.parse(focusWindowBounds.before)) {
+                    report.focusWindow.matchedD1++;
+                    if (nonGet) report.focusWindow.nonGetCalls++;
+                    if (report.focusWindow.events.length < maxD1TimelineEvents)
+                        report.focusWindow.events.push(event);
+                    else report.focusWindow.truncated = true;
+                }
             } else report.matchedWorker++;
             if (report.events.length < maxEvents) {
                 report.events.push({
