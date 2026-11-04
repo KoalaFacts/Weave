@@ -1,0 +1,83 @@
+# Worker governed external actions: owner-approved plan, at-most-once dispatch
+
+## Scope
+
+The first governed external effect in the TypeScript Worker
+(`typescript/mailbox-worker`). An owned agent proposes one action through one of its
+credentials, the agent's human owner approves that exact plan, and the agent then
+executes it once. It follows the existing binding-request pattern (agent request,
+owner decision through the `HumanDirectory` RPC with a digest of what the owner was
+shown) and carries over the [#276](https://github.com/KoalaFacts/Weave/issues/276)
+acceptance list: no provider call before approval, exactly one after, and every
+meaningful change after approval refuses dispatch.
+
+Not in this increment: a real provider (LinkedIn, YouTube), a credential connect
+flow or encrypted credential storage, the owner page UI in the auth worker, an MCP
+tool, approval notifications (#277) and a logical-effect lock across actions (#278).
+No remote migration or deployment was run.
+
+## Storage
+
+Two additive tables in `src/schema.ts`:
+
+- `external_credentials` (`account_id`, `credential_ref`) → provider, `revision`,
+  provider-verified `target_account` and `target_display`, `revoked_at`. The future
+  connect flow writes a new revision on every rotation, re-authorization or
+  replacement. This increment has no API that writes it; tests insert rows directly.
+  It holds no secret yet.
+- `external_actions`: the frozen plan (provider, `contract_revision`, operation,
+  content, credential reference and revision, target account), its `plan_digest`,
+  status, decision (`decided_at`, `decided_by`) and dispatch record.
+
+## Flow and guarantees
+
+| Step | Where | Effect |
+| --- | --- | --- |
+| `POST /v1/external-actions` `{credentialRef, operation, content}` | agent | `pending`; provider not called |
+| `ownerOverview` → `externalActions[]` | owner RPC | full content, provider, target display and ID, `credentialRef@revision`, `planDigest` |
+| `ownerAction` `confirm-action {requestId, planDigest}` / `reject-action` | owner RPC | `approved` or `rejected`; confirm needs fresh authentication |
+| `POST /v1/external-actions/{id}/execute` | agent | re-check, commit `dispatching`, call provider once, record outcome |
+
+- The plan digest is SHA-256 over the action and account IDs, provider and its
+  contract revision, operation, full content, credential reference and revision,
+  target account and expiry. A confirmation with another digest, or after the
+  credential's revision or target changed, is `plan-changed`.
+- Only an agent with a human owner can propose (`409 unowned-agent`). Another
+  human's or agent's action is indistinguishable from a missing one.
+- Execute re-checks in one transaction: the agent's key, that the owner is still the
+  approving human and not frozen, the credential's revision, target and provider,
+  and the provider contract and digest. A failed check records `failed` with the
+  reason and `dispatchedAt` null; nothing is sent.
+- `dispatching` is committed before the provider call, so concurrent executes send
+  once. A provider exception, a non-2xx/422 response or a malformed receipt records
+  `unknown`; if the outcome cannot be recorded the row stays `dispatching`. Neither
+  is ever dispatched again. A 422 is the only confirmed rejection (`failed`).
+- The approval adds no authority; the plan expires one hour after creation, for
+  approval and execution together.
+
+## Provider
+
+`src/external-providers.ts` defines the provider contract. The only provider,
+`test-http`, exists only when `EXTERNAL_ACTION_TEST_ENDPOINT` is set; no deployed
+configuration sets it. It posts the call to that endpoint and is driven in tests by
+Miniflare's `outboundService`.
+
+## Verification
+
+`test/external-actions.test.ts` (19 tests) runs against the built Worker and local
+D1: exactly-once after approval with an idempotent re-execute; unowned agent;
+missing provider; invalid input including a caller-supplied account; wrong digest
+and credential rotation before confirmation; stale owner authentication; another
+human's agent; rotation, revocation and retargeting after approval; frozen owner;
+expiry; rejection; 502, malformed receipt and a lost response recording `unknown`
+with no resend; confirmed provider rejection; five concurrent executes sending once;
+another agent reading or executing. Removing the revision check, or letting
+`unknown` be re-dispatched, fails four of these tests. The OpenAPI route test covers
+the three new paths.
+
+## Limits
+
+- Credentials and their revisions are trusted rows with no writer API yet.
+- The Worker is the trusted execution path; a real provider will receive a
+  decrypted credential there.
+- The owner page does not render `externalActions` yet, so only the RPC can decide.

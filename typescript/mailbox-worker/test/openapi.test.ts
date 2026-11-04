@@ -30,7 +30,7 @@ test('OpenAPI is an anonymous no-store JSON asset independent of account storage
 
 test('OpenAPI describes the current HTTP method/path set with resolved local references and security', () => {
     const routes = {
-        '/v1/accounts':['post'], '/v1/token':['post'], '/v1/keys':['get','post'], '/v1/keys/{kid}':['delete'], '/v1/binding-requests':['post'], '/v1/binding-requests/{requestId}':['get','delete'], '/v1/key-requests':['post'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
+        '/v1/accounts':['post'], '/v1/token':['post'], '/v1/keys':['get','post'], '/v1/keys/{kid}':['delete'], '/v1/binding-requests':['post'], '/v1/binding-requests/{requestId}':['get','delete'], '/v1/external-actions':['post'], '/v1/external-actions/{actionId}':['get'], '/v1/external-actions/{actionId}/execute':['post'], '/v1/key-requests':['post'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
         '/v1/directory':['get'], '/v1/directory/address':['get'], '/v1/directory/address/{addressId}/agent-card.json':['get'], '/v1/contacts/cards':['get','put'],
         '/v1/contacts/owned-cards':['get'], '/v1/contacts/card':['get'], '/v1/contacts/requests':['get','post'],
         '/v1/contacts/requests/{requestId}':['get'], '/v1/contacts/requests/{requestId}/decision':['post'],
