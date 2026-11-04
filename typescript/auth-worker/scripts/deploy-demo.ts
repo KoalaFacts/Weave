@@ -9,7 +9,7 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const issuer='https://weave-auth-demo.weave-389.workers.dev';
 const resource='https://demo.weave-389.workers.dev/mcp';
 const secretNames=['GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','WEAVE_TRIAL_GITHUB_SUBJECTS'] as const;
-type Binding={name:string;type:string;id?:string;namespace_id?:string;class_name?:string;
+type Binding={name:string;type:string;database_id?:string;id?:string;namespace_id?:string;class_name?:string;
     service?:string;entrypoint?:string;environment?:string;text?:unknown};
 type Settings={bindings:Binding[]};
 
@@ -50,7 +50,8 @@ export async function preflightIssuerDeployment(env:NodeJS.ProcessEnv,request:ty
         throw Error('The Cloudflare account does not own the fixed Weave Workers.dev subdomain.');
     const demo=await get<Settings>('/workers/scripts/demo/settings','Existing demo Worker');
     if(!Array.isArray(demo?.bindings)||
-        demo.bindings.filter(b=>b.name==='db'&&b.type==='d1'&&/^[a-f0-9-]{36}$/i.test(b.id??'')).length!==1||
+        demo.bindings.filter(b=>b.name==='db'&&b.type==='d1'&&
+            /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(b.database_id??b.id??'')).length!==1||
         demo.bindings.some(b=>b.name==='AUTH_SERVER'))
         throw Error('Existing demo D1 binding or OAuth resource state requires separate review.');
     const kvId=env.WEAVE_AUTH_KV_NAMESPACE_ID!;
@@ -89,7 +90,7 @@ async function cloudReadback(env:NodeJS.ProcessEnv,request:typeof fetch){
 }
 
 // Wrangler gets only the Cloudflare token. The three trial/authentication secrets
-// are sent to "secret put" via stdin, never command arguments, config, stdout or stderr.
+// are uploaded together through "secret bulk" stdin, never command arguments, config, stdout or stderr.
 async function wrangler(args:string[],env:NodeJS.ProcessEnv,secret?:string){
     const childEnv={...env,CI:'true',NO_COLOR:'1',WRANGLER_SEND_METRICS:'false'};
     for(const name of secretNames)delete childEnv[name];
@@ -109,8 +110,9 @@ export async function deployApprovedIssuer(env:NodeJS.ProcessEnv=process.env,req
     const filename=join(root,'wrangler.demo.generated.jsonc');
     await writeFile(filename,JSON.stringify(manifest,null,2)+'\n',{flag:'wx',mode:0o600});
     await wrangler(['deploy','--config','wrangler.demo.generated.jsonc','--keep-vars'],env);
-    for(const name of secretNames)
-        await wrangler(['secret','put',name,'--config','wrangler.demo.generated.jsonc'],env,env[name]!);
+    // A single bulk upload avoids three successive publicly deployed partial-secret versions.
+    await wrangler(['secret','bulk','--config','wrangler.demo.generated.jsonc'],env,
+        JSON.stringify(Object.fromEntries(secretNames.map(name=>[name,env[name]!]))));
     await cloudReadback(env,request);
     // Metadata proves protocol readiness, never actual GitHub login or consent.
     const metadata=await request(issuer+'/.well-known/oauth-authorization-server',{
