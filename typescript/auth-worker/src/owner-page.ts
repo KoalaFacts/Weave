@@ -38,6 +38,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "missing-scope":"Grant every permission the provider asks for, or the agent cannot post; nothing was stored.",
   "no-channel":"No channel was found to connect; nothing was stored. For YouTube, pick the account or brand channel to post as; for Postiz, connect a channel in Postiz first.",
   "postiz-connected":"Postiz connected. Each of its channels is listed below; actions your agent proposes through them still need your approval.",
+  "bluesky-connected":"Bluesky connected. Posts your agent proposes through it still need your approval.",
   "form-expired":"This page expired. Reload it and try again.",
   "cleanup-pending":"Access is revoked; token clean-up will be retried on your next visit.",
   "cleanup-complete":"Access is revoked and token clean-up is complete.",
@@ -110,7 +111,12 @@ function credentialsSection(agentId:string,credentials:OwnerCredential[],tokens:
   const postiz=tokens.get("connect-postiz:"+agentId);
   const postizForm=postiz===undefined?"":'<form method="post" action="/account/postiz"><input type="hidden" name="action" value="'+esc(postiz)+
     '"><label>Postiz API key <input type="password" name="apiKey" autocomplete="off" required></label><button type="submit">Connect Postiz</button></form>';
-  return "<h4>Connected accounts</h4>"+list+connect+postizForm;
+  const bluesky=tokens.get("connect-bluesky:"+agentId);
+  const blueskyForm=bluesky===undefined?"":'<form method="post" action="/account/bluesky"><input type="hidden" name="action" value="'+esc(bluesky)+
+    '"><label>Bluesky handle <input type="text" name="handle" autocomplete="off" required placeholder="name.bsky.social"></label>'+
+    '<label>App password <input type="password" name="appPassword" autocomplete="off" required pattern="[a-z0-9]{4}(-[a-z0-9]{4}){3}" title="An app password from Bluesky settings, like xxxx-xxxx-xxxx-xxxx"></label>'+
+    '<button type="submit">Connect Bluesky</button></form><p>Create an app password in Bluesky under Settings, Privacy and security, App passwords. Never enter your account password.</p>';
+  return "<h4>Connected accounts</h4>"+list+connect+postizForm+blueskyForm;
 }
 
 function addressesSection(addresses:OwnerAddress[]):string{
@@ -193,6 +199,7 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
       await add("revoke-credential:"+agent.agentId+":"+c.credentialRef,{kind:"revoke-credential",agentId:agent.agentId,credentialRef:c.credentialRef});
     if(youtube)await add("connect-youtube:"+agent.agentId,{kind:"connect-youtube",agentId:agent.agentId});
     await add("connect-postiz:"+agent.agentId,{kind:"connect-postiz",agentId:agent.agentId});
+    await add("connect-bluesky:"+agent.agentId,{kind:"connect-bluesky",agentId:agent.agentId});
   }
   return tokens;
 }

@@ -17,12 +17,12 @@ test("readOwnerAction_RoundTrip_ReturnsAction",async()=>{
     {kind:"confirm-key",requestId:randomUUID()},{kind:"reject-key",requestId:randomUUID()},
     {kind:"revoke-key",agentId,kid:randomBytes(32).toString("base64url")},{kind:"issue-recovery-code",agentId},
     {kind:"confirm-action",requestId:randomUUID(),planDigest:randomBytes(32).toString("base64url")},{kind:"reject-action",requestId:randomUUID()},
-    {kind:"connect-youtube",agentId},{kind:"connect-postiz",agentId},{kind:"revoke-credential",agentId,credentialRef:"youtube"}];
+    {kind:"connect-youtube",agentId},{kind:"connect-postiz",agentId},{kind:"connect-bluesky",agentId},{kind:"revoke-credential",agentId,credentialRef:"youtube"}];
   for(const action of actions){
     const token=await ownerActionToken(key,humanId,action,now);
     assert.deepEqual(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now+1000),action);
   }
-  assert.deepEqual([...destructiveKinds].sort(),["confirm-action","confirm-binding","confirm-key","connect-postiz","connect-youtube","issue-recovery-code","revoke-key"]);
+  assert.deepEqual([...destructiveKinds].sort(),["confirm-action","confirm-binding","confirm-key","connect-bluesky","connect-postiz","connect-youtube","issue-recovery-code","revoke-key"]);
 });
 
 test("readOwnerAction_RevokeGrant_RoundTripNotDestructive",async()=>{

@@ -83,7 +83,7 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,25);
+  assert.equal(Object.keys(ownerResultText).length,26);
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-pending",now))).includes("Access is revoked; token clean-up will be retried on your next visit."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-complete",now))).includes("Access is revoked and token clean-up is complete."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"form-expired",now))).includes("This page expired. Reload it and try again."));
@@ -102,7 +102,7 @@ test("ownerFormTokens_CoversEveryFormTheOverviewRenders",async()=>{
       keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}],
       grants:[{grantId,clientId:"https://client.example/cimd.json",clientName:"c",createdAt:iso(now)}],addresses:[],credentials:[],revokedGrantIds:[randomUUID()]}]});
   const tokens=await ownerFormTokens(signingKey,human.humanId,overview,now,false);
-  assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,"connect-postiz:"+agentId,"issue-recovery-code:"+agentId,
+  assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,"connect-bluesky:"+agentId,"connect-postiz:"+agentId,"issue-recovery-code:"+agentId,
     "reject-binding:"+requestId,"reject-key:"+keyRequestId,"revoke-grant:"+grantId,"revoke-key:"+agentId+":"+keyId].sort());
   const body=await html(ownerPage(overview,human,tokens,null,now));
   assert.equal(body.match(/<form /g)!.length,tokens.size);
@@ -163,4 +163,5 @@ test("ownerPage_ActionWithMedia_PreviewsOnlyItsFilesAndOffersPostizConnect",asyn
   assert.ok(body.includes('<video controls preload="metadata" width="360" src="/account/media/'+actionId+'/'+video+'"></video>'));
   assert.ok(body.includes('action="/account/postiz"')&&body.includes('type="password" name="apiKey"'));
   assert.ok(body.includes('value="'+tokens.get("connect-postiz:"+agentId)+'"'));
+  assert.ok(body.includes('<form method="post" action="/account/bluesky"><input type="hidden" name="action" value="'+tokens.get("connect-bluesky:"+agentId)+'"'));
 });
