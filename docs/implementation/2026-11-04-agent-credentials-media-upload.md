@@ -68,7 +68,22 @@ generated video at a public URL), `import_media_from_url {url}` (scope
 Workers cannot resolve DNS before fetching, so a public name that resolves to a
 private address is not detected here; Cloudflare's network is the boundary for that.
 
-## Verification
+## Retention
+
+The 5-minute cron deletes media that was uploaded at least 7 days ago and that no
+action has named or changed in the last 7 days. "Named" means the action's content
+contains the media ID. Only the uploading agent's own actions count. The sweep handles
+at most 50 files per run.
+
+- The D1 record is deleted first, re-checked in the same transaction. A plan proposed
+  in the meantime therefore keeps its file, because the optimistic revision serializes
+  the two.
+- The R2 object is deleted next. If that deletion fails, it is logged and the object
+  is left behind; Weave can no longer reach it, and nothing retries it.
+- Nothing is deleted in maintenance or read-only recovery.
+- A plan naming deleted media is refused at proposal. An approved plan whose file is
+  gone fails cleanly at dispatch: the media upload is refused, so nothing is posted.
+
 
 - `test/agent-credentials-media.test.ts`:
   - Listing shows live credentials of this agent only, with Postiz operations and
@@ -90,6 +105,13 @@ private address is not detected here; Cloudflare's network is the boundary for t
   no request, a short body is a `url` refusal and a storage failure is 503. Mutation checks: dropping the IP-literal check, the authority check
   before fetching, manual redirects, trailing-dot removal or the source-failure
   distinction each fail a test.
+- `test/media-retention.test.ts`, through the Worker's own cron and real R2: old,
+  unused media loses its record and object while recent media is kept; media named by
+  a recent action of its own agent is kept until that action is old, and another
+  agent's action does not keep it; a failed object deletion still removes the record
+  and the sweep continues; maintenance deletes nothing. Mutation checks: dropping the
+  same-agent condition, the action condition, or the per-object error handling each
+  fail a test.
 - `test/mcp-tool-contract.test.ts` exercises the new tools against their output
   schemas. `test/openapi.test.ts` covers the new HTTP operations.
   `test/in-process-media.ts` lets tools called in the Node test process store media
@@ -102,4 +124,3 @@ private address is not detected here; Cloudflare's network is the boundary for t
   at most 100 MiB.
 - A file the agent holds only locally and cannot PUT, and that is not at a public
   URL, still cannot be uploaded.
-- Uploaded media is still not deleted.

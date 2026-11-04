@@ -20,7 +20,7 @@ import { cancelBindingRequest, createBindingRequest, getBindingRequest } from '.
 import { recoverAgentKey } from './recovery-codes.ts';
 import { executeExternalAction, getExternalAction, keyCaller, ownerActionMedia, proposeExternalAction } from './external-actions.ts';
 import { sweepPublications } from './external-publications.ts';
-import { getMedia, importMedia, receiveSignedUpload, serveSignedMedia, uploadMedia } from './external-media.ts';
+import { getMedia, importMedia, receiveSignedUpload, sweepMedia, serveSignedMedia, uploadMedia } from './external-media.ts';
 import { connectExternalCredential, connectPostiz, listAgentCredentials, type ConnectCredentialInput, type ConnectCredentialResult, type ConnectPostizInput, type ConnectPostizResult } from './external-credentials.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
 import { recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
@@ -56,6 +56,7 @@ export default {
         await sweep({...env,db:budgetDatabase(env.db)},true);
         // Reads only: asks providers how tracked posts turned out.
         await sweepPublications({...env,db:budgetDatabase(env.db)});
+        await sweepMedia({...env,db:budgetDatabase(env.db)});
     },
     async fetch(request: Request, env: Env, context: Context): Promise<Response> {
         env = {...env,db:budgetDatabase(env.db)};
