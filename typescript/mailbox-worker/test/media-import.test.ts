@@ -47,7 +47,8 @@ test('importMedia_PublicFile_StoredAsTheExactFetchedFile', () => scenario(async 
 test('importMedia_UnsafeOrMalformedUrl_RefusedWithoutAnyRequest', () => scenario(async ({h, seen}) => {
     const agent = await h.register();
     for (const url of ['http://cdn.example.com/clip.mp4', 'https://127.0.0.1/clip.mp4', 'https://2130706433/clip.mp4', 'https://0x7f.1/clip.mp4',
-        'https://[::1]/clip.mp4', 'https://localhost/clip.mp4', 'https://printer.local/clip.mp4', 'https://db.internal/clip.mp4',
+        'https://[::1]/clip.mp4', 'https://localhost/clip.mp4', 'https://localhost./clip.mp4', 'https://printer.local./clip.mp4',
+        'https://media.weave.test./v1/external-media/x/content', 'https://printer.local/clip.mp4', 'https://db.internal/clip.mp4',
         'https://cdn.example.com:8443/clip.mp4', 'https://user:pw@cdn.example.com/clip.mp4', 'https://media.weave.test/v1/external-media/x/content',
         'https://cdn.example.com/' + 'a'.repeat(2048), 'not a url', 42]) {
         const response = await importing(h, agent, {url});
@@ -96,5 +97,36 @@ test('importMediaFromUrl_McpGrant_ChecksAuthorityBeforeFetching', () => scenario
         assert.equal((await call()).status, 401);
         assert.equal(fetched.length, 1, 'a revoked grant makes no outbound request');
         assert.equal(await objects(h), 1);
+    } finally { globalThis.fetch = original; }
+}));
+
+test('importMediaFromUrl_SourceBreaksOffOrStorageFails_EachKeepsItsOwnMeaning', () => scenario(async ({h}) => {
+    const agent = await h.register();
+    await h.claim(agent);
+    const grantId = await testGrant(h.db, agent.accountId);
+    const bucket = inProcessMedia(await h.mf.getR2Bucket('EXTERNAL_MEDIA'));
+    let storageDown = false;
+    const env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
+        CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: mediaOrigin,
+        EXTERNAL_MEDIA: {...bucket, put: async (k: string, body: ReadableStream, options: unknown) => {
+            if (storageDown) throw Error('R2 unavailable');
+            return bucket.put(k, body, options);
+        }}} as unknown as Env;
+    let serve = () => new Response(file.subarray(0, 100), {headers: {'Content-Type': 'video/mp4', 'Content-Length': String(file.length)}});
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => serve();
+    const call = async () => {
+        const response = await executePrivateMcp(env, 'https://demo.test', agent.accountId, 'import_media_from_url', {url: 'https://cdn.example.com/clip.mp4'}, grantId);
+        return {status: response.status, body: await response.json() as Record<string, any>};
+    };
+    try {
+        const short = await call();
+        assert.deepEqual([short.status, short.body.field, short.body.reason], [400, 'url', 'could not be fetched completely'], 'a body shorter than stated is the source\'s failure');
+        serve = sources['/clip.mp4'];
+        storageDown = true;
+        const down = await call();
+        assert.equal(down.status, 503, JSON.stringify(down.body));
+        assert.notEqual(down.body.field, 'url', 'a storage outage is not blamed on the URL');
+        assert.equal(await objects(h), 0);
     } finally { globalThis.fetch = original; }
 }));

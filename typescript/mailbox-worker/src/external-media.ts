@@ -92,12 +92,13 @@ const blockedSuffixes = ['.localhost', '.local', '.internal', '.home.arpa'];
 function importUrl(env: Env, raw: unknown): URL {
     const reason = 'must be a public https URL with a host name, no credentials and the default port';
     if (typeof raw !== 'string' || raw.length > maxImportUrl || !URL.canParse(raw)) invalidField('url', reason);
-    const url = new URL(raw), host = url.hostname.toLowerCase();
+    // One trailing dot names the same DNS host ("localhost." is localhost), so it is removed before every check.
+    const url = new URL(raw), host = url.hostname.toLowerCase().replace(/\.$/, '');
     // WHATWG parsing already turns every IPv4 spelling into dotted decimal and IPv6 into brackets.
     if (url.protocol !== 'https:' || url.port !== '' || url.username !== '' || url.password !== '' || host.startsWith('[') || /^[0-9.]+$/.test(host)
         || !host.includes('.') || blockedSuffixes.some(suffix => host.endsWith(suffix))) invalidField('url', reason);
     // Never this Worker itself: its signed media URLs are for providers, not for copying between agents.
-    if (env.EXTERNAL_MEDIA_ORIGIN && host === new URL(env.EXTERNAL_MEDIA_ORIGIN).hostname.toLowerCase()) invalidField('url', reason);
+    if (env.EXTERNAL_MEDIA_ORIGIN && host === new URL(env.EXTERNAL_MEDIA_ORIGIN).hostname.toLowerCase().replace(/\.$/, '')) invalidField('url', reason);
     return url;
 }
 
@@ -119,21 +120,35 @@ export async function importMedia(env: Env, caller: ActionCaller, input: unknown
         response = await fetch(url.href, {redirect: 'manual', signal: AbortSignal.timeout(importTimeoutMs),
             headers: {Accept: [...contentTypes].join(', '), 'Accept-Encoding': 'identity'}});
     } catch { invalidField('url', 'could not be fetched'); }
-    const refuse = (why: string): never => { void response.body?.cancel().catch(() => {}); invalidField('url', why); };
+    const refuse: (why: string) => never = why => { void response.body?.cancel().catch(() => {}); invalidField('url', why); };
     if (response.status !== 200) refuse(response.status >= 300 && response.status < 400 ? 'must not redirect' : `answered ${response.status}, not 200`);
     const contentType = (response.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
     if (!contentTypes.has(contentType)) refuse('must serve ' + contentTypeList);
     const declared = Number(response.headers.get('Content-Length') ?? NaN);
     if (!Number.isSafeInteger(declared) || declared < 1 || declared > maxMediaBytes) refuse(`must state a Content-Length of at most ${maxMediaBytes}`);
+    const sourceBody = response.body;
+    if (!sourceBody) refuse('must have a body');
+    // Only a failure of the source itself is blamed on the URL; storage and database errors keep their own handling.
+    let sourceFailed = false, delivered = 0;
+    const reader = sourceBody.getReader();
+    const source = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+            try {
+                const chunk = await reader.read();
+                if (!chunk.done) delivered += chunk.value.byteLength;
+                if (delivered > declared || (chunk.done && delivered !== declared)) throw Error('Source body is not its stated Content-Length.');
+                if (chunk.done) controller.close(); else controller.enqueue(chunk.value);
+            } catch (error) { sourceFailed = true; controller.error(error); void reader.cancel().catch(() => {}); }
+        },
+        cancel: reason => reader.cancel(reason)
+    });
+    // R2 needs a stream of known length, which FixedLengthStream gives in the Workers runtime.
+    const Fixed = (globalThis as {FixedLengthStream?: new (length: number) => TransformStream<Uint8Array, Uint8Array>}).FixedLengthStream;
     try {
-        // R2 needs a stream of known length; FixedLengthStream also fails a body that is not exactly the stated size.
-        const Fixed = (globalThis as {FixedLengthStream?: new (length: number) => TransformStream<Uint8Array, Uint8Array>}).FixedLengthStream;
-        const body = Fixed && response.body ? response.body.pipeThrough(new Fixed(declared)) : response.body;
-        return await storeMedia(env, caller, crypto.randomUUID(), contentType, declared, body);
+        return await storeMedia(env, caller, crypto.randomUUID(), contentType, declared, Fixed ? source.pipeThrough(new Fixed(declared)) : source);
     } catch (error) {
-        // An authority, storage or size refusal keeps its meaning; a stream that broke off is the source's failure.
-        if (error instanceof Problem) throw error;
-        invalidField('url', 'could not be fetched completely');
+        if (sourceFailed && !(error instanceof Problem)) invalidField('url', 'could not be fetched completely');
+        throw error;
     }
 }
 

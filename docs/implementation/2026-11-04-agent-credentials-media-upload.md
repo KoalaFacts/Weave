@@ -53,15 +53,17 @@ generated video at a public URL), `import_media_from_url {url}` (scope
 - The URL must be https on the default port with a DNS host name. IP literals (every
   IPv4 spelling is normalized by URL parsing, IPv6 is bracketed), single-label hosts,
   `.localhost`, `.local`, `.internal`, `.home.arpa`, credentials and the Worker's own
-  media host are refused before any request.
+  media host are refused before any request. One trailing DNS dot is removed first,
+  so `localhost.` or `printer.local.` is refused as well.
 - The caller's authority is checked before the request is made and again by the
   shared storage path.
 - One GET with `redirect: manual` and `Accept-Encoding: identity`, 5-minute timeout.
   Only 200 with a supported Content-Type and a Content-Length of at most 100 MiB is
-  accepted. The body is piped through `FixedLengthStream`, so R2 receives a stream of
-  known length and a body of any other size fails.
-- Every refusal is 400 with field `url`. Authority, storage and size refusals keep
-  their own status.
+  accepted. The body is counted as it arrives and piped through `FixedLengthStream`,
+  so R2 receives a stream of known length.
+- Every refusal is 400 with field `url`, including a source body that breaks off or
+  is not its stated length. Authority refusals and storage or database errors keep
+  their own status (for example 503), so an outage is not blamed on the URL.
 
 Workers cannot resolve DNS before fetching, so a public name that resolves to a
 private address is not detected here; Cloudflare's network is the boundary for that.
@@ -84,9 +86,10 @@ private address is not detected here; Cloudflare's network is the boundary for t
 - `test/media-import.test.ts`, through the Worker with a fake web as its outbound
   service: the stored file is exactly what was fetched; unsafe or malformed URLs make
   no request; a redirect, 404, HTML, missing Content-Length or other status stores
-  nothing. Through MCP: the request uses manual redirects, and a revoked grant makes
-  no request. Mutation checks: dropping the IP-literal check, the authority check
-  before fetching, or manual redirects each fail a test.
+  nothing. Through MCP: the request uses manual redirects, a revoked grant makes
+  no request, a short body is a `url` refusal and a storage failure is 503. Mutation checks: dropping the IP-literal check, the authority check
+  before fetching, manual redirects, trailing-dot removal or the source-failure
+  distinction each fail a test.
 - `test/mcp-tool-contract.test.ts` exercises the new tools against their output
   schemas. `test/openapi.test.ts` covers the new HTTP operations.
   `test/in-process-media.ts` lets tools called in the Node test process store media
