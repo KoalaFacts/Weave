@@ -1,6 +1,6 @@
 # GitHub Actions workflows
 
-The repository has 14 current workflow files. Ordinary verification keeps its existing workflow and check identities while sharing build/audit implementation. Release, publish and deployment jobs retain separate permissions and configured environment protections.
+The repository has 17 current workflow YAML files (plus this README). Ordinary verification keeps its existing workflow and check identities while sharing build/audit implementation. Release, publish and deployment jobs retain separate permissions and configured environment protections.
 
 ## Current workflows
 
@@ -19,7 +19,7 @@ The repository has 14 current workflow files. Ordinary verification keeps its ex
 | [publish-npm-plugin-echo.yml](publish-npm-plugin-echo.yml) | Manual on main, exact package version | Verify and pack once, preserve tarball/checksum, publish through npm OIDC in the `npm` environment, then invoke published-package verification. |
 | [verify-published-npm-plugin-echo.yml](verify-published-npm-plugin-echo.yml) | Called after npm publish, or manual exact version/source SHA | Install registry package, verify signatures/provenance, and exercise Weave installation, restart, disable and schema drift without publish credentials. |
 | [deploy-weave-worker.yml](deploy-weave-worker.yml) | Manual on main (repository or production scope), explicit push to `publish/demo` (repository scope), or exact verified owner comment on #236 (protected production only) | Require the selected SHA already on main and its Worker verification run on main to have passed (awaited while still running, never repeated), preserve existing `demo`/`db`, and enforce completed-only schema checks for all generic release paths; confirm settings and published Agent Start, `/connect` and public MCP evidence. |
-| [approved-human-schema-migration.yml](approved-human-schema-migration.yml) | Manual dispatch on main only, protected production job | One-time, exact-source-pinned human D1 migration for the separately approved legacy-account upgrade; never deploys current onboarding agent-key source or activates OAuth/Access at the same time. |
+| [deploy-first-party-oauth-issuer.yml](deploy-first-party-oauth-issuer.yml) | Owner-only manual, exact main SHA and protected production confirmation | Deploy the separately approved fixed GitHub OAuth authorization Worker with existing KV, one SQLite consent Durable Object, three AS-only secrets and private mailbox RPC after read-only cloud identity checks. Never touches demo D1 or enables the demo resource OAuth binding. |\n| [approved-human-schema-migration.yml](approved-human-schema-migration.yml) | Manual dispatch on main only, protected production job | One-time, exact-source-pinned human D1 migration for the separately approved legacy-account upgrade; never deploys current onboarding agent-key source or activates OAuth/Access at the same time. |
 
 Path-scoped workflows retain their original path filters; Host acceptance also runs when its shared build/setup action changes. This does not turn every change into every optional acceptance run. See each workflow for its exact paths, timeouts and artifact retention. CI retains test/coverage evidence for 30 days; dependency audit evidence is retained for 14 days.
 

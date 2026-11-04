@@ -1,0 +1,25 @@
+# Protected first-party Weave OAuth issuer rollout (#236)
+
+Scope: deploy the already accepted first-party `weave-auth-demo` authorization Worker to the exact existing account/subdomain, **without touching the public `demo` Worker or D1**. This is an operator-only release path, not a new identity product or a claim that two real Agents have connected.
+
+The existing #236 approval covers this first-party GitHub OAuth / KV / Durable Object scope. A fresh approval is not required for the same infrastructure, but the protected production environment, actual provider capabilities, correct existing resource IDs, explicit selected identities and no new fees remain mandatory release gates.
+
+## Before dispatch
+
+- The owner registers a GitHub OAuth App with callback `https://weave-auth-demo.weave-389.workers.dev/login/github/callback`. GitHub's public client ID and client secret must belong to that app. Do not write the secret to Git, an issue or a prompt.
+- An **existing, approved** KV namespace must be identified as `WEAVE_AUTH_KV_NAMESPACE_ID`; this action does not create/delete namespaces or change a Cloudflare plan. `CLOUDFLARE_API_TOKEN` remains the **same existing token**. Confirm its actual Workers/KV/DO capabilities; permission errors are not rewritten as success.
+- Configure the protected **production environment secrets** `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `WEAVE_AUTH_KV_NAMESPACE_ID`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `HUMAN_SESSION_KEY`, `WEAVE_TRIAL_GITHUB_SUBJECTS`. The last secret is a list of **2–10 explicitly owner-selected numeric GitHub user IDs**; neither authorship, emails, default Everyone access nor CI fixtures substitute for owner selection. The session key is exactly 32 random bytes encoded canonically as base64url; never share it in plain text.
+- Verify the current main SHA's actual push CI/Worker/browser/OAuth/security and code review. Confirm this first SQLite Durable Object migration incurs no unapproved charge/plan change; otherwise do not dispatch.
+- Run **Protected Weave first-party GitHub OAuth issuer** manually on main with that exact SHA and the KV/DO confirmation. The workflow serializes with protected releases, requires the owner actor and production approval, rechecks main SHA **after** that approval and runs Node24 locked verification.
+
+## What is deployed
+
+`typescript/auth-worker/scripts/deploy-demo.ts` validates the signed-in trial selection, secrets, exact issuer/resource, the existing account subdomain, the existing `demo` D1 binding and approved KV namespace using **GET-only** Cloudflare preflight. It refuses to overwrite an already existing auth Worker or any unrecognized resource state. It publishes only the fixed `weave-auth-demo` Worker with the reviewed SQLite `ConsentNonce` Durable Object migration, `MAILBOX` → `demo#HumanDirectory` and KV binding. Three secret values are piped through Wrangler stdin, never command arguments, generated config or output. After deployment it requires settings to show the exact issuer/resource/client ID/KV/DO/service/secret **metadata** and checks public RFC 8414 PKCE discovery. Neither successful metadata nor a dry run proves real login or consent.
+
+**Partial-deploy failure:** the auth Worker may already have been created before a secret or readback error. The release fails and will not automatically overwrite it on retry. Inspect the fixed-name script/version/secret metadata and agree the exact protected recovery operation before another attempt. No blind deletes, resets, secret rotations or restores. The public `demo` Worker and D1 are deliberately unchanged throughout this workflow. Its existing `AUTH_SERVER` activation is a **separate already approved** production-only step, using `enable_first_party_oauth` only after the issuer, true two-person consent path and historical preservation/recovery gates are satisfied.
+
+## Real product acceptance still required
+
+Two independent real account/Agent connections must each authenticate, see only their own private tools, establish contact, exchange at least six bidirectional messages with correlated ACKs, reconnect, cold restart, persist and de-duplicate replay. Record sanitized real result.json and exact main/deployed Worker versions. Only after that, verify other credential consumers and narrow the temporarily expanded permissions without changing user-owner roles or protections.
+
+This PR is a deployable, protected **issuer release path**, not a live deployment, D1 data-history proof or complete #236 acceptance.
