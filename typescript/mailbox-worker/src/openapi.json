@@ -581,7 +581,7 @@
       "put": {
         "operationId": "uploadExternalMedia",
         "summary": "Upload media for an external action",
-        "description": "Stores the raw request body once under a new mediaId, for use in an upload_video plan. Content-Type must be video/mp4, video/quicktime, video/webm, image/jpeg, image/png, image/gif or image/webp and Content-Length the exact size, at most 100 MiB. The response gives the SHA-256 of the stored bytes; the plan names the mediaId with that size and SHA-256 so the owner approves exactly this file. Unavailable (404) where no media bucket is configured.",
+        "description": "Stores the raw request body once under a new mediaId, for use in an upload_video plan. Content-Type must be video/mp4, video/quicktime, video/webm, image/jpeg, image/png, image/gif or image/webp and Content-Length the exact size, at most 100 MiB. The response gives the SHA-256 of the stored bytes; the plan names the mediaId with that size and SHA-256 so the owner approves exactly this file. Unavailable (404) where no media bucket is configured. Media is deleted once it is at least 7 days old and no action of this agent has named or changed it for 7 days; upload again for a later post.",
         "requestBody": {
           "required": true,
           "content": {

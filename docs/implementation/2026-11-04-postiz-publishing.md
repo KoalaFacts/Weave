@@ -141,7 +141,8 @@ but not yet verified against a real account.
 ## Limits
 
 - One Postiz key per agent; reconnecting replaces every Postiz credential of it.
-- Media is limited to one Worker request body (100 MiB) and is not deleted yet.
+- Media is limited to one Worker request body (100 MiB). It is deleted 7 days after its
+  upload and its last use (see [retention](2026-11-04-agent-credentials-media-upload.md#retention)).
 - No Postiz webhook: publication state is learned by polling, so it lags by up to the
   current backoff. The owner page does not show it yet.
 - The Worker that opens the sealed key is the trusted execution path.

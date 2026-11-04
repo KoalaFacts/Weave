@@ -249,3 +249,39 @@ export async function receiveSignedUpload(env: Env, mediaId: string, url: URL, r
     if (declaredLength(request) !== bytes) invalidField('Content-Length', 'must be ' + bytes);
     return storeMedia(env, grantCaller(accountId, grantId), mediaId, contentType, bytes, request.body);
 }
+
+// ---- retention ------------------------------------------------------------------------------------------------------
+/** Media is kept this long after upload and after the last change of any action that names it. */
+export const mediaRetentionMs = 7 * 24 * 3600_000;
+const sweptPerRun = 50;
+/**
+ * Media no recent action of the same agent names. An action names a file as plans do after JSON decoding (a top-level
+ * mediaId or media[].mediaId, as mediaIdsOf reads it), or by its ID appearing anywhere in the raw content.
+ */
+const unused = `NOT EXISTS (SELECT 1 FROM external_actions x WHERE x.account_id=m.account_id AND x.updated_at>=CAST(?1 AS INTEGER) AND (
+    instr(x.content,m.media_id)>0 OR (json_valid(x.content) AND json_type(x.content)='object' AND (json_extract(x.content,'$.mediaId')=m.media_id
+        OR (json_type(x.content,'$.media')='array' AND EXISTS (SELECT 1 FROM json_each(x.content,'$.media') j WHERE j.type='object' AND json_extract(j.value,'$.mediaId')=m.media_id))))))`;
+
+/**
+ * Scheduled sweep: deletes media uploaded at least the retention period ago that no action of its agent has named or
+ * changed within it. One transaction selects and deletes the records, so a plan proposed meanwhile, which changes the
+ * revision, makes it retry and keep that file; the objects are deleted after it commits. An object whose deletion fails
+ * is logged and left; it is no longer reachable through Weave. A few statements in all, within the scheduled budget.
+ */
+export async function sweepMedia(env: Env, now: number = Date.now()): Promise<void> {
+    const bucket = env.EXTERNAL_MEDIA;
+    if (!bucket || writesRefused(env)) return;
+    const cutoff = (BigInt(now - mediaRetentionMs) * 10000n).toString();
+    const deleted = await atomic(env.db, async tx => {
+        const due = (await tx.db.prepare(`SELECT m.media_id,m.account_id FROM external_media m
+            WHERE m.created_at<CAST(?1 AS INTEGER) AND ${unused} ORDER BY m.created_at LIMIT ?2`).bind(cutoff, sweptPerRun)
+            .all<{media_id: string; account_id: string}>()).results;
+        if (due.length) tx.writes.push(tx.db.prepare(`DELETE FROM external_media WHERE media_id IN (${due.map(() => '?').join(',')})`)
+            .bind(...due.map(media => media.media_id)));
+        return due;
+    });
+    for (const media of deleted) {
+        try { await bucket.delete(objectKey(media.account_id, media.media_id)); }
+        catch { console.error('external-media: object not deleted'); }
+    }
+}
