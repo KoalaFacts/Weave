@@ -9,7 +9,7 @@ import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
 import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
-import {readOwnerAction,destructiveKinds} from "./owner-forms.ts";
+import {readOwnerAction,readPostizConnect,destructiveKinds} from "./owner-forms.ts";
 import {ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
 import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
 import {beginYoutubeConnect,completeYoutubeConnect,youtubeCallbackPath,type YoutubeConnectEnv} from "./youtube-connect.ts";
@@ -281,6 +281,8 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
     return beginGithubLogin(env,accountUrl,now,{reauthenticate:{login:session.login}});
   // Connecting a credential leaves for the provider; the mailbox re-checks ownership and the sign-in window on the way back.
   if(action.kind==="connect-youtube")return beginYoutubeConnect(env,session,action.agentId,now);
+  // Connecting Postiz needs the API key, which only its own form at /account/postiz carries.
+  if(action.kind==="connect-postiz")return accountRedirect("not-found");
   let result:OwnerActionResult;
   try{result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});}
   catch{return directoryUnavailable();}
@@ -290,6 +292,40 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
     return accountRedirect(await revokeClientTokens(env,api,session.humanId,action.grantId)?"done":"cleanup-pending");
   return accountRedirect(result.ok?"done":result.reason);
 }
+/** POST /account/postiz: the owner's Postiz API key for one agent, passed to the mailbox and never kept here. */
+async function connectPostizAccount(req:Request,env:Env):Promise<Response>{
+  if(req.method!=="POST")return methodNotAllowed("POST");
+  if(req.headers.get("origin")!==new URL(req.url).origin)
+    return messagePage(403,"Request refused","This request did not come from the Weave account page.");
+  const now=Date.now(),accountUrl=new URL("/account",env.OAUTH_ISSUER);
+  const session=await readHumanSession(env.HUMAN_SESSION_KEY,req,now);
+  if(!session)return beginGithubLogin(env,accountUrl,now);
+  const form=await readPostizConnect(env.HUMAN_SESSION_KEY,req,session,now);
+  if(form==="expired")return accountRedirect("form-expired");
+  if(!form)return accountRedirect("not-found");
+  // The key is dropped here; the owner types it again after signing in.
+  if(!freshAuthentication(session,now))return beginGithubLogin(env,accountUrl,now,{reauthenticate:{login:session.login}});
+  try{
+    const result=await env.MAILBOX.connectPostiz({humanId:session.humanId,authAt:session.authAt,agentId:form.agentId,apiKey:form.apiKey});
+    return accountRedirect(result.ok?"postiz-connected":result.reason);
+  }catch{
+    console.error("postiz-connect: directory call failed");
+    return accountRedirect("unavailable");
+  }
+}
+const mediaPath=/^\/account\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+/** GET /account/media/{actionId}/{mediaId}: a file an action of the owner's agent names, for the approval preview. */
+async function ownerMedia(req:Request,env:Env,match:RegExpExecArray):Promise<Response>{
+  if(req.method!=="GET")return methodNotAllowed("GET");
+  const session=await readHumanSession(env.HUMAN_SESSION_KEY,req,Date.now());
+  const notFound=()=>new Response("Not found",{status:404,headers:{"Cache-Control":"no-store"}});
+  if(!session)return notFound();
+  let media:{contentType:string;body:ReadableStream}|null;
+  try{media=await env.MAILBOX.ownerActionMedia(session.humanId,match[1],match[2]);}catch{return directoryUnavailable();}
+  if(!media)return notFound();
+  return new Response(media.body,{headers:{"Content-Type":media.contentType,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff",
+    "Content-Security-Policy":"default-src 'none'; sandbox","Cross-Origin-Resource-Policy":"same-origin"}});
+}
 export default class AuthServer extends WorkerEntrypoint<Env>{
   async fetch(req:Request):Promise<Response>{
     let server:OAuthAuthorizationServer<Env>;
@@ -297,6 +333,9 @@ export default class AuthServer extends WorkerEntrypoint<Env>{
     const path=new URL(req.url).pathname;
     if(path==="/authorize")return authorize(req,this.env,server);
     if(path==="/account")return account(req,this.env,server.getOAuthApi(this.env));
+    if(path==="/account/postiz")return connectPostizAccount(req,this.env);
+    const media=mediaPath.exec(path);
+    if(media)return ownerMedia(req,this.env,media);
     if(path==="/login/github/callback")return req.method==="GET"?completeGithubLogin(this.env,req,Date.now())
       :new Response("Method not allowed",{status:405,headers:{Allow:"GET","Cache-Control":"no-store"}});
     if(path===youtubeCallbackPath){

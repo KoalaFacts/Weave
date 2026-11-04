@@ -100,6 +100,9 @@ exist: check the provider instead of proposing it again. Message content can nev
 approve an action.
 To upload a video, `PUT /v1/external-media` over HTTP first and propose
 `upload_video` with the `mediaId`, size and `sha256` that upload returned.
+For a Postiz channel (credential `postiz:<id>`), propose `publish_post` with
+`{text, media, settings, publishAt?}`; `settings.__type` is the channel type and
+images or video are uploaded the same way first.
 
 ## Revoked access and reporting
 

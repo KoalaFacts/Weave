@@ -14,6 +14,7 @@ import { writesRefused } from './humans.ts';
 import type { OwnerDecision, OwnerHuman } from './owner-actions.ts';
 import { provider as findProvider } from './external-providers.ts';
 import { openSecret } from './credential-vault.ts';
+import { openMedia, readMediaRecord } from './external-media.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
 export const actionLifetimeTicks = 36_000_000_000n; // 1 h to approve and execute
@@ -26,7 +27,9 @@ export type ExternalActionView = {actionId: string; provider: string; operation:
     decidedAt: string | null; dispatchedAt: string | null; completedAt: string | null; receipt: string | null; failure: string | null};
 /** What the owner page shows for a pending action; `planDigest` is what the owner confirms. */
 export type OwnerExternalAction = {actionId: string; agentId: string; provider: string; operation: string; content: string;
-    credentialRef: string; credentialRevision: string; targetAccount: string; targetDisplay: string; planDigest: string; createdAt: string; expiresAt: string};
+    credentialRef: string; credentialRevision: string; targetAccount: string; targetDisplay: string; planDigest: string; createdAt: string; expiresAt: string;
+    /** Files the content names, for the owner page to preview through ownerActionMedia. */
+    media: {mediaId: string; contentType: string}[]};
 
 type Row = {action_id: string; account_id: string; provider: string; contract_revision: string; operation: string; content: string;
     credential_ref: string; credential_revision: string; target_account: string; plan_digest: string; status: string; created_at: string;
@@ -213,9 +216,18 @@ export async function pendingForOwner(tx: Transaction, agentIds: string[], now: 
         WHERE x.account_id IN (${agentIds.map(() => '?').join(',')}) AND x.status='pending' AND x.expires_at>CAST(? AS INTEGER)
         ORDER BY x.created_at,x.action_id LIMIT ?`)
         .bind(...agentIds, now.toString(), pendingActionsPerAgent * agentIds.length).all<Row & {target_display: string}>()).results;
-    return rows.map(row => ({actionId: row.action_id, agentId: row.account_id, provider: row.provider, operation: row.operation, content: row.content,
-        credentialRef: row.credential_ref, credentialRevision: row.credential_revision, targetAccount: row.target_account, targetDisplay: row.target_display,
-        planDigest: row.plan_digest, createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!}));
+    const actions: OwnerExternalAction[] = [];
+    for (const row of rows) {
+        const media: OwnerExternalAction['media'] = [];
+        for (const mediaId of mediaIdsOf(row.content)) {
+            const record = await readMediaRecord(tx, row.account_id, mediaId);
+            if (record) media.push({mediaId, contentType: record.contentType});
+        }
+        actions.push({actionId: row.action_id, agentId: row.account_id, provider: row.provider, operation: row.operation, content: row.content,
+            credentialRef: row.credential_ref, credentialRevision: row.credential_revision, targetAccount: row.target_account, targetDisplay: row.target_display,
+            planDigest: row.plan_digest, createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!, media});
+    }
+    return actions;
 }
 
 /** The action of an agent this human owns; any other is indistinguishable from a missing one. */
@@ -251,4 +263,34 @@ export async function rejectExternalAction(tx: Transaction, human: OwnerHuman, a
     tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='rejected',decided_at=CAST(? AS INTEGER),decided_by=?,updated_at=CAST(? AS INTEGER)
         WHERE action_id=? AND status='pending'`).bind(stamp, human.humanId, stamp, actionId));
     return {ok: true};
+}
+
+/** Media IDs an action's content names: a top-level mediaId and every media[].mediaId. */
+export function mediaIdsOf(content: string): string[] {
+    let value: unknown;
+    try { value = JSON.parse(content); } catch { return []; }
+    const plan = value as {mediaId?: unknown; media?: unknown} | null;
+    if (!plan || typeof plan !== 'object') return [];
+    const ids = typeof plan.mediaId === 'string' ? [plan.mediaId] : [];
+    if (Array.isArray(plan.media)) for (const item of plan.media) if (typeof (item as {mediaId?: unknown})?.mediaId === 'string') ids.push((item as {mediaId: string}).mediaId);
+    return ids;
+}
+
+/**
+ * Owner RPC: the bytes of one file an action of the human's own agent names, so the owner sees what they approve.
+ * Anything else, including media of the same agent not named by this action, is null.
+ */
+export async function ownerActionMedia(env: Env, humanId: string, actionId: string, mediaId: string): Promise<{contentType: string; body: ReadableStream} | null> {
+    const found = await atomic(env.db, async tx => {
+        const row = await readRow(tx, actionId);
+        if (!row || !mediaIdsOf(row.content).includes(mediaId)) return null;
+        const owner = await tx.db.prepare('SELECT a.human_id,CAST(h.frozen_at AS TEXT) frozen_at FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=?')
+            .bind(row.account_id).first<{human_id: string; frozen_at: string | null}>();
+        if (!owner || owner.human_id !== humanId || owner.frozen_at !== null) return null;
+        const media = await readMediaRecord(tx, row.account_id, mediaId);
+        return media && {accountId: row.account_id, contentType: media.contentType};
+    });
+    if (!found) return null;
+    const object = await openMedia(env, found.accountId, mediaId);
+    return object && {contentType: found.contentType, body: object.body};
 }

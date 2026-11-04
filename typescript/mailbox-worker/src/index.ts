@@ -18,7 +18,7 @@ import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
 import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
-import { executeExternalAction, getExternalAction, keyCaller, proposeExternalAction } from './external-actions.ts';
+import { executeExternalAction, getExternalAction, keyCaller, ownerActionMedia, proposeExternalAction } from './external-actions.ts';
 import { serveSignedMedia, uploadMedia } from './external-media.ts';
 import { connectExternalCredential, connectPostiz, type ConnectCredentialInput, type ConnectCredentialResult, type ConnectPostizInput, type ConnectPostizResult } from './external-credentials.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
@@ -44,6 +44,7 @@ export class HumanDirectory extends WorkerEntrypoint<Env> {
     ownerAction(input: OwnerAction): Promise<OwnerActionResult> { return ownerAction(scopedEnv(this.env), input); }
     connectCredential(input: ConnectCredentialInput): Promise<ConnectCredentialResult> { return connectExternalCredential(scopedEnv(this.env), input); }
     connectPostiz(input: ConnectPostizInput): Promise<ConnectPostizResult> { return connectPostiz(scopedEnv(this.env), input); }
+    ownerActionMedia(humanId: string, actionId: string, mediaId: string): Promise<{contentType: string; body: ReadableStream} | null> { return ownerActionMedia(scopedEnv(this.env), humanId, actionId, mediaId); }
     recordGrant(input: RecordGrantInput): Promise<RecordGrantResult> { return recordGrant(scopedEnv(this.env), input); }
     revokeGrant(input: RevokeGrantInput): Promise<RevokeGrantResult> { return revokeGrant(scopedEnv(this.env), input); }
 }
