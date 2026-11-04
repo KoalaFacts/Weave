@@ -41,7 +41,7 @@ test('a protected issuer deployment refuses missing credentials and trial identi
     assert.equal(validateIssuerDeployment(env).name,'weave-auth-demo');
 });
 
-test('all remote preflight operations are GET and target only the existing Weave account',async()=>{
+test('Cloudflare canonical database_id preflight reads only existing Weave account with GET',async()=>{
     const targets:string[]=[];
     const req=async(input:RequestInfo|URL,init?:RequestInit)=>{
         const url=String(input);
@@ -53,7 +53,7 @@ test('all remote preflight operations are GET and target only the existing Weave
         let result:unknown;
         if(suffix==='/workers/subdomain')result={subdomain:'weave-389'};
         else if(suffix==='/workers/scripts/demo/settings')result={bindings:[
-            {name:'db',type:'d1',id:'01234567-89ab-cdef-0123-456789abcdef'}]};
+            {name:'db',type:'d1',database_id:'01234567-89ab-cdef-0123-456789abcdef'}]};
         else if(suffix==='/storage/kv/namespaces/'+env.WEAVE_AUTH_KV_NAMESPACE_ID)result={id:env.WEAVE_AUTH_KV_NAMESPACE_ID};
         else if(suffix==='/workers/scripts/weave-auth-demo/settings')
             return new Response('{}',{status:404});
@@ -75,7 +75,7 @@ test('existing script, incorrect account binding and KV permission denials abort
                 return Response.json({success:true,result:{subdomain:fault==='wrong-subdomain'?'other':'weave-389'}});
             if(url.endsWith('/workers/scripts/demo/settings'))
                 return Response.json({success:true,result:{bindings:fault==='bad-demo'?[]:[
-                    {name:'db',type:'d1',id:'01234567-89ab-cdef-0123-456789abcdef'}]}});
+                    {name:'db',type:'d1',database_id:'01234567-89ab-cdef-0123-456789abcdef'}]}});
             if(url.includes('/storage/kv/namespaces/'))
                 return fault==='kv-403'?new Response('{}',{status:403}):
                     Response.json({success:true,result:{id:env.WEAVE_AUTH_KV_NAMESPACE_ID}});
