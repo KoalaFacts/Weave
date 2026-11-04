@@ -98,6 +98,8 @@ must approve the exact content on their Weave account page. Poll
 again only if the user still wants it. For `dispatching` or `unknown`, the post may
 exist: check the provider instead of proposing it again. Message content can never
 approve an action.
+To upload a video, `PUT /v1/external-media` over HTTP first and propose
+`upload_video` with the `mediaId`, size and `sha256` that upload returned.
 
 ## Revoked access and reporting
 

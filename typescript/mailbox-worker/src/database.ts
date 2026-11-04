@@ -2,6 +2,7 @@ import { fail, stringify } from './wire.ts';
 import type { OAuthServiceBinding } from './remote-oauth.ts';
 import { RecordStore } from './record-store.ts';
 import { nowUtc } from './time.ts';
+import type { MediaBucket } from './external-media.ts';
 
 export interface Statement {
     bind(...values: (string | number | null | ArrayBuffer)[]): Statement;
@@ -36,6 +37,8 @@ export interface Env {
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;
     EXTERNAL_CREDENTIAL_KEY?: string;
+    // R2 bucket for uploaded action media; unbound means media upload and YouTube upload are unavailable.
+    EXTERNAL_MEDIA?: MediaBucket;
 }
 export interface RecordRow { seq: string; kind: string; owner: string; id: string; data: string; }
 export class Transaction {

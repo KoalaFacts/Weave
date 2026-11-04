@@ -14,7 +14,7 @@ export const keyFile = (as: AgentCredential) => JSON.stringify({ accountId: as.a
 export type StartOptions = { persist?: string; migrate?: boolean; bindings?: Record<string, string>; scriptPath?: string; legacy?: boolean; outboundService?: any };
 export async function start({ persist, migrate = true, bindings = {}, scriptPath = 'dist/index.js', legacy = false, outboundService }: StartOptions = {}) {
     const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath, compatibilityDate: '2026-07-01', compatibilityFlags:['nodejs_compat'],
-        d1Databases: ['db'], ...(persist ? { resourcePersistencePath: persist } : {}), bindings: {
+        d1Databases: ['db'], r2Buckets: ['EXTERNAL_MEDIA'], ...(persist ? { resourcePersistencePath: persist } : {}), bindings: {
             REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
             REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
             ...bindings }, ...(outboundService ? {outboundService} : {}) }));
