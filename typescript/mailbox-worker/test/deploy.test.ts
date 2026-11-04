@@ -460,6 +460,29 @@ test('approved first-party rollout can preserve the exact preinstalled OAuth ser
         assert.equal(config.vars.OAUTH_RESOURCE,firstPartyResource);
     }
 });
+test('explicit first-party rollout refuses existing foreign, mixed or ambiguous OAuth bindings before any upload',async()=>{
+    const approved=[
+        ...preapprovedResource,
+        {name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',environment:'production'},
+        {name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer},
+        {name:'OAUTH_RESOURCE',type:'plain_text',text:firstPartyResource}
+    ];
+    const cases=[
+        approved.map(binding=>binding.name==='AUTH_SERVER'?{...binding,entrypoint:'ForeignEntrypoint'}:binding),
+        approved.map(binding=>binding.name==='AUTH_SERVER'?{...binding,environment:'staging'}:binding),
+        approved.map(binding=>binding.name==='OAUTH_ISSUER'?{...binding,text:'https://other.example'}:binding),
+        approved.map(binding=>binding.name==='OAUTH_RESOURCE'?{...binding,text:'https://other.example/mcp'}:binding),
+        [...approved,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}],
+        [...approved,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]
+    ];
+    for(const bindings of cases){
+        const f=firstPartyBootstrap({bindings});
+        await assert.rejects(deploy(f.options),/outside the approved target|differs from approved values|not preapproved/);
+        assert.equal(f.commands.length,0,'Reject prior to maintenance and all D1/Worker writes');
+        assert.equal(f.requests.some(url=>url.endsWith('/workers/scripts/weave-auth-demo/settings')),false,
+            'Ambiguous or unauthorized resource binding must be rejected before issuer lookup');
+    }
+});
 test('first-party bootstrap accepts the default production environment Cloudflare reports on service bindings',async()=>{
     // The live settings API reports "environment":"production" for a binding to a Worker's default environment.
     const f=firstPartyBootstrap({serviceEnvironment:'production'});
