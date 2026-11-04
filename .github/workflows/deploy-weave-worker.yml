@@ -44,6 +44,9 @@ jobs:
        github.event.comment.author_association == 'MEMBER' &&
        github.actor == 'ldsenow')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -86,13 +89,12 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
           WEAVE_RELEASE_DATABASE_MODE: ${{ github.event_name == 'issue_comment' && 'completed-only' || inputs.database_mode }}
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
-      - run: npm ci --ignore-scripts
-        working-directory: typescript/mailbox-worker
-      - run: |
-          npm run typecheck
-          npm test
-          npm audit --audit-level=high
-        working-directory: typescript/mailbox-worker
+      # The Worker verification workflow already ran typecheck, the full Worker suite, audit and browser checks on
+      # this commit on main; the release requires that exact run to have passed instead of repeating it here.
+      - name: Require passed Worker verification on main for this commit
+        run: node typescript/mailbox-worker/scripts/require-ci-success.ts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
   deploy-repository:
     needs: verify
     if: inputs.configuration_scope == 'repository' || (github.event_name == 'push' && github.ref == 'refs/heads/publish/demo')
