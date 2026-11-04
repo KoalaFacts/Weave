@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
 import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
+import {createServer} from 'node:http';
+import {once} from 'node:events';
 import {withTestGrant,start} from './harness.ts';
+import {ownerAction,ownerOverview,type OwnerAction} from '../src/owner-actions.ts';
 import type {Env} from '../src/database.ts';
 // Evaluate the bundled production module, as the other private MCP tests do.
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
@@ -55,9 +58,14 @@ test('every MCP tool publishes a closed input schema and an object output schema
 
 test('real D1 results of every private tool conform to their published output schemas',async()=>{
     const h=await start();
+    // A local fake for the test-only external action provider; it completes every call.
+    const provider=createServer((request,response)=>{request.resume();request.on('end',()=>
+        response.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({externalId:'post-contract'})));}).listen(0,'127.0.0.1');
+    await once(provider,'listening');
     try{
         const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0',
+            EXTERNAL_ACTION_TEST_ENDPOINT:`http://127.0.0.1:${(provider.address() as {port:number}).port}/post`};
         const a=await h.participant(),b=await h.participant();
         const seen=new Set<string>();
         const run=async(owner:string,name:string,args:Record<string,unknown>={})=>{
@@ -91,8 +99,18 @@ test('real D1 results of every private tool conform to their published output sc
         assert.ok(inbox.items.some((item:{message?:{messageId:string}})=>item.message?.messageId===message.messageId));
         await run(b.accountId,'ack_message',{messageId:message.messageId,senderAccountId:a.accountId});
         await run(a.accountId,'list_my_outbox');
+        const at=(BigInt(Date.now())*10000n).toString();
+        await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
+            VALUES(?,'linkedin-main','test-http','rev-1','urn:li:person:contract','Contract desk',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(a.accountId,at,at).run();
+        const action=await run(a.accountId,'propose_external_action',{credentialRef:'linkedin-main',operation:'publish_text',content:'contract-post'});
+        await run(a.accountId,'get_external_action',{actionId:action.actionId});
+        const humanId=(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(a.accountId).first<string>('human_id'))!;
+        const overview=await ownerOverview(env,humanId) as Extract<Awaited<ReturnType<typeof ownerOverview>>,{frozen:false}>;
+        assert.deepEqual(await ownerAction(env,{humanId,authAt:Date.now(),kind:'confirm-action',requestId:action.actionId,
+            planDigest:overview.externalActions[0].planDigest} as OwnerAction),{ok:true});
+        assert.equal((await run(a.accountId,'execute_external_action',{actionId:action.actionId})).status,'completed');
         assert.deepEqual([...seen].sort(),(privateMcpTools as Schema[]).map(t=>t.name).sort(),'every private tool was exercised');
-    }finally{await h.close();}
+    }finally{await h.close();provider.close();}
 });
 
 test('public tool results conform to their output schemas and argument errors name the rule',async()=>{
