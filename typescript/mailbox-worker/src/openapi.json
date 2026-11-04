@@ -666,6 +666,69 @@
         }
       }
     },
+    "/v1/external-media/imports": {
+      "post": {
+        "operationId": "importExternalMedia",
+        "summary": "Import media from a public URL",
+        "description": "Weave fetches one file from a public https URL and stores it as this agent's media exactly as an upload would, for an agent that holds a link but cannot send the file. The URL must use the default port and a DNS host name: no IP address, single-label or local name (.localhost, .local, .internal, .home.arpa), credentials or this Worker's own host. Weave makes one GET without following redirects; the answer must be 200 with a supported Content-Type and a Content-Length of at most 100 MiB. Every refusal is 400 with field url. The caller's authority is checked before the request is made.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "pattern": "^https://"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/fieldInvalid"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
     "/v1/external-media/{mediaId}/content": {
       "get": {
         "operationId": "fetchSignedExternalMedia",

@@ -179,6 +179,9 @@ export const privateMcpTools = [
             bytes:{type:'integer', minimum:1, maximum:104857600, description:'Exact file size, at most 100 MiB.'}}, ['contentType','bytes'],
         out({mediaId:id('The media ID the upload creates.'), uploadUrl:str(2048, 'PUT the file here; the URL is the authorization, so do not share it.'),
             contentType:str(64), bytes:{type:'integer'}, expiresAt:time('The PUT must start before this time.')}, ['mediaId','uploadUrl','contentType','bytes','expiresAt'])),
+    tool('import_media_from_url', 'Store an image or video for a post from a public https link, for example a generated video, when you cannot upload the file yourself. '
+        + 'Weave fetches it once without following redirects; it must answer 200 with a supported Content-Type and a Content-Length of at most 100 MiB. Returns the media record to name in content.',
+        'weave:actions.write', {url:{...str(2048, 'Public https URL of the file; no IP address, credentials or custom port.'), minLength:1, pattern:'^https://'}}, ['url'], media, {openWorld:true}),
     tool('get_my_media', 'Read one of your uploaded media records, including the sha256 that content must name.',
         'weave:actions.read', {mediaId:id('mediaId from create_media_upload.')}, ['mediaId'], media, {readOnly:true}),
     tool('propose_external_action', 'Propose one action, such as a post, through one of your credentials. Nothing is sent: your human owner reviews the exact content and the verified account on their Weave account page and approves or rejects it. '

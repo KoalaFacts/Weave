@@ -6,6 +6,7 @@ import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {withTestGrant,start} from './harness.ts';
+import {inProcessMedia} from './in-process-media.ts';
 import {ownerAction,ownerOverview,type OwnerAction} from '../src/owner-actions.ts';
 import type {Env} from '../src/database.ts';
 // Evaluate the bundled production module, as the other private MCP tests do.
@@ -68,7 +69,7 @@ test('real D1 results of every private tool conform to their published output sc
         const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
             REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0',
             EXTERNAL_ACTION_TEST_ENDPOINT:`http://127.0.0.1:${(provider.address() as {port:number}).port}/post`,
-            EXTERNAL_CREDENTIAL_KEY:mediaKey,EXTERNAL_MEDIA_ORIGIN:origin,EXTERNAL_MEDIA:await h.mf.getR2Bucket('EXTERNAL_MEDIA') as unknown as Env['EXTERNAL_MEDIA']};
+            EXTERNAL_CREDENTIAL_KEY:mediaKey,EXTERNAL_MEDIA_ORIGIN:origin,EXTERNAL_MEDIA:inProcessMedia(await h.mf.getR2Bucket('EXTERNAL_MEDIA')) as unknown as Env['EXTERNAL_MEDIA']};
         const a=await h.participant(),b=await h.participant();
         const seen=new Set<string>();
         const run=async(owner:string,name:string,args:Record<string,unknown>={})=>{
@@ -109,6 +110,10 @@ test('real D1 results of every private tool conform to their published output sc
         const upload=await run(a.accountId,'create_media_upload',{contentType:'image/png',bytes:4});
         assert.equal((await h.mf.dispatchFetch(upload.uploadUrl,{method:'PUT',headers:{'Content-Type':'image/png','Content-Length':'4'},body:'png!'})).status,200);
         assert.equal((await run(a.accountId,'get_my_media',{mediaId:upload.mediaId})).bytes,4);
+        const fetchBefore=globalThis.fetch;
+        globalThis.fetch=async()=>new Response('gif!',{headers:{'Content-Type':'image/gif','Content-Length':'4'}});
+        try{assert.equal((await run(a.accountId,'import_media_from_url',{url:'https://cdn.example.com/a.gif'})).contentType,'image/gif');}
+        finally{globalThis.fetch=fetchBefore;}
         const action=await run(a.accountId,'propose_external_action',{credentialRef:'linkedin-main',operation:'publish_text',content:'contract-post'});
         await run(a.accountId,'get_external_action',{actionId:action.actionId});
         const humanId=(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(a.accountId).first<string>('human_id'))!;
