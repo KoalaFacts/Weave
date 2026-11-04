@@ -8,6 +8,7 @@ const env = {
     OAUTH_ISSUER: 'https://weave-auth-demo.weave-389.workers.dev',
     OAUTH_RESOURCE: 'https://demo.weave-389.workers.dev/mcp',
     GITHUB_CLIENT_ID: 'Iv23liPublicClientId',
+    WEAVE_TRIAL_GITHUB_SUBJECTS: '8101,8102',
     GITHUB_CLIENT_SECRET: 'a-private-github-secret-must-never-appear',
     HUMAN_SESSION_KEY: 'a-private-session-key-must-never-appear'
 };
@@ -37,6 +38,8 @@ test('creates an exact approved demo authorization manifest without secrets', ()
     ]);
     assert.equal(JSON.stringify(config).includes(env.GITHUB_CLIENT_SECRET), false);
     assert.equal(JSON.stringify(config).includes(env.HUMAN_SESSION_KEY), false);
+    assert.equal(JSON.stringify(config).includes(env.WEAVE_TRIAL_GITHUB_SUBJECTS), false,
+        'trial identities must be installed as an AS-only secret, never written into a generated manifest');
     assert.equal('routes' in config, false);
 });
 
@@ -53,7 +56,14 @@ test('refuses wrong account/resource/issuer, missing approved KV namespace or Gi
         {OAUTH_ISSUER: 'https://weave-auth-demo.weave-389.workers.dev@evil.example'},
         {OAUTH_ISSUER: 'http://weave-auth-demo.weave-389.workers.dev'},
         {GITHUB_CLIENT_ID: undefined},
-        {GITHUB_CLIENT_ID: 'not a client id'}
+        {GITHUB_CLIENT_ID: 'not a client id'},
+        {WEAVE_TRIAL_GITHUB_SUBJECTS: undefined},
+        {WEAVE_TRIAL_GITHUB_SUBJECTS: '8101'},
+        {WEAVE_TRIAL_GITHUB_SUBJECTS: '8101,8101'},
+        {WEAVE_TRIAL_GITHUB_SUBJECTS: 'Everyone'},
+        {WEAVE_TRIAL_GITHUB_SUBJECTS: '8101, 8102'},
+        {WEAVE_TRIAL_GITHUB_SUBJECTS: '0,8102'},
+        {WEAVE_TRIAL_GITHUB_SUBJECTS: '9007199254740993,8102'}
     ];
     for (const change of mutations)
         assert.throws(() => renderDemoConfig({...env,...change}),

@@ -99,6 +99,7 @@ jobs:
           OAUTH_ISSUER: https://weave-auth-demo.weave-389.workers.dev
           OAUTH_RESOURCE: https://demo.weave-389.workers.dev/mcp
           GITHUB_CLIENT_ID: dummy-public-client-id
+          WEAVE_TRIAL_GITHUB_SUBJECTS: 8101,8102
       - name: Bundle Cloudflare authorization Worker without publishing
         run: npm run build
       - name: Exercise real workerd Durable Object consent replay and cold restart
