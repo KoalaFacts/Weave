@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {randomBytes} from 'node:crypto';
 import {build} from 'esbuild';
 import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
 import {createServer} from 'node:http';
@@ -57,7 +58,8 @@ test('every MCP tool publishes a closed input schema and an object output schema
 });
 
 test('real D1 results of every private tool conform to their published output schemas',async()=>{
-    const h=await start();
+    const mediaKey=randomBytes(32).toString('base64url');
+    const h=await start({bindings:{EXTERNAL_CREDENTIAL_KEY:mediaKey,EXTERNAL_MEDIA_ORIGIN:origin}});
     // A local fake for the test-only external action provider; it completes every call.
     const provider=createServer((request,response)=>{request.resume();request.on('end',()=>
         response.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({externalId:'post-contract'})));}).listen(0,'127.0.0.1');
@@ -65,7 +67,8 @@ test('real D1 results of every private tool conform to their published output sc
     try{
         const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
             REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0',
-            EXTERNAL_ACTION_TEST_ENDPOINT:`http://127.0.0.1:${(provider.address() as {port:number}).port}/post`};
+            EXTERNAL_ACTION_TEST_ENDPOINT:`http://127.0.0.1:${(provider.address() as {port:number}).port}/post`,
+            EXTERNAL_CREDENTIAL_KEY:mediaKey,EXTERNAL_MEDIA_ORIGIN:origin,EXTERNAL_MEDIA:await h.mf.getR2Bucket('EXTERNAL_MEDIA') as unknown as Env['EXTERNAL_MEDIA']};
         const a=await h.participant(),b=await h.participant();
         const seen=new Set<string>();
         const run=async(owner:string,name:string,args:Record<string,unknown>={})=>{
@@ -102,6 +105,10 @@ test('real D1 results of every private tool conform to their published output sc
         const at=(BigInt(Date.now())*10000n).toString();
         await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
             VALUES(?,'linkedin-main','test-http','rev-1','urn:li:person:contract','Contract desk',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(a.accountId,at,at).run();
+        assert.deepEqual((await run(a.accountId,'list_my_credentials')).items.map((item:{credentialRef:string})=>item.credentialRef),['linkedin-main']);
+        const upload=await run(a.accountId,'create_media_upload',{contentType:'image/png',bytes:4});
+        assert.equal((await h.mf.dispatchFetch(upload.uploadUrl,{method:'PUT',headers:{'Content-Type':'image/png','Content-Length':'4'},body:'png!'})).status,200);
+        assert.equal((await run(a.accountId,'get_my_media',{mediaId:upload.mediaId})).bytes,4);
         const action=await run(a.accountId,'propose_external_action',{credentialRef:'linkedin-main',operation:'publish_text',content:'contract-post'});
         await run(a.accountId,'get_external_action',{actionId:action.actionId});
         const humanId=(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(a.accountId).first<string>('human_id'))!;

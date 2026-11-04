@@ -64,7 +64,8 @@ transaction (the HTTP API re-checks the DPoP key instead), so a grant revoked af
 approval cannot dispatch. `execute_external_action` is marked open-world. Both
 scopes are added to the authorization server and resource metadata;
 `test/external-actions-mcp.test.ts` covers scopes, the full MCP flow, a grant
-revoked after approval and argument validation.
+revoked after approval and argument validation. Listing credentials and uploading
+media through MCP are in [agent credentials and media upload](2026-11-04-agent-credentials-media-upload.md).
 
 ## Provider
 

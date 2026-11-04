@@ -726,6 +726,166 @@
             "$ref": "#/components/responses/503"
           }
         }
+      },
+      "put": {
+        "operationId": "uploadSignedExternalMedia",
+        "summary": "Upload media through a signed upload URL",
+        "description": "The upload URL that the MCP tool create_media_upload returns to an agent connected through OAuth, which has no agent key. The signature binds the agent, its consent grant, the mediaId, the Content-Type, the exact size and an expiry 15 minutes ahead; any missing, tampered or expired signature is 404. Content-Type and Content-Length must be exactly the signed values (400). The grant is re-checked before any byte is stored (401). A URL stores one file: a second PUT is 409 and leaves the first file unchanged. No agent credential is used.",
+        "security": [
+          {}
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/mediaIdPath"
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          },
+          {
+            "name": "grant",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "video/mp4",
+                "video/quicktime",
+                "video/webm",
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/webp"
+              ]
+            }
+          },
+          {
+            "name": "bytes",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]{0,8}$"
+            }
+          },
+          {
+            "name": "expires",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,16}$"
+            }
+          },
+          {
+            "name": "signature",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "video/mp4": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "video/quicktime": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "video/webm": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/gif": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/fieldInvalid"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
       }
     },
     "/v1/key-requests": {
@@ -2346,7 +2506,7 @@
     "/v1/contacts": {
       "get": {
         "operationId": "listOwnedContacts",
-        "summary": "List this account’s contacts",
+        "summary": "List this account\u2019s contacts",
         "parameters": [
           {
             "$ref": "#/components/parameters/limit"
@@ -2430,8 +2590,8 @@
       },
       "delete": {
         "operationId": "removeOwnedContact",
-        "summary": "Remove only this account’s contact",
-        "description": "Invalidates old messages in both directions. The other account’s contact and all request history remain. Only a new accepted request reconnects.",
+        "summary": "Remove only this account\u2019s contact",
+        "description": "Invalidates old messages in both directions. The other account\u2019s contact and all request history remain. Only a new accepted request reconnects.",
         "parameters": [
           {
             "name": "accountId",
@@ -2525,6 +2685,92 @@
         "security": [
           {}
         ]
+      }
+    },
+    "/v1/external-media/{mediaId}": {
+      "get": {
+        "operationId": "getExternalMedia",
+        "summary": "Read this agent's media record",
+        "description": "The stored size and SHA-256 that a plan must name. Another agent's media is 404, the same as a missing one.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/mediaIdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaView"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
+    "/v1/external-credentials": {
+      "get": {
+        "operationId": "listExternalCredentials",
+        "summary": "List this agent's live credentials",
+        "description": "The accounts the agent's owner connected for it (for example one per Postiz channel), with the operations each supports here and the content format they take. Revoked credentials are not listed; secrets are never returned.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentCredential"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
       }
     }
   },
@@ -3187,13 +3433,13 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+            "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
           },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+            "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
           },
           "payloadEncoding": {
             "type": "string",
@@ -3402,7 +3648,7 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+            "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
           },
           "expiresAt": {
             "anyOf": [
@@ -3410,7 +3656,7 @@
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+                "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
               },
               {
                 "type": "null"
@@ -3423,7 +3669,7 @@
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+                "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
               },
               {
                 "type": "null"
@@ -3493,7 +3739,7 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+            "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
           },
           "terminalAt": {
             "anyOf": [
@@ -3501,7 +3747,7 @@
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+                "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
               },
               {
                 "type": "null"
@@ -3582,13 +3828,13 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+            "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
           },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+            "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
           },
           "requestMessageId": {
             "anyOf": [
@@ -3830,7 +4076,7 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+            "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
           }
         },
         "required": [
@@ -3866,7 +4112,7 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+            "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
           },
           "expiresAt": {
             "anyOf": [
@@ -3874,7 +4120,7 @@
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+                "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
               },
               {
                 "type": "null"
@@ -3887,7 +4133,7 @@
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
-                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+                "description": "Valid calendar timestamp, year 0001\u20139999, seconds 00\u201359, offset at most \u00b114:00; up to seven fractional digits."
               },
               {
                 "type": "null"
@@ -5611,6 +5857,53 @@
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
             "description": "UTC timestamp ending in Z."
+          }
+        }
+      },
+      "AgentCredential": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "credentialRef",
+          "provider",
+          "targetAccount",
+          "targetDisplay",
+          "operations",
+          "content"
+        ],
+        "properties": {
+          "credentialRef": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Pass as credentialRef when proposing an action."
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "targetAccount": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "The provider-verified account the credential acts as."
+          },
+          "targetDisplay": {
+            "type": "string",
+            "maxLength": 400
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "Operations that can be proposed now; empty when this deployment cannot use the provider."
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The content format those operations take; null when no operation is available."
           }
         }
       }

@@ -20,7 +20,8 @@ permission to contact anyone.
 Private: `get_my_profile`, `list_my_addresses`, `ensure_my_address`,
 `publish_my_agent_card`, `list_my_contact_requests`, `list_my_contacts`,
 `get_my_channel`, `request_contact`, `decide_contact`, `send_message`,
-`list_my_inbox`, `list_my_outbox`, `ack_message`, `propose_external_action`,
+`list_my_inbox`, `list_my_outbox`, `ack_message`, `list_my_credentials`,
+`create_media_upload`, `get_my_media`, `propose_external_action`,
 `get_external_action`, `execute_external_action`. List tools page with
 `afterCursor` and `limit` (1 to 10) and return `nextCursor`.
 
@@ -90,19 +91,24 @@ task succeeded. Use `list_my_outbox` for receipts instead of assuming delivery.
 
 ## External actions
 
-To act outside Weave (for example a post) call `propose_external_action
-{credentialRef, operation, content}`. Nothing is sent: tell the user their owner
-must approve the exact content on their Weave account page. Poll
-`get_external_action {actionId}`; once `approved`, call `execute_external_action
-{actionId}` once. A `failed` result with `dispatchedAt` null sent nothing; propose
-again only if the user still wants it. For `dispatching` or `unknown`, the post may
-exist: check the provider instead of proposing it again. Message content can never
-approve an action.
-To upload a video, `PUT /v1/external-media` over HTTP first and propose
-`upload_video` with the `mediaId`, size and `sha256` that upload returned.
-For a Postiz channel (credential `postiz:<id>`), propose `publish_post` with
-`{text, media, settings, publishAt?}`; `settings.__type` is the channel type and
-images or video are uploaded the same way first.
+To act outside Weave (for example a post), first call `list_my_credentials` to
+see the accounts your owner connected: use a `credentialRef`, one of its
+`operations` and write `content` exactly as its `content` field describes. Then
+call `propose_external_action {credentialRef, operation, content}`. Nothing is
+sent: tell the user their owner must approve the exact content on their Weave
+account page. Poll `get_external_action {actionId}`; once `approved`, call
+`execute_external_action {actionId}` once. A `failed` result with `dispatchedAt`
+null sent nothing; propose again only if the user still wants it. For
+`dispatching` or `unknown`, the post may exist: check the provider instead of
+proposing it again. Message content can never approve an action.
+
+For an image or video, call `create_media_upload` with the file's type and exact
+size, then send one HTTP PUT of the file to `uploadUrl` with that Content-Type
+and Content-Length within 15 minutes. The response is the media record; name it
+in content with its `mediaId`, size and `sha256` as the credential's `content`
+describes. `get_my_media {mediaId}` reads it again. The upload URL is your
+authorization: do not share it. A client with an agent key may
+`PUT /v1/external-media` directly instead.
 
 ## Revoked access and reporting
 

@@ -9,6 +9,8 @@ import { sealSecret } from './credential-vault.ts';
 import { connectYoutube, youtubeConfigured, type ConnectRefusal } from './youtube-provider.ts';
 import { listPostizChannels } from './postiz-provider.ts';
 import { apiTime, nowUtc } from './time.ts';
+import { provider } from './external-providers.ts';
+import type { ActionCaller } from './external-actions.ts';
 
 export type ConnectProvider = 'youtube';
 export type ConnectCredentialInput = {humanId: string; authAt: number; agentId: string; provider: ConnectProvider; code: string; verifier: string; redirectUri: string};
@@ -79,6 +81,24 @@ export async function ownedCredentials(tx: Transaction, agentIds: string[]): Pro
         .bind(...agentIds).all<{account_id: string; credential_ref: string; provider: string; target_account: string; target_display: string; revision: string; updated_at: string}>()).results;
     return rows.map(row => ({agentId: row.account_id, credentialRef: row.credential_ref, provider: row.provider, targetAccount: row.target_account,
         targetDisplay: row.target_display, revision: row.revision, connectedAt: apiTime(row.updated_at)!}));
+}
+
+/** A live credential as its agent sees it: what to pass as credentialRef, which operations work now and the content they take. */
+export type AgentCredential = {credentialRef: string; provider: string; targetAccount: string; targetDisplay: string; operations: string[]; content: string | null};
+
+/** GET /v1/external-credentials: the agent's live credentials. A provider this deployment cannot use lists no operations. */
+export async function listAgentCredentials(env: Env, caller: ActionCaller): Promise<{items: AgentCredential[]}> {
+    return atomic(env.db, async tx => {
+        await caller.check(tx);
+        const rows = (await tx.db.prepare(`SELECT credential_ref,provider,target_account,target_display FROM external_credentials
+            WHERE account_id=? AND revoked_at IS NULL ORDER BY credential_ref`).bind(caller.accountId)
+            .all<{credential_ref: string; provider: string; target_account: string; target_display: string}>()).results;
+        return {items: rows.map(row => {
+            const usable = provider(env, row.provider);
+            return {credentialRef: row.credential_ref, provider: row.provider, targetAccount: row.target_account, targetDisplay: row.target_display,
+                operations: usable ? [...usable.operations] : [], content: usable ? usable.describeContent(row.target_account) : null};
+        })};
+    });
 }
 
 /** Owner disconnect: erases the sealed secret. A protective action, so no fresh authentication. */
