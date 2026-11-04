@@ -448,3 +448,61 @@ test("boundedProviderJson_OversizedStreamWithStalledCancel_RejectsPromptly",{tim
   assert.equal(cancellationRequested,true,"discard the untrusted provider response");
   assert.ok(performance.now()-started<5_000,"stream cleanup must not defeat provider bounds");
 });
+
+
+const publicTrialIssuer="https://weave-auth-demo.weave-389.workers.dev";
+async function publicTrialCallback(mf:Miniflare){
+  const started=await beginGithubLogin({...loginEnv,OAUTH_ISSUER:publicTrialIssuer},
+    new URL(publicTrialIssuer+"/account"),Date.now());
+  assert.equal(started.status,302);
+  const url=new URL(started.headers.get("location")!);
+  const cookie=started.headers.getSetCookie().find(x=>x.startsWith("__Host-weave_login="))!;
+  return mf.dispatchFetch(publicTrialIssuer+"/login/github/callback?"+
+    new URLSearchParams({code:"fake-code",state:url.searchParams.get("state")!}),{
+      redirect:"manual",headers:{Cookie:cookieHeader(cookie)}
+    });
+}
+
+test("trialIssuer_AbsentOrMalformedOwnerSelection_FailsClosedBeforeAnyGithubLogin",{timeout:120_000},async()=>{
+  // An unset, one-person or Everyone trial selector must never silently create
+  // an open first-party GitHub login service at the public approved issuer.
+  for(const selected of [undefined,"4242","4242,4242","Everyone"]){
+    const authEnv:Record<string,unknown>={
+      OAUTH_ISSUER:{type:"text",value:publicTrialIssuer},
+      ...(selected===undefined?{}:{WEAVE_TRIAL_GITHUB_SUBJECTS:{type:"text",value:selected}})
+    };
+    const instance=await start(authEnv);
+    try{
+      const response=await instance.mf.dispatchFetch(publicTrialIssuer+"/account",{redirect:"manual"});
+      assert.equal(response.status,503,"invalid trial configuration must fail closed: "+selected);
+      assert.equal((await humans(instance.mf)).length,0);
+    }finally{await stop(instance);}
+  }
+});
+
+test("trialIssuer_UnselectedGithubAccount_NeverCreatesHumanOrSession",{timeout:60_000},async()=>{
+  const instance=await start({
+    OAUTH_ISSUER:{type:"text",value:publicTrialIssuer},
+    WEAVE_TRIAL_GITHUB_SUBJECTS:{type:"text",value:"4243,4244"}
+  });
+  try{
+    const result=await publicTrialCallback(instance.mf);
+    assert.equal(result.status,403);
+    assert.ok(!sessionCookie(result.headers),"unselected GitHub account must receive no human session");
+    assert.equal((await humans(instance.mf)).length,0,"unselected account must not be inserted");
+  }finally{await stop(instance);}
+});
+
+test("trialIssuer_ExplicitSelectedGithubAccount_SignsInWithoutBroadeningTrial",{timeout:60_000},async()=>{
+  const instance=await start({
+    OAUTH_ISSUER:{type:"text",value:publicTrialIssuer},
+    WEAVE_TRIAL_GITHUB_SUBJECTS:{type:"text",value:"4242,4243"}
+  });
+  try{
+    const result=await publicTrialCallback(instance.mf);
+    assert.equal(result.status,302);
+    assert.ok(sessionCookie(result.headers));
+    const rows=await humans(instance.mf);
+    assert.deepEqual(rows.map((x:any)=>x.subject),["4242"]);
+  }finally{await stop(instance);}
+});

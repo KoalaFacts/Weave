@@ -121,6 +121,12 @@ the same-origin metadata and browser PKCE consent proof, and its rollback.
 Even a green Wrangler dry run is **not** remote OAuth access or #236's
 two-independent-agent public proof.
 
+## Exact owner-selected GitHub login trial (public AS prerequisite)
+
+The 2026-11-01 #236 owner authorization covers Weave's first-party OAuth infrastructure, but **does not name the actual trial identities** or authorize an Everyone policy. The fixed public trial issuer `https://weave-auth-demo.weave-389.workers.dev` now fails closed (503) without `WEAVE_TRIAL_GITHUB_SUBJECTS`: exactly 2–10 **distinct, owner-selected numeric GitHub user IDs**, comma-delimited with no spaces or wildcard (for example, IDs for the two invited test owners). Do **not** derive them from commit authors, emails or fixtures. A valid GitHub sign-in not on the explicit list gets 403 **before** the private `HumanDirectory.signIn` call creates a human record. Other local/synthetic issuer tests retain their existing behavior; this is not a global account-registration rule.
+
+Install `WEAVE_TRIAL_GITHUB_SUBJECTS` on the **authorization Worker only** through the approved secret channel, together with `GITHUB_CLIENT_SECRET` and `HUMAN_SESSION_KEY`. The nonpublishing `prepare:demo` step requires this selection to be set in its environment but **never writes the IDs, GitHub secret or session key to the generated manifest**, console or GitHub Actions evidence. CI uses synthetic IDs exclusively. Changing the trial membership during live operation requires a controlled session/revocation review: already issued human session cookies and OAuth grants do not become invalid solely because the allowlist changes. An approved removal needs revocation, not just editing this value. This is a deployment prerequisite, not evidence that a GitHub OAuth app, KV, DO or real users have been provisioned.
+
 ## One-time, approved first-party AS-to-demo binding rollout (not executed)
 
 The existing demo release keeps OAuth disabled by default. Only **after separate
