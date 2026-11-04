@@ -11,10 +11,11 @@ export type OwnerFormAction=
   |{kind:"revoke-grant";grantId:string}
   |{kind:"connect-youtube";agentId:string}
   |{kind:"connect-postiz";agentId:string}
+  |{kind:"connect-bluesky";agentId:string}
   |{kind:"revoke-credential";agentId:string;credentialRef:string};
 /** Kinds that need a fresh GitHub authentication before they are offered or applied. Revoking a client's grant is protective and does not. */
 export const destructiveKinds:ReadonlySet<OwnerFormAction["kind"]>=
-  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action","connect-youtube","connect-postiz"]);
+  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action","connect-youtube","connect-postiz","connect-bluesky"]);
 
 const tokenSeconds=600;
 const maxBodyBytes=4096;
@@ -22,7 +23,7 @@ const memberSets:Record<OwnerFormAction["kind"],readonly string[]>={
   "confirm-binding":["requestId","keysDigest"],"reject-binding":["requestId"],"confirm-key":["requestId"],"reject-key":["requestId"],
   "confirm-action":["requestId","planDigest"],"reject-action":["requestId"],
   "revoke-key":["agentId","kid"],"issue-recovery-code":["agentId"],"revoke-grant":["grantId"],
-  "connect-youtube":["agentId"],"connect-postiz":["agentId"],"revoke-credential":["agentId","credentialRef"]};
+  "connect-youtube":["agentId"],"connect-postiz":["agentId"],"connect-bluesky":["agentId"],"revoke-credential":["agentId","credentialRef"]};
 
 /** A token bound to one human and one exact action; it lives as long as the re-authentication window. */
 export const ownerActionToken=(key:string,humanId:string,action:OwnerFormAction,now:number):Promise<string>=>
@@ -50,6 +51,19 @@ export async function readPostizConnect(key:string,request:Request,session:Human
   const action=await verifiedAction(key,fields[0][1],session,now);
   if(action==="expired")return action;
   return action?.kind==="connect-postiz"&&fields[1][1].length>0?{agentId:action.agentId,apiKey:fields[1][1]}:null;
+}
+
+/**
+ * The Connect Bluesky form: its signed connect-bluesky token plus the handle and app password the owner typed. The password
+ * is only passed on to the mailbox, never stored, logged or echoed by this worker.
+ */
+export async function readBlueskyConnect(key:string,request:Request,session:HumanSession,now:number):Promise<{agentId:string;handle:string;appPassword:string}|"expired"|null>{
+  const form=await readBoundedForm(request,maxBodyBytes);
+  const fields=form?[...form]:[];
+  if(fields.length!==3||fields[0][0]!=="action"||fields[1][0]!=="handle"||fields[2][0]!=="appPassword")return null;
+  const action=await verifiedAction(key,fields[0][1],session,now);
+  if(action==="expired")return action;
+  return action?.kind==="connect-bluesky"&&fields[1][1].length>0&&fields[2][1].length>0?{agentId:action.agentId,handle:fields[1][1],appPassword:fields[2][1]}:null;
 }
 
 async function verifiedAction(key:string,token:string,session:HumanSession,now:number):Promise<OwnerFormAction|"expired"|null>{

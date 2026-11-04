@@ -59,8 +59,9 @@ The [Deploy Weave Worker workflow](../../.github/workflows/deploy-weave-worker.y
 
 The workflow verifies that the selected SHA is checked out and is already an ancestor of `main` before the existing Worker tests and audit. Advance the release branch without force; do not bypass a divergent head or failed check. No `weave-demo` environment is required. Confirm the authorized target and configuration scope before either release signal; do not recreate credentials or print their values.
 
-For a release authorized only against an already completed migration and existing
-schema, select `database_mode: completed-only` on the manual dispatch. This mode
+Every ordinary demo release path (manual dispatch, `publish/demo` and the
+protected owner comment) now uses **completed-only**. It cannot select schema
+migration or the old maintain-mode conversion. This mode
 requires the original migration checksum, a completed ledger record, an absent
 migration write gate and an empty schema plan before maintenance, after maintenance
 and before active deployment. A residual migration trigger is rejected, never removed.
@@ -75,12 +76,14 @@ it remains available in the failure report if that check fails.
 This protects the permitted SQL scope; it does not lock out concurrent administrators
 or provide an atomic snapshot across deployment steps.
 
-Manual dispatch defaults to `database_mode: maintain` for the existing reviewed conversion
-and additive-schema flow. **`publish/demo` pushes always select `completed-only`** so ordinary
-release signaling cannot authorize a data migration. Direct authorized script execution
-selects the same mode with `WEAVE_DEPLOY_DATABASE_MODE`; unknown
-or explicitly empty values fail before external operations. `completed-only` still
-requires deployment and ledger-check approval; it is not a read-only inspection.
+The separately approved exact-source-pinned [human D1 migration workflow](../../.github/workflows/approved-human-schema-migration.yml)
+retains the explicitly reviewed `maintain` path. Do not invoke that migration
+until historical account, message, ACK and identity-link preservation and a safe
+recovery path have been established; the latest production inventory has **not**
+established those facts. Direct authorized script execution selects its mode with
+`WEAVE_DEPLOY_DATABASE_MODE`; unknown or explicitly empty values fail before
+external operations. `completed-only` still requires deployment and ledger-check
+approval; it is not a read-only inspection.
 
 Use these existing GitHub configuration names in the selected scope:
 

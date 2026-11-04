@@ -14,12 +14,6 @@ on:
         required: true
         type: choice
         options: [repository, production]
-      database_mode:
-        description: Require completed migration and unchanged schema, or run the normal reviewed maintenance flow
-        required: true
-        type: choice
-        default: maintain
-        options: [maintain, completed-only]
       enable_first_party_oauth:
         description: Separately approved one-time production OAuth bootstrap; requires existing AS, KV, DO, signing secret and completed-only mode
         required: true
@@ -100,7 +94,7 @@ jobs:
         run: node typescript/mailbox-worker/scripts/oauth-rollout-intent.ts
         env:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
-          WEAVE_RELEASE_DATABASE_MODE: ${{ github.event_name == 'issue_comment' && 'completed-only' || inputs.database_mode }}
+          WEAVE_RELEASE_DATABASE_MODE: completed-only
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
       # The Worker verification workflow already ran typecheck, the full Worker suite, audit and browser checks on
       # this commit on main; the release requires that exact run to have passed instead of repeating it here.
@@ -129,7 +123,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'push' && 'completed-only' || inputs.database_mode }}
+          WEAVE_DEPLOY_DATABASE_MODE: completed-only
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
         working-directory: typescript/mailbox-worker
@@ -187,7 +181,7 @@ jobs:
         working-directory: typescript/mailbox-worker
         env:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
-          WEAVE_RELEASE_DATABASE_MODE: ${{ github.event_name == 'issue_comment' && 'completed-only' || inputs.database_mode }}
+          WEAVE_RELEASE_DATABASE_MODE: completed-only
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
       - name: Verify resources, migrate, confirm, and deploy existing demo
         run: node scripts/deploy.ts
@@ -195,7 +189,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'issue_comment' && 'completed-only' || inputs.database_mode }}
+          WEAVE_DEPLOY_DATABASE_MODE: completed-only
           WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: ${{ github.event_name == 'issue_comment' && 'false' || (inputs.enable_first_party_oauth == true && 'true' || 'false') }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
