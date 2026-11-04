@@ -139,9 +139,9 @@ export async function inspectCloudflareAudit(
             const uri = typeof raw?.uri === 'string' ? raw.uri.split('?')[0] : '';
             const normalized = uri.startsWith('/client/v4/') ? uri.slice('/client/v4'.length) : uri;
             const isD1 = normalized === d1Prefix || normalized.startsWith(d1Prefix + '/')
-                || (resource?.id === dbId && typeof resource?.product === 'string' && /d1/i.test(resource.product));
+                || (normalized === '' && resource?.id === dbId && typeof resource?.product === 'string' && /d1/i.test(resource.product));
             const isWorker = normalized === workerPrefix || normalized.startsWith(workerPrefix + '/')
-                || (resource?.id === 'demo' && typeof resource?.product === 'string' && /worker/i.test(resource.product));
+                || (normalized === '' && resource?.id === 'demo' && typeof resource?.product === 'string' && /worker/i.test(resource.product));
             if (!isD1 && !isWorker) continue;
             const action = object(entry?.action);
             const time = action?.time;
