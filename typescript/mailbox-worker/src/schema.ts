@@ -104,11 +104,15 @@ export const externalCredentials = sqliteTable("external_credentials", {
     revision: text("revision").notNull(),
     target_account: text("target_account").notNull(),
     target_display: text("target_display").notNull(),
+    // Sealed by credential-vault.ts and bound to this row's agent, reference, provider and revision; NULL once revoked
+    // and for providers that need none.
+    secret: opaqueBytes("secret"),
     created_at: exactInteger("created_at").notNull(),
     updated_at: exactInteger("updated_at").notNull(),
     revoked_at: exactInteger("revoked_at"),
 }, t => [
     primaryKey({columns:[t.account_id, t.credential_ref]}),
+    check("external_credentials_revoked_secret",sql`revoked_at IS NULL OR secret IS NULL`),
     check("external_credentials_ref",sql`length(credential_ref) BETWEEN 1 AND 64`),
     check("external_credentials_revision",sql`length(revision) BETWEEN 1 AND 64`)
 ]);

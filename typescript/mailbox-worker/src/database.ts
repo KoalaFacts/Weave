@@ -32,6 +32,10 @@ export interface Env {
     REGISTRATION_GLOBAL_PER_HOUR: string;
     // Enables the test-only external action provider. Never set in a deployed configuration.
     EXTERNAL_ACTION_TEST_ENDPOINT?: string;
+    // Google OAuth client for connecting YouTube, and the 32-byte base64url key sealing credential secrets. Worker secrets.
+    GOOGLE_CLIENT_ID?: string;
+    GOOGLE_CLIENT_SECRET?: string;
+    EXTERNAL_CREDENTIAL_KEY?: string;
 }
 export interface RecordRow { seq: string; kind: string; owner: string; id: string; data: string; }
 export class Transaction {
