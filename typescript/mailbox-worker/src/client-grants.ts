@@ -81,3 +81,11 @@ export async function liveOwnedGrant(db: Database, grantId: string): Promise<Gra
         .bind(grantId).first<{ human_id: string; account_id: string; client_id: string }>();
     return row && { grantId, humanId: row.human_id, accountId: row.account_id, clientId: row.client_id };
 }
+
+/** An external-action caller authorized by an OAuth consent grant: each check re-reads the grant inside the caller's own
+ * transaction, so a revocation, an ownership change or a freeze committed first refuses the operation. */
+export const grantCaller = (accountId: string, grantId: string) => ({accountId, check: async (tx: Transaction): Promise<void> => {
+    // A missing grant identity never skips the check.
+    const grant = typeof grantId === 'string' && grantId !== '' ? await liveOwnedGrant(tx.db, grantId) : null;
+    if (!grant || grant.accountId !== accountId) fail(401, 'grant-revoked');
+}});

@@ -100,6 +100,9 @@ const externalAction = out({
     failure:nullable(str(320, 'Why nothing was sent (credential-changed, owner-changed, owner-frozen, plan-changed), provider-rejected, or outcome-unknown.'))
 }, ['actionId','provider','operation','content','credentialRef','credentialRevision','targetAccount','status','createdAt','expiresAt','receipt','failure']);
 
+const media = out({mediaId:id('Media ID.'), contentType:str(64), bytes:{type:'integer', minimum:1}, sha256:{...str(64), pattern:'^[0-9a-f]{64}$'},
+    createdAt:time('Upload time.')}, ['mediaId','contentType','bytes','sha256','createdAt']);
+
 /** `openWorld` marks a tool whose effect reaches a service outside Weave. */
 type Annotations = {readOnly?: boolean; idempotent?: boolean; openWorld?: boolean};
 const tool = (name: string, description: string, scope: string, properties: Record<string, unknown>,
@@ -163,6 +166,21 @@ export const privateMcpTools = [
     tool('ack_message', 'Acknowledge a received message once, using its original sender account and ID. The body is deleted; the receipt is kept. Repeating returns the same receipt.',
         'weave:messages.ack', {messageId:v7('messageId from list_my_inbox.'), senderAccountId:id('senderAccountId from list_my_inbox.')},
         ['messageId','senderAccountId'], receipt, {idempotent:true}),
+    tool('list_my_credentials', 'List your live credentials (accounts your owner connected for you, such as Postiz channels): pass credentialRef to propose_external_action with one of its operations, '
+        + 'and write content exactly as its content field describes. A credential whose provider is unavailable here lists no operations.',
+        'weave:actions.read', {}, [], out({items:{type:'array', items:out({
+            credentialRef:str(64, 'Pass as credentialRef.'), provider:str(64), targetAccount:str(256, 'The provider-verified account the credential acts as.'),
+            targetDisplay:str(400, 'A readable name for the account.'), operations:{type:'array', items:str(64), description:'Operations you can propose now.'},
+            content:nullable({type:'string', description:'The content format those operations take.'})
+        }, ['credentialRef','provider','targetAccount','targetDisplay','operations','content'])}}, ['items']), {readOnly:true}),
+    tool('create_media_upload', 'Get a one-use URL for uploading an image or video for a post: send one HTTP PUT of the file to uploadUrl with exactly this Content-Type and Content-Length within 15 minutes. '
+        + 'The PUT response is the media record {mediaId, contentType, bytes, sha256}; reference it in content as {mediaId, bytes, sha256}. get_my_media reads it again.',
+        'weave:actions.write', {contentType:{type:'string', enum:['video/mp4','video/quicktime','video/webm','image/jpeg','image/png','image/gif','image/webp']},
+            bytes:{type:'integer', minimum:1, maximum:104857600, description:'Exact file size, at most 100 MiB.'}}, ['contentType','bytes'],
+        out({mediaId:id('The media ID the upload creates.'), uploadUrl:str(2048, 'PUT the file here; the URL is the authorization, so do not share it.'),
+            contentType:str(64), bytes:{type:'integer'}, expiresAt:time('The PUT must start before this time.')}, ['mediaId','uploadUrl','contentType','bytes','expiresAt'])),
+    tool('get_my_media', 'Read one of your uploaded media records, including the sha256 that content must name.',
+        'weave:actions.read', {mediaId:id('mediaId from create_media_upload.')}, ['mediaId'], media, {readOnly:true}),
     tool('propose_external_action', 'Propose one action, such as a post, through one of your credentials. Nothing is sent: your human owner reviews the exact content and the verified account on their Weave account page and approves or rejects it. '
         + 'Only an agent with an owner can propose. The plan expires after 1 hour. Retrying creates another plan that needs its own approval.',
         'weave:actions.write', {credentialRef:{...str(64, 'One of your live credentials.'), minLength:1, pattern:'^[A-Za-z0-9._:-]{1,64}$'},

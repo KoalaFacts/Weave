@@ -17,6 +17,8 @@ export type ExternalProvider = {
     /** Changes whenever approval-relevant dispatch semantics change; approvals bound to another revision are refused. */
     contractRevision: string;
     operations: readonly string[];
+    /** What `content` must be for this credential's account, for the agent composing a plan. */
+    describeContent(targetAccount: string): string;
     /** Provider-specific content rules checked when the plan is proposed; the reason it is invalid, or null. */
     checkContent?(tx: Transaction, plan: ProposedPlan): Promise<string | null>;
     execute(env: Env, call: ProviderCall): Promise<ProviderResult>;
@@ -32,6 +34,7 @@ const testHttp: ExternalProvider = {
     name: 'test-http',
     contractRevision: 'test-http-v1',
     operations: ['publish_text'],
+    describeContent: () => 'Plain text.',
     async execute(env, call) {
         const {operation, content, targetAccount, actionId} = call;
         const response = await fetch(env.EXTERNAL_ACTION_TEST_ENDPOINT!, {method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),

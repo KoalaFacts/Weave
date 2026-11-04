@@ -15,9 +15,11 @@ import { sweep } from './cleanup';
 import { checkAgentCard, publishAgentCard } from './agent-cards.ts';
 import { checkMessage, inboxMessage, messagePayload } from './a2a-message.ts';
 import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyClaim } from './mcp-idempotency.ts';
-import { liveOwnedGrant } from './client-grants.ts';
+import { grantCaller, liveOwnedGrant } from './client-grants.ts';
 import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
 import { executeExternalAction, getExternalAction, proposeExternalAction } from './external-actions.ts';
+import { listAgentCredentials } from './external-credentials.ts';
+import { createMediaUpload, getMedia } from './external-media.ts';
 import type { PrivateAccess } from './remote-mcp.ts';
 
 export { privateMcpTools } from './private-mcp-tools';
@@ -89,11 +91,7 @@ function inboxText(page:{items:any[]}):string{
 /** A write refuses inside its own transaction when, after authorization, the consent grant was revoked, its human
  * stopped owning the agent or was frozen: the transaction's revision check makes such a change committed before the
  * write's commit visible on retry. */
-const grantGuard=(accountId:string,grantId:string)=>async(tx:Transaction):Promise<void>=>{
-    // A missing grant identity never skips the check.
-    const grant=typeof grantId==='string'&&grantId!==''?await liveOwnedGrant(tx.db,grantId):null;
-    if(!grant||grant.accountId!==accountId)fail(401,'grant-revoked');
-};
+const grantGuard=(accountId:string,grantId:string)=>grantCaller(accountId,grantId).check;
 /** The production private-tool access: the consent grant, its human's current ownership and that human's freeze state are
  * read on every call, and again inside every write's own transaction. */
 export function oauthPrivateAccess(env:Env,origin:string,config:OAuthOptions,request:Request,
@@ -218,6 +216,19 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
         }
         // The consent grant is the caller's live authority, re-checked in every transaction of the action.
         const caller={accountId,check:guard};
+        if(name==='list_my_credentials'){
+            parameters(args,[]);
+            return json(await listAgentCredentials(env,caller));
+        }
+        if(name==='create_media_upload'){
+            parameters(args,['contentType','bytes'],['contentType','bytes']);
+            return json(await createMediaUpload(env,accountId,grantId,args.contentType,args.bytes,Date.now()));
+        }
+        if(name==='get_my_media'){
+            parameters(args,['mediaId'],['mediaId']);
+            checkUuid(args.mediaId,'mediaId');
+            return json(await getMedia(env,caller,args.mediaId as string));
+        }
         if(name==='propose_external_action'){
             parameters(args,['credentialRef','operation','content'],['credentialRef','operation','content']);
             return json(await proposeExternalAction(env,caller,args));

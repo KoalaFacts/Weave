@@ -19,8 +19,8 @@ import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
 import { executeExternalAction, getExternalAction, keyCaller, ownerActionMedia, proposeExternalAction } from './external-actions.ts';
-import { serveSignedMedia, uploadMedia } from './external-media.ts';
-import { connectExternalCredential, connectPostiz, type ConnectCredentialInput, type ConnectCredentialResult, type ConnectPostizInput, type ConnectPostizResult } from './external-credentials.ts';
+import { getMedia, receiveSignedUpload, serveSignedMedia, uploadMedia } from './external-media.ts';
+import { connectExternalCredential, connectPostiz, listAgentCredentials, type ConnectCredentialInput, type ConnectCredentialResult, type ConnectPostizInput, type ConnectPostizResult } from './external-credentials.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
 import { recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
 import { putCard } from './cards';
@@ -106,8 +106,10 @@ export default {
                 return new Response(stringify(card),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'}});
             }
             // Signed, short-lived media for a provider fetching an approved action's file; no agent credential is involved.
-            const signedMedia = method === 'GET' ? /^\/v1\/external-media\/([0-9a-f-]{36})\/content$/.exec(url.pathname) : null;
-            if (signedMedia) return await serveSignedMedia(env,signedMedia[1],url,Date.now());
+            // A signed PUT is an upload URL minted for an OAuth-connected agent; the signature carries its authority.
+            const signedMedia = method === 'GET' || method === 'PUT' ? /^\/v1\/external-media\/([0-9a-f-]{36})\/content$/.exec(url.pathname) : null;
+            if (signedMedia) return method === 'GET' ? await serveSignedMedia(env,signedMedia[1],url,Date.now())
+                : json(await receiveSignedUpload(env,signedMedia[1],url,request,Date.now()));
             const account = await authenticateAgent(env,request);
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return json(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
@@ -130,6 +132,15 @@ export default {
             }
             if (url.pathname === '/v1/external-media') {
                 if (method === 'PUT') return json(await uploadMedia(env,keyCaller(account),request));
+                fail(404,'unavailable');
+            }
+            const mediaRecord = /^\/v1\/external-media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(url.pathname)?.[1];
+            if (mediaRecord !== undefined) {
+                if (method === 'GET') return json(await getMedia(env,keyCaller(account),mediaRecord));
+                fail(404,'unavailable');
+            }
+            if (url.pathname === '/v1/external-credentials') {
+                if (method === 'GET') return json(await listAgentCredentials(env,keyCaller(account)));
                 fail(404,'unavailable');
             }
             if (url.pathname === '/v1/external-actions' || url.pathname.startsWith('/v1/external-actions/')) {

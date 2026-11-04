@@ -98,6 +98,12 @@ export const postizPublish: ExternalProvider & {available(env: Env): boolean} = 
     contractRevision: 'postiz-post-v1',
     operations: ['publish_post'],
     available: env => !!env.EXTERNAL_CREDENTIAL_KEY,
+    describeContent(targetAccount) {
+        const identifier = targetAccount.split('/')[0], required = postizChannels[identifier] ?? [];
+        return `JSON {"text": at most ${maxText} characters, "media": up to ${maxMedia} of your uploaded JPEG, PNG, GIF, WebP or MP4 files as {"mediaId", "bytes", "sha256"}, `
+            + `"settings": {"__type": "${identifier}"${required.map(key => `, "${key}"`).join('')}} with values as Postiz documents them for ${identifier}, `
+            + `"publishAt": optional future UTC time such as 2026-01-31T09:00:00Z, at most 90 days ahead}. Text or media is required.`;
+    },
     async checkContent(tx, {accountId, content, targetAccount}) {
         const plan = postPlan(content, Date.now());
         if (!plan) return 'must be JSON {text, media, settings, publishAt?}: text or media, at most 10 media, settings.__type, a future UTC publishAt';

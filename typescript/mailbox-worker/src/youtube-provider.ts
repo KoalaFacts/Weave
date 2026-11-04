@@ -113,6 +113,8 @@ export const youtubeUpload: ExternalProvider & {available(env: Env): boolean} = 
     contractRevision: 'youtube-upload-v1',
     operations: ['upload_video'],
     available: env => youtubeConfigured(env) && !!env.EXTERNAL_MEDIA,
+    describeContent: () => 'JSON {"title": 1-100 characters without < or >, "description": at most 5000 bytes without < or >, "privacyStatus": "private"|"unlisted"|"public", '
+        + '"mediaId", "bytes", "sha256"} naming one of your uploaded videos exactly as uploaded.',
     async checkContent(tx, {accountId, content}) {
         const plan = videoPlan(content);
         if (!plan) return 'must be JSON {title, description, privacyStatus, mediaId, bytes, sha256} within YouTube limits';
