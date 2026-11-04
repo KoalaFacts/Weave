@@ -408,10 +408,11 @@ function firstPartyBootstrap({bindings=preapprovedResource,asBindings=preapprove
             (url.endsWith('/workers/scripts/demo/settings')||url.includes('/workers/scripts/demo/versions/'))){
             const payload=await response.json(),target=url.includes('/versions/')
                 ?payload.result.resources.bindings:payload.result.bindings;
-            target.push({name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',
-                ...(serviceEnvironment===undefined?{}:{environment:serviceEnvironment})});
+            if(!target.some(binding=>binding.name==='AUTH_SERVER'))
+                target.push({name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',
+                    ...(serviceEnvironment===undefined?{}:{environment:serviceEnvironment})});
             for(const [name,text] of [['OAUTH_ISSUER',firstPartyIssuer],['OAUTH_RESOURCE',firstPartyResource]])
-                target.push({name,type:'plain_text',text});
+                if(!target.some(binding=>binding.name===name))target.push({name,type:'plain_text',text});
             return {...response,json:async()=>payload};
         }
         return response;
@@ -437,6 +438,27 @@ test('explicit one-time first-party bootstrap attaches the approved existing AS 
         assert.equal(JSON.stringify(config).includes('HUMAN_SESSION_KEY'),false);
     }
     assert.equal(f.closed,true);
+});
+test('approved first-party rollout can preserve the exact preinstalled OAuth service binding',async()=>{
+    // Real protected demo releases already report AUTH_SERVER -> weave-auth-demo even
+    // though their explicit OAuth activation selector was false. This must not
+    // deadlock the one-time separately approved activation when the AS is ready.
+    const bindings=[...preapprovedResource,
+        {name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',environment:'production'},
+        {name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer},
+        {name:'OAUTH_RESOURCE',type:'plain_text',text:firstPartyResource}];
+    const f=firstPartyBootstrap({bindings});
+    await deploy(f.options);
+    assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
+    assert.ok(f.requests.some(url=>url.endsWith('/workers/scripts/weave-auth-demo/settings')),
+        'Do not trust the old binding without verifying the live issuer');
+    assert.ok(f.requests.includes(firstPartyIssuer+'/.well-known/oauth-authorization-server'));
+    assert.ok(f.requests.includes('https://demo.weave-389.workers.dev/.well-known/oauth-protected-resource/mcp'));
+    for(const config of f.configs){
+        assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'weave-auth-demo'}]);
+        assert.equal(config.vars.OAUTH_ISSUER,firstPartyIssuer);
+        assert.equal(config.vars.OAUTH_RESOURCE,firstPartyResource);
+    }
 });
 test('first-party bootstrap accepts the default production environment Cloudflare reports on service bindings',async()=>{
     // The live settings API reports "environment":"production" for a binding to a Worker's default environment.
