@@ -67,7 +67,7 @@ Uploading media is HTTP only; there is no MCP tool for binary bodies.
   `GOOGLE_CLIENT_SECRET`, `EXTERNAL_CREDENTIAL_KEY` (32 random bytes, base64url).
 - Until Google verifies the project, the consent screen warns users, and videos
   uploaded through an unaudited API project are restricted to private.
-- The two new tables and the `secret` column need the reviewed additive schema flow.
+- The three new tables and the `secret` column need the reviewed additive schema flow.
 
 ## Verification
 
@@ -83,7 +83,6 @@ Uploading media is HTTP only; there is no MCP tool for binary bodies.
   human's session and a cancelled consent store nothing; a stale session
   re-authenticates before leaving for Google. Removing the callback's human check
   fails the second test.
-
 - mailbox-worker `test/youtube-upload.test.ts` (fake Google through the Worker's
   outbound service): media SHA-256 matches the stored bytes; an approved upload
   streams exactly those bytes once with the approved metadata and records the video
