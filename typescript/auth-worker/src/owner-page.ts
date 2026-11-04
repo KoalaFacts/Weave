@@ -8,7 +8,8 @@ const esc=(s:string)=>s.replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
 const headers={
   "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","Pragma":"no-cache","Referrer-Policy":"no-referrer",
   "X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY",
-  "Content-Security-Policy":"default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+  // Images and video load only from this origin: the owner's own approval previews.
+  "Content-Security-Policy":"default-src 'none'; img-src 'self'; media-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 };
 const shell=(title:string,body:string,status=200)=>new Response(
   '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+
@@ -35,7 +36,8 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "provider-refused":"The provider did not complete the connection; nothing was stored. Try again.",
   "provider-unavailable":"Connecting this provider is not available on this server.",
   "missing-scope":"Grant every permission the provider asks for, or the agent cannot post; nothing was stored.",
-  "no-channel":"That Google account has no single YouTube channel to connect. Pick the account or brand channel to post as.",
+  "no-channel":"No channel was found to connect; nothing was stored. For YouTube, pick the account or brand channel to post as; for Postiz, connect a channel in Postiz first.",
+  "postiz-connected":"Postiz connected. Each of its channels is listed below; actions your agent proposes through them still need your approval.",
   "form-expired":"This page expired. Reload it and try again.",
   "cleanup-pending":"Access is revoked; token clean-up will be retried on your next visit.",
   "cleanup-complete":"Access is revoked and token clean-up is complete.",
@@ -80,6 +82,10 @@ function actionsSection(actions:OwnerExternalAction[],agents:Extract<OwnerOvervi
       "<p>As "+esc(action.targetDisplay)+" (<code>"+esc(action.targetAccount)+"</code>), verified by "+esc(action.provider)+
         "; credential <code>"+esc(action.credentialRef)+"@"+esc(action.credentialRevision)+"</code></p>",
       "<p>Content, exactly as it will be sent:</p><pre>"+esc(action.content)+"</pre>",
+      action.media.length===0?"":"<p>Files in this action:</p>"+action.media.map(file=>{
+        const src="/account/media/"+esc(action.actionId)+"/"+esc(file.mediaId);
+        return file.contentType.startsWith("video/")?'<video controls preload="metadata" width="360" src="'+src+'"></video>':'<img alt="Attached file '+esc(file.mediaId)+'" width="360" src="'+src+'">';
+      }).join(""),
       "<p>Requested "+esc(action.createdAt)+"; approval and sending must finish by "+esc(action.expiresAt)+"</p>",
       form("Approve and allow sending once","confirm-action:"+action.actionId,tokens),
       form("Reject","reject-action:"+action.actionId,tokens),"</section>"].join("");
@@ -101,7 +107,10 @@ function credentialsSection(agentId:string,credentials:OwnerCredential[],tokens:
     esc(credential.targetDisplay)+" (<code>"+esc(credential.targetAccount)+"</code>); credential <code>"+esc(credential.credentialRef)+"@"+
     esc(credential.revision)+"</code>; connected "+esc(credential.connectedAt)+
     form("Disconnect","revoke-credential:"+agentId+":"+credential.credentialRef,tokens)+"</li>").join("")+"</ul>";
-  return "<h4>Connected accounts</h4>"+list+connect;
+  const postiz=tokens.get("connect-postiz:"+agentId);
+  const postizForm=postiz===undefined?"":'<form method="post" action="/account/postiz"><input type="hidden" name="action" value="'+esc(postiz)+
+    '"><label>Postiz API key <input type="password" name="apiKey" autocomplete="off" required></label><button type="submit">Connect Postiz</button></form>';
+  return "<h4>Connected accounts</h4>"+list+connect+postizForm;
 }
 
 function addressesSection(addresses:OwnerAddress[]):string{
@@ -183,6 +192,7 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
     for(const c of agent.credentials)
       await add("revoke-credential:"+agent.agentId+":"+c.credentialRef,{kind:"revoke-credential",agentId:agent.agentId,credentialRef:c.credentialRef});
     if(youtube)await add("connect-youtube:"+agent.agentId,{kind:"connect-youtube",agentId:agent.agentId});
+    await add("connect-postiz:"+agent.agentId,{kind:"connect-postiz",agentId:agent.agentId});
   }
   return tokens;
 }

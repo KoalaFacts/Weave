@@ -7,6 +7,7 @@ import { writesRefused } from './humans.ts';
 import { reauthFutureSkewMs, reauthWindowMs, type OwnerDecision } from './owner-actions.ts';
 import { sealSecret } from './credential-vault.ts';
 import { connectYoutube, youtubeConfigured, type ConnectRefusal } from './youtube-provider.ts';
+import { listPostizChannels } from './postiz-provider.ts';
 import { apiTime, nowUtc } from './time.ts';
 
 export type ConnectProvider = 'youtube';
@@ -91,4 +92,53 @@ export async function revokeExternalCredential(tx: Transaction, humanId: string,
     tx.writes.push(tx.db.prepare(`UPDATE external_credentials SET revoked_at=CAST(? AS INTEGER),secret=NULL,updated_at=CAST(? AS INTEGER)
         WHERE account_id=? AND credential_ref=? AND revoked_at IS NULL`).bind(stamp, stamp, agentId, credentialRef));
     return {ok: true};
+}
+
+export type ConnectPostizInput = {humanId: string; authAt: number; agentId: string; apiKey: string};
+export type ConnectPostizResult = {ok: true; channels: string[]}
+    | {ok: false; reason: 'stale-authentication' | 'frozen' | 'not-found' | 'provider-unavailable' | 'provider-refused' | 'no-channel' | 'unavailable'};
+const apiKeyPattern = /^[\x21-\x7e]{16,512}$/;
+
+/**
+ * Owner RPC with a Postiz API key: one credential per enabled, supported Postiz channel, each with a fresh revision and
+ * the key sealed to that row. Postiz channels of this agent that the key no longer lists are revoked.
+ */
+export async function connectPostiz(env: Env, input: ConnectPostizInput, clock: () => bigint = nowUtc): Promise<ConnectPostizResult> {
+    if (writesRefused(env)) return {ok: false, reason: 'unavailable'};
+    const value = input as Record<string, unknown> | null;
+    if (typeof value !== 'object' || value === null || Object.keys(value).length !== 4 || typeof value.humanId !== 'string' || !uuidPattern.test(value.humanId)
+        || typeof value.agentId !== 'string' || !uuidPattern.test(value.agentId) || typeof value.authAt !== 'number' || !Number.isSafeInteger(value.authAt)
+        || typeof value.apiKey !== 'string' || !apiKeyPattern.test(value.apiKey)) return {ok: false, reason: 'not-found'};
+    const nowMs = Number(clock() / 10000n);
+    if (nowMs - input.authAt > reauthWindowMs || input.authAt > nowMs + reauthFutureSkewMs) return {ok: false, reason: 'stale-authentication'};
+    if (!env.EXTERNAL_CREDENTIAL_KEY) return {ok: false, reason: 'provider-unavailable'};
+    try {
+        const before = await atomic(env.db, tx => ownership(tx, input.humanId, input.agentId), clock);
+        if (before !== 'ok') return {ok: false, reason: before};
+        const channels = await listPostizChannels(input.apiKey);
+        if (channels === null) return {ok: false, reason: 'provider-refused'};
+        if (channels.length === 0) return {ok: false, reason: 'no-channel'};
+        const rows = await Promise.all(channels.map(async channel => {
+            const credentialRef = 'postiz:' + channel.targetAccount.split('/')[1], revision = crypto.randomUUID();
+            const sealed = await sealSecret(env.EXTERNAL_CREDENTIAL_KEY, {accountId: input.agentId, credentialRef, provider: 'postiz', revision}, input.apiKey);
+            return {...channel, credentialRef, revision, sealed};
+        }));
+        return await atomic(env.db, async tx => {
+            const now = await ownership(tx, input.humanId, input.agentId);
+            if (now !== 'ok') return {ok: false, reason: now} as const;
+            const stamp = tx.store.now.toString();
+            const refs = rows.map(row => row.credentialRef);
+            tx.writes.push(tx.db.prepare(`UPDATE external_credentials SET revoked_at=CAST(? AS INTEGER),secret=NULL,updated_at=CAST(? AS INTEGER)
+                WHERE account_id=? AND provider='postiz' AND revoked_at IS NULL AND credential_ref NOT IN (${refs.map(() => '?').join(',')})`).bind(stamp, stamp, input.agentId, ...refs));
+            for (const row of rows) tx.writes.push(tx.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,secret,created_at,updated_at)
+                VALUES(?,?,'postiz',?,?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER))
+                ON CONFLICT(account_id,credential_ref) DO UPDATE SET provider=excluded.provider,revision=excluded.revision,target_account=excluded.target_account,
+                target_display=excluded.target_display,secret=excluded.secret,revoked_at=NULL,updated_at=excluded.updated_at`)
+                .bind(input.agentId, row.credentialRef, row.revision, row.targetAccount, row.targetDisplay, row.sealed.buffer as ArrayBuffer, stamp, stamp));
+            return {ok: true, channels: rows.map(row => row.targetDisplay)} as const;
+        }, clock);
+    } catch {
+        console.error('external-credential: postiz connect failed');
+        return {ok: false, reason: 'unavailable'};
+    }
 }

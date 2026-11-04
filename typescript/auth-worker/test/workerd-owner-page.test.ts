@@ -60,9 +60,17 @@ async function fakeGoogle(request:Request):Promise<Response|null>{
   }
   return null;
 }
+const postizKey="postiz-test-key-0123456789";
+function fakePostiz(request:Request):Response|null{
+  if(request.method!=="GET"||request.url!=="https://api.postiz.com/public/v1/integrations")return null;
+  if(request.headers.get("authorization")!==postizKey)return Response.json({message:"Unauthorized"},{status:401});
+  return Response.json([{id:"cm4tiktok00000000000000001",name:"HSC Beats",identifier:"tiktok",profile:"hscbeats",disabled:false}]);
+}
 async function mailboxOutbound(request:Request):Promise<Response>{
   const google=await fakeGoogle(request);
   if(google)return google;
+  const postiz=fakePostiz(request);
+  if(postiz)return postiz;
   if(request.method!=="POST"||request.url!==providerEndpoint)return new Response("Outbound denied",{status:403});
   const call=await request.json() as {actionId:string;content:string;targetAccount:string};
   providerCalls.push(call);
@@ -100,6 +108,7 @@ function options(storage:string,authEnv:Record<string,unknown>={}){
         manifest:{mainModule:"mailbox.js",modules:{"mailbox.js":{type:"esm",contents:mailboxBundle}}},
         env:{
           db:{type:"d1"},
+          EXTERNAL_MEDIA:{type:"r2"},
           REGISTRATION_ENABLED:{type:"text",value:"true"},
           REGISTRATION_MAX_ACCOUNTS:{type:"text",value:"1000"},
           REGISTRATION_PER_IP_PER_HOUR:{type:"text",value:"1000"},
@@ -574,4 +583,62 @@ test("connectYoutube_StaleSession_ReauthenticatesBeforeLeavingForGoogle",{timeou
   const response=await postAccount(token,await sessionCookie(human,stale));
   assert.equal(new URL(response.headers.get("location")!).origin,"https://github.com");
   assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
+});
+
+function postizToken(html:string):string{
+  const token=/<form method="post" action="\/account\/postiz"><input type="hidden" name="action" value="([^"]+)">/.exec(html)?.[1];
+  assert.ok(token,"the page offers Connect Postiz");
+  return token;
+}
+const postPostiz=async(human:Human,token:string,apiKey:string,authAt?:number)=>shared.mf.dispatchFetch(issuer+"/account/postiz",{method:"POST",redirect:"manual",
+  headers:{"Content-Type":"application/x-www-form-urlencoded",Origin:issuer,Cookie:await sessionCookie(human,authAt)},body:new URLSearchParams({action:token,apiKey}).toString()});
+
+test("connectPostiz_OwnerSubmitsKey_ChannelsStoredSealedAndListed",{timeout:90_000},async()=>{
+  const human=await seedHuman(),agent=await ownedAgent(human,"publisher");
+  const token=postizToken(await (await account(await sessionCookie(human))).text());
+  const response=await postPostiz(human,token,postizKey);
+  assert.equal(response.status,303);
+  assert.equal(response.headers.get("location"),"/account?result=postiz-connected");
+  const rows=(await (await db()).prepare("SELECT credential_ref,target_account,secret IS NOT NULL sealed FROM external_credentials WHERE account_id=?").bind(agent.accountId).all()).results;
+  assert.deepEqual(rows,[{credential_ref:"postiz:cm4tiktok00000000000000001",target_account:"tiktok/cm4tiktok00000000000000001",sealed:1}]);
+  const page=await (await account(await sessionCookie(human))).text();
+  assert.ok(page.includes("postiz as tiktok · HSC Beats (@hscbeats)"));
+  assert.ok(!page.includes(postizKey),"the key is never rendered");
+  assert.equal(result(await postPostiz(human,token,"wrong-key-00000000000")),"provider-refused");
+});
+
+test("connectPostiz_StaleSessionOrSingleFieldPost_NothingStored",{timeout:60_000},async()=>{
+  const human=await seedHuman(),agent=await ownedAgent(human,"publisher"),stale=Date.now()-11*60_000;
+  const token=postizToken(await (await account(await sessionCookie(human,stale))).text());
+  const response=await postPostiz(human,token,postizKey,stale);
+  assert.equal(new URL(response.headers.get("location")!).origin,"https://github.com");
+  assert.equal(result(await postAccount(token,await sessionCookie(human))),"not-found","the key-less /account form cannot connect Postiz");
+  assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
+});
+
+test("ownerMedia_OnlyTheOwnerSeesFilesTheActionNames",{timeout:90_000},async()=>{
+  const human=await seedHuman(),other=await seedHuman(),agent=await ownedAgent(human,"publisher");
+  await postPostiz(human,postizToken(await (await account(await sessionCookie(human))).text()),postizKey);
+  const bucket=await shared.mf.getR2Bucket("EXTERNAL_MEDIA",mailboxName),bytes=randomBytes(4000),mediaId=randomUUID(),unnamed=randomUUID();
+  const sha256=createHash("sha256").update(bytes).digest("hex"),at=(BigInt(Date.now())*10000n).toString();
+  for(const id of [mediaId,unnamed]){
+    await bucket.put(agent.accountId+"/"+id,bytes);
+    await (await db()).prepare("INSERT INTO external_media(media_id,account_id,content_type,bytes,sha256,created_at) VALUES(?,?,'image/png',?,?,CAST(? AS INTEGER))")
+      .bind(id,agent.accountId,bytes.length,sha256,at).run();
+  }
+  const proposed=await agentFetch(agent,"/v1/external-actions",{method:"POST",body:{credentialRef:"postiz:cm4tiktok00000000000000001",operation:"publish_post",
+    content:JSON.stringify({text:"",media:[{mediaId,bytes:bytes.length,sha256}],settings:{__type:"tiktok",privacy_level:"SELF_ONLY",duet:false,stitch:false,comment:false,
+      autoAddMusic:false,brand_content_toggle:false,brand_organic_toggle:false,content_posting_method:"DIRECT_POST"}})}});
+  assert.equal(proposed.status,200,await proposed.clone().text());
+  const {actionId}=await proposed.json() as {actionId:string};
+  assert.ok((await (await account(await sessionCookie(human))).text()).includes('src="/account/media/'+actionId+'/'+mediaId+'"'));
+  const preview=(who:Human,id:string)=>shared.mf.dispatchFetch(issuer+"/account/media/"+actionId+"/"+id,{headers:{Cookie:""}}).then(async()=>
+    shared.mf.dispatchFetch(issuer+"/account/media/"+actionId+"/"+id,{headers:{Cookie:await sessionCookie(who)}}));
+  const own=await preview(human,mediaId);
+  assert.equal(own.status,200);
+  assert.equal(own.headers.get("content-type"),"image/png");
+  assert.ok(Buffer.from(await own.arrayBuffer()).equals(bytes));
+  assert.equal((await preview(other,mediaId)).status,404,"another human sees nothing");
+  assert.equal((await preview(human,unnamed)).status,404,"media the action does not name is not served");
+  assert.equal((await shared.mf.dispatchFetch(issuer+"/account/media/"+actionId+"/"+mediaId)).status,404,"no session, no file");
 });

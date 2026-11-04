@@ -39,6 +39,8 @@ export interface Env {
     EXTERNAL_CREDENTIAL_KEY?: string;
     // R2 bucket for uploaded action media; unbound means media upload and YouTube upload are unavailable.
     EXTERNAL_MEDIA?: MediaBucket;
+    // Public https origin of this Worker, used to mint signed media URLs that a provider fetches.
+    EXTERNAL_MEDIA_ORIGIN?: string;
 }
 export interface RecordRow { seq: string; kind: string; owner: string; id: string; data: string; }
 export class Transaction {

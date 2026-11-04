@@ -83,7 +83,7 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,24);
+  assert.equal(Object.keys(ownerResultText).length,25);
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-pending",now))).includes("Access is revoked; token clean-up will be retried on your next visit."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-complete",now))).includes("Access is revoked and token clean-up is complete."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"form-expired",now))).includes("This page expired. Reload it and try again."));
@@ -102,7 +102,7 @@ test("ownerFormTokens_CoversEveryFormTheOverviewRenders",async()=>{
       keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}],
       grants:[{grantId,clientId:"https://client.example/cimd.json",clientName:"c",createdAt:iso(now)}],addresses:[],credentials:[],revokedGrantIds:[randomUUID()]}]});
   const tokens=await ownerFormTokens(signingKey,human.humanId,overview,now,false);
-  assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,"issue-recovery-code:"+agentId,
+  assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,"connect-postiz:"+agentId,"issue-recovery-code:"+agentId,
     "reject-binding:"+requestId,"reject-key:"+keyRequestId,"revoke-grant:"+grantId,"revoke-key:"+agentId+":"+keyId].sort());
   const body=await html(ownerPage(overview,human,tokens,null,now));
   assert.equal(body.match(/<form /g)!.length,tokens.size);
@@ -121,7 +121,7 @@ test("ownerPage_PendingAction_ShowsEscapedContentVerifiedAccountAndBoundForms",a
   const actionId=randomUUID(),agentId=randomUUID(),planDigest=kid();
   const overview=base({agents:[agent({agentId,displayName:"Publisher"})],externalActions:[{actionId,agentId,provider:"test-http",operation:"publish_text",
     content:'Episode 12\n<script>alert(1)</script>',credentialRef:"linkedin-main",credentialRevision:"rev-7",targetAccount:"urn:li:person:alpha",
-    targetDisplay:"Desk <b>Alpha</b>",planDigest,createdAt:iso(now),expiresAt:iso(now+3_600_000)}]});
+    targetDisplay:"Desk <b>Alpha</b>",planDigest,createdAt:iso(now),expiresAt:iso(now+3_600_000),media:[]}]});
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
   assert.ok(tokens.has("confirm-action:"+actionId)&&tokens.has("reject-action:"+actionId));
   const body=await html(ownerPage(overview,human,tokens,null,now));
@@ -148,4 +148,19 @@ test("ownerPage_ConnectedAccounts_ShowVerifiedChannelDisconnectAndConnectOnlyWhe
   assert.equal(unconfigured.has("connect-youtube:"+agentId),false);
   assert.ok(!(await html(ownerPage(overview,human,unconfigured,null,now))).includes("Connect YouTube"));
   assert.ok((await html(ownerPage(base({agents:[agent()]}),human,new Map(),"no-channel",now))).includes(ownerResultText["no-channel"]));
+});
+
+test("ownerPage_ActionWithMedia_PreviewsOnlyItsFilesAndOffersPostizConnect",async()=>{
+  const actionId=randomUUID(),agentId=randomUUID(),image=randomUUID(),video=randomUUID();
+  const overview=base({agents:[agent({agentId})],externalActions:[{actionId,agentId,provider:"postiz",operation:"publish_post",
+    content:JSON.stringify({text:"New beat",media:[{mediaId:image},{mediaId:video}]}),credentialRef:"postiz:abc",credentialRevision:"r",targetAccount:"tiktok/abc",
+    targetDisplay:"tiktok · HSC Beats",planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1),media:[{mediaId:image,contentType:"image/png"},{mediaId:video,contentType:"video/mp4"}]}]});
+  const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
+  const response=ownerPage(overview,human,tokens,null,now);
+  assert.match(response.headers.get("content-security-policy")!,/img-src 'self'; media-src 'self'/);
+  const body=await html(response);
+  assert.ok(body.includes('<img alt="Attached file '+image+'" width="360" src="/account/media/'+actionId+'/'+image+'">'));
+  assert.ok(body.includes('<video controls preload="metadata" width="360" src="/account/media/'+actionId+'/'+video+'"></video>'));
+  assert.ok(body.includes('action="/account/postiz"')&&body.includes('type="password" name="apiKey"'));
+  assert.ok(body.includes('value="'+tokens.get("connect-postiz:"+agentId)+'"'));
 });

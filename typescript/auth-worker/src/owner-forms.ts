@@ -10,10 +10,11 @@ export type OwnerFormAction=
   |{kind:"issue-recovery-code";agentId:string}
   |{kind:"revoke-grant";grantId:string}
   |{kind:"connect-youtube";agentId:string}
+  |{kind:"connect-postiz";agentId:string}
   |{kind:"revoke-credential";agentId:string;credentialRef:string};
 /** Kinds that need a fresh GitHub authentication before they are offered or applied. Revoking a client's grant is protective and does not. */
 export const destructiveKinds:ReadonlySet<OwnerFormAction["kind"]>=
-  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action","connect-youtube"]);
+  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action","connect-youtube","connect-postiz"]);
 
 const tokenSeconds=600;
 const maxBodyBytes=4096;
@@ -21,7 +22,7 @@ const memberSets:Record<OwnerFormAction["kind"],readonly string[]>={
   "confirm-binding":["requestId","keysDigest"],"reject-binding":["requestId"],"confirm-key":["requestId"],"reject-key":["requestId"],
   "confirm-action":["requestId","planDigest"],"reject-action":["requestId"],
   "revoke-key":["agentId","kid"],"issue-recovery-code":["agentId"],"revoke-grant":["grantId"],
-  "connect-youtube":["agentId"],"revoke-credential":["agentId","credentialRef"]};
+  "connect-youtube":["agentId"],"connect-postiz":["agentId"],"revoke-credential":["agentId","credentialRef"]};
 
 /** A token bound to one human and one exact action; it lives as long as the re-authentication window. */
 export const ownerActionToken=(key:string,humanId:string,action:OwnerFormAction,now:number):Promise<string>=>
@@ -35,7 +36,24 @@ export async function readOwnerAction(key:string,request:Request,session:HumanSe
   const form=await readBoundedForm(request,maxBodyBytes);
   const fields=form?[...form]:[];
   if(fields.length!==1||fields[0][0]!=="action")return null;
-  const value=await verifiedCookieValue(key,"owner-action",fields[0][1]);
+  return verifiedAction(key,fields[0][1],session,now);
+}
+
+/**
+ * The Connect Postiz form: its signed connect-postiz token plus the API key the owner typed. The key is only passed on to the
+ * mailbox, never stored, logged or echoed by this worker.
+ */
+export async function readPostizConnect(key:string,request:Request,session:HumanSession,now:number):Promise<{agentId:string;apiKey:string}|"expired"|null>{
+  const form=await readBoundedForm(request,maxBodyBytes);
+  const fields=form?[...form]:[];
+  if(fields.length!==2||fields[0][0]!=="action"||fields[1][0]!=="apiKey")return null;
+  const action=await verifiedAction(key,fields[0][1],session,now);
+  if(action==="expired")return action;
+  return action?.kind==="connect-postiz"&&fields[1][1].length>0?{agentId:action.agentId,apiKey:fields[1][1]}:null;
+}
+
+async function verifiedAction(key:string,token:string,session:HumanSession,now:number):Promise<OwnerFormAction|"expired"|null>{
+  const value=await verifiedCookieValue(key,"owner-action",token);
   if(!value)return null;
   const {humanId,kind,expiresAt,...rest}=value;
   if(humanId!==session.humanId||typeof expiresAt!=="number"||!Number.isSafeInteger(expiresAt))return null;
