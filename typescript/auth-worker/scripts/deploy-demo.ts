@@ -92,7 +92,7 @@ async function cloudReadback(env:NodeJS.ProcessEnv,request:typeof fetch){
 // Wrangler gets only the Cloudflare token. The three trial/authentication secrets
 // are uploaded together through "secret bulk" stdin, never command arguments, config, stdout or stderr.
 async function wrangler(args:string[],env:NodeJS.ProcessEnv,secret?:string){
-    const childEnv={...env,CI:'true',NO_COLOR:'1',WRANGLER_SEND_METRICS:'false'};
+    const childEnv:NodeJS.ProcessEnv={...env,CI:'true',NO_COLOR:'1',WRANGLER_SEND_METRICS:'false'};
     for(const name of secretNames)delete childEnv[name];
     return new Promise<void>((done,reject)=>{
         const child=spawn(process.execPath,[join(root,'node_modules/wrangler/bin/wrangler.js'),...args],{
