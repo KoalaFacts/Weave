@@ -19,7 +19,7 @@ import { grantCaller, liveOwnedGrant } from './client-grants.ts';
 import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
 import { executeExternalAction, getExternalAction, proposeExternalAction } from './external-actions.ts';
 import { listAgentCredentials } from './external-credentials.ts';
-import { createMediaUpload, getMedia } from './external-media.ts';
+import { createMediaUpload, getMedia, importMedia } from './external-media.ts';
 import type { PrivateAccess } from './remote-mcp.ts';
 
 export { privateMcpTools } from './private-mcp-tools';
@@ -223,6 +223,10 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
         if(name==='create_media_upload'){
             parameters(args,['contentType','bytes'],['contentType','bytes']);
             return json(await createMediaUpload(env,accountId,grantId,args.contentType,args.bytes,Date.now()));
+        }
+        if(name==='import_media_from_url'){
+            parameters(args,['url'],['url']);
+            return json(await importMedia(env,caller,args));
         }
         if(name==='get_my_media'){
             parameters(args,['mediaId'],['mediaId']);

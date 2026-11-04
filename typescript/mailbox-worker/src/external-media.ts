@@ -6,7 +6,7 @@ import * as schema from './schema.ts';
 import { atomic, type Env, type Transaction } from './database.ts';
 import { writesRefused } from './humans.ts';
 import type { ActionCaller } from './external-actions.ts';
-import { fail, invalidField } from './wire.ts';
+import { Problem, fail, invalidField, object } from './wire.ts';
 import { base64url, fromBase64url } from './jose.ts';
 import { grantCaller } from './client-grants.ts';
 import { apiTime } from './time.ts';
@@ -38,7 +38,7 @@ export async function uploadMedia(env: Env, caller: ActionCaller, request: Reque
     if (writesRefused(env)) fail(503, 'maintenance', 30);
     const contentType = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
     if (!contentTypes.has(contentType)) invalidField('Content-Type', 'must be ' + contentTypeList);
-    return storeMedia(env, caller, crypto.randomUUID(), contentType, declaredLength(request), request);
+    return storeMedia(env, caller, crypto.randomUUID(), contentType, declaredLength(request), request.body);
 }
 
 function declaredLength(request: Request): number {
@@ -48,16 +48,16 @@ function declaredLength(request: Request): number {
     return declared;
 }
 
-/** Stores `request`'s body once under `mediaId` and records it. An existing object under that ID is never replaced. */
-async function storeMedia(env: Env, caller: ActionCaller, mediaId: string, contentType: string, declared: number, request: Request): Promise<MediaView> {
+/** Stores `body` once under `mediaId` and records it. An existing object under that ID is never replaced. */
+async function storeMedia(env: Env, caller: ActionCaller, mediaId: string, contentType: string, declared: number, body: ReadableStream | null): Promise<MediaView> {
     const bucket = env.EXTERNAL_MEDIA;
     if (!bucket) fail(404, 'unavailable');
-    if (!request.body) invalidField('body', 'is required');
+    if (!body) invalidField('body', 'is required');
     // The caller's authority is checked before any byte is stored.
     await atomic(env.db, tx => caller.check(tx));
     const key = objectKey(caller.accountId, mediaId);
     // onlyIf refuses when the key already holds an object; that object is someone's upload and is left untouched.
-    const stored = await bucket.put(key, request.body, {onlyIf: {etagDoesNotMatch: '*'}, httpMetadata: {contentType}});
+    const stored = await bucket.put(key, body, {onlyIf: {etagDoesNotMatch: '*'}, httpMetadata: {contentType}});
     if (!stored) fail(409, 'conflict');
     if (stored.size !== declared) { await bucket.delete(key); invalidField('body', 'must be exactly Content-Length bytes'); }
     // Hash what R2 holds, not what was claimed, so the plan binds the bytes the provider will receive.
@@ -82,6 +82,59 @@ export async function getMedia(env: Env, caller: ActionCaller, mediaId: string):
         if (!row) fail(404, 'unavailable');
         return {mediaId, contentType: row.content_type, bytes: row.bytes, sha256: row.sha256, createdAt: apiTime(row.created_at)!};
     });
+}
+
+// ---- import from a public URL -----------------------------------------------------------------------------------------
+const importTimeoutMs = 5 * 60_000, maxImportUrl = 2048;
+const blockedSuffixes = ['.localhost', '.local', '.internal', '.home.arpa'];
+
+/** An https URL on the default port naming a public DNS host: no IP literal, single-label or local name, no credentials. */
+function importUrl(env: Env, raw: unknown): URL {
+    const reason = 'must be a public https URL with a host name, no credentials and the default port';
+    if (typeof raw !== 'string' || raw.length > maxImportUrl || !URL.canParse(raw)) invalidField('url', reason);
+    const url = new URL(raw), host = url.hostname.toLowerCase();
+    // WHATWG parsing already turns every IPv4 spelling into dotted decimal and IPv6 into brackets.
+    if (url.protocol !== 'https:' || url.port !== '' || url.username !== '' || url.password !== '' || host.startsWith('[') || /^[0-9.]+$/.test(host)
+        || !host.includes('.') || blockedSuffixes.some(suffix => host.endsWith(suffix))) invalidField('url', reason);
+    // Never this Worker itself: its signed media URLs are for providers, not for copying between agents.
+    if (env.EXTERNAL_MEDIA_ORIGIN && host === new URL(env.EXTERNAL_MEDIA_ORIGIN).hostname.toLowerCase()) invalidField('url', reason);
+    return url;
+}
+
+/**
+ * POST /v1/external-media/imports {url}: Weave fetches one public file, without following redirects, and stores it as
+ * the caller's media exactly as an upload would. For agents that hold a link (for example to a generated video) but
+ * cannot send the file themselves. The response must be 200 with a supported Content-Type and a Content-Length.
+ */
+export async function importMedia(env: Env, caller: ActionCaller, input: unknown): Promise<MediaView> {
+    if (writesRefused(env)) fail(503, 'maintenance', 30);
+    object(input, ['url']);
+    const url = importUrl(env, (input as {url?: unknown}).url);
+    if (!env.EXTERNAL_MEDIA) fail(404, 'unavailable');
+    // No outbound request is made for a caller without authority.
+    await atomic(env.db, tx => caller.check(tx));
+    let response: Response;
+    try {
+        // identity encoding keeps Content-Length the size of the stored file.
+        response = await fetch(url.href, {redirect: 'manual', signal: AbortSignal.timeout(importTimeoutMs),
+            headers: {Accept: [...contentTypes].join(', '), 'Accept-Encoding': 'identity'}});
+    } catch { invalidField('url', 'could not be fetched'); }
+    const refuse = (why: string): never => { void response.body?.cancel().catch(() => {}); invalidField('url', why); };
+    if (response.status !== 200) refuse(response.status >= 300 && response.status < 400 ? 'must not redirect' : `answered ${response.status}, not 200`);
+    const contentType = (response.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
+    if (!contentTypes.has(contentType)) refuse('must serve ' + contentTypeList);
+    const declared = Number(response.headers.get('Content-Length') ?? NaN);
+    if (!Number.isSafeInteger(declared) || declared < 1 || declared > maxMediaBytes) refuse(`must state a Content-Length of at most ${maxMediaBytes}`);
+    try {
+        // R2 needs a stream of known length; FixedLengthStream also fails a body that is not exactly the stated size.
+        const Fixed = (globalThis as {FixedLengthStream?: new (length: number) => TransformStream<Uint8Array, Uint8Array>}).FixedLengthStream;
+        const body = Fixed && response.body ? response.body.pipeThrough(new Fixed(declared)) : response.body;
+        return await storeMedia(env, caller, crypto.randomUUID(), contentType, declared, body);
+    } catch (error) {
+        // An authority, storage or size refusal keeps its meaning; a stream that broke off is the source's failure.
+        if (error instanceof Problem) throw error;
+        invalidField('url', 'could not be fetched completely');
+    }
 }
 
 /** The agent's own media record, or null; another agent's media is indistinguishable from a missing one. */
@@ -179,5 +232,5 @@ export async function receiveSignedUpload(env: Env, mediaId: string, url: URL, r
     // The request must carry exactly what was signed.
     if ((request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase() !== contentType) invalidField('Content-Type', 'must be ' + contentType);
     if (declaredLength(request) !== bytes) invalidField('Content-Length', 'must be ' + bytes);
-    return storeMedia(env, grantCaller(accountId, grantId), mediaId, contentType, bytes, request);
+    return storeMedia(env, grantCaller(accountId, grantId), mediaId, contentType, bytes, request.body);
 }

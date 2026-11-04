@@ -1,4 +1,4 @@
-# Agent credential listing and MCP media upload
+# Agent credential listing, MCP media upload and URL import
 
 ## Scope
 
@@ -43,6 +43,29 @@ secrets are never returned. A credential whose provider this deployment cannot u
   deletes the existing object; only a size mismatch on a fresh write removes what
   was just written.
 
+## Import from a public URL
+
+For an agent that holds a link but cannot send a file (a chat-only client, or a
+generated video at a public URL), `import_media_from_url {url}` (scope
+`weave:actions.write`, open-world) and `POST /v1/external-media/imports {url}`
+(agent key) make Weave fetch the file and store it like an upload.
+
+- The URL must be https on the default port with a DNS host name. IP literals (every
+  IPv4 spelling is normalized by URL parsing, IPv6 is bracketed), single-label hosts,
+  `.localhost`, `.local`, `.internal`, `.home.arpa`, credentials and the Worker's own
+  media host are refused before any request.
+- The caller's authority is checked before the request is made and again by the
+  shared storage path.
+- One GET with `redirect: manual` and `Accept-Encoding: identity`, 5-minute timeout.
+  Only 200 with a supported Content-Type and a Content-Length of at most 100 MiB is
+  accepted. The body is piped through `FixedLengthStream`, so R2 receives a stream of
+  known length and a body of any other size fails.
+- Every refusal is 400 with field `url`. Authority, storage and size refusals keep
+  their own status.
+
+Workers cannot resolve DNS before fetching, so a public name that resolves to a
+private address is not detected here; Cloudflare's network is the boundary for that.
+
 ## Verification
 
 - `test/agent-credentials-media.test.ts`:
@@ -58,13 +81,22 @@ secrets are never returned. A credential whose provider this deployment cannot u
 - Mutation checks: restoring delete-on-refused-write fails the single-use test;
   skipping the grant re-check at PUT fails the revocation test; dropping the
   parameter-count check fails the extra-parameter case.
-- `test/mcp-tool-contract.test.ts` exercises the three tools against their output
-  schemas. `test/openapi.test.ts` covers the three new HTTP operations.
+- `test/media-import.test.ts`, through the Worker with a fake web as its outbound
+  service: the stored file is exactly what was fetched; unsafe or malformed URLs make
+  no request; a redirect, 404, HTML, missing Content-Length or other status stores
+  nothing. Through MCP: the request uses manual redirects, and a revoked grant makes
+  no request. Mutation checks: dropping the IP-literal check, the authority check
+  before fetching, or manual redirects each fail a test.
+- `test/mcp-tool-contract.test.ts` exercises the new tools against their output
+  schemas. `test/openapi.test.ts` covers the new HTTP operations.
+  `test/in-process-media.ts` lets tools called in the Node test process store media
+  (Node has no `DigestStream`, and the R2 test proxy takes one buffer); Worker tests
+  use real R2 streaming.
 
 ## Limits
 
 - The PUT must start within 15 minutes; the body may take longer. One request body is
   at most 100 MiB.
-- An agent that cannot make an HTTP PUT itself (a chat-only client) still cannot
-  upload. Importing media from a public URL is not implemented.
+- A file the agent holds only locally and cannot PUT, and that is not at a public
+  URL, still cannot be uploaded.
 - Uploaded media is still not deleted.

@@ -19,7 +19,7 @@ import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
 import { executeExternalAction, getExternalAction, keyCaller, ownerActionMedia, proposeExternalAction } from './external-actions.ts';
-import { getMedia, receiveSignedUpload, serveSignedMedia, uploadMedia } from './external-media.ts';
+import { getMedia, importMedia, receiveSignedUpload, serveSignedMedia, uploadMedia } from './external-media.ts';
 import { connectExternalCredential, connectPostiz, listAgentCredentials, type ConnectCredentialInput, type ConnectCredentialResult, type ConnectPostizInput, type ConnectPostizResult } from './external-credentials.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
 import { recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
@@ -132,6 +132,10 @@ export default {
             }
             if (url.pathname === '/v1/external-media') {
                 if (method === 'PUT') return json(await uploadMedia(env,keyCaller(account),request));
+                fail(404,'unavailable');
+            }
+            if (url.pathname === '/v1/external-media/imports') {
+                if (method === 'POST') return json(await importMedia(env,keyCaller(account),await body(request)));
                 fail(404,'unavailable');
             }
             const mediaRecord = /^\/v1\/external-media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(url.pathname)?.[1];
