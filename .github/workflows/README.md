@@ -88,3 +88,29 @@ migration ledger first. If data history cannot be reconciled, stop and obtain
 a verified recovery path; do not reset, backfill guessed identities, or deploy
 old schema over current production. This read-only workflow also does not
 fulfil the required two-independent-Agent public message/ACK/reconnect proof.
+
+### Read-only Cloudflare Audit Logs provenance check (#236)
+
+The same protected [D1 preservation inventory workflow](read-only-d1-inventory.yml)
+accepts an **exact** `/weave-cloudflare-audit` issue comment on #236 only from
+the existing verified `ldsenow` repository member, as an alternative to
+`/weave-d1-inventory` (not an additional cloud/deployment workflow).
+It reuses the protected production `CLOUDFLARE_API_TOKEN` and never writes
+D1, Worker settings, Access configuration or secrets. Audit Logs v2 requires
+`Account Settings Read` or `Account Settings Write` on the same account;
+a Worker deployment-capable token is not automatically audit-capable.
+No permission is added by this workflow.
+
+The script first verifies the live `weave-389` subdomain, exact `demo`
+Worker, and immutable `weave-demo-db` UUID; it then uses only GET requests
+to query Cloudflare Audit Logs v2 for the fixed UTC window 2026-10-29
+12:00–2026-11-02 02:00. It paginates with bounds, filters only that specific
+D1/Worker and outputs a small, sanitized event classification in
+`cloudflare-activity.json`. It **never persists** the raw account-wide
+audit response, actor, email, IP, URI, token, subject, account/database ID,
+cursor, or request/response body. A 401/403 or truncated/inconsistent response
+fails closed and saves the limited receipt where available. Event absence,
+Audit Logs product coverage gaps and POST `/query` do **not** establish data
+preservation or deletion. This check cannot restore historical D1 rows, cannot
+replace current row-level inventory or double-Agent acceptance, and is not
+authorization to expand Cloudflare permissions or reset data.
