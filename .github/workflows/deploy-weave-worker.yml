@@ -27,11 +27,11 @@ on:
         default: false
 permissions:
   contents: read
+# All issue comments trigger this workflow, even when its release job skips.
+# Only an exact owner-authored release request may join the production lock
+# shared with the read-only D1 inventory. Other comments get unique groups
+# instead of cancelling an audit while it is pending behind a deployment.
 concurrency:
-  # All issue comments trigger this workflow, even when its release job skips.
-  # Only an exact owner-authored release request may join the production lock
-  # shared with the read-only D1 inventory. Other comments get unique groups
-  # instead of cancelling an audit while it is pending behind a deployment.
   group: >-
     ${{ github.event_name == 'issue_comment' &&
         (github.event.issue.number != 236 ||
