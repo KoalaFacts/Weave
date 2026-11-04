@@ -66,20 +66,27 @@ const readCredential = (tx: Transaction, accountId: string, credentialRef: strin
     tx.db.prepare('SELECT provider,revision,target_account,target_display,CAST(revoked_at AS TEXT) revoked_at FROM external_credentials WHERE account_id=? AND credential_ref=?')
         .bind(accountId, credentialRef).first<Credential>();
 
-async function ownAction(tx: Transaction, auth: AgentAuth, actionId: string): Promise<Row> {
+/**
+ * The authenticated agent and the check that its authority is still live, run inside every transaction of an operation:
+ * its key for the HTTP API, its consent grant for MCP.
+ */
+export type ActionCaller = {accountId: string; check: (tx: Transaction) => Promise<void>};
+
+/** The HTTP API caller: the DPoP-bound key must still be live. */
+export const keyCaller = (auth: AgentAuth): ActionCaller => ({accountId: auth.accountId, check: async tx => {
+    const key = await findKey(tx.db, auth.kid);
+    if (!key || key.revokedAt !== null || key.accountId !== auth.accountId) fail(401, 'unauthenticated');
+}});
+
+async function ownAction(tx: Transaction, caller: ActionCaller, actionId: string): Promise<Row> {
     const row = await readRow(tx, actionId);
     // Another agent's action is indistinguishable from a missing one.
-    if (!row || row.account_id !== auth.accountId) fail(404, 'unavailable');
+    if (!row || row.account_id !== caller.accountId) fail(404, 'unavailable');
     return row;
 }
 
-async function liveCaller(tx: Transaction, auth: AgentAuth): Promise<void> {
-    const key = await findKey(tx.db, auth.kid);
-    if (!key || key.revokedAt !== null || key.accountId !== auth.accountId) fail(401, 'unauthenticated');
-}
-
 /** POST /v1/external-actions: records a pending plan. Nothing is sent to the provider. */
-export async function proposeExternalAction(env: Env, auth: AgentAuth, input: unknown, clock: () => bigint = nowUtc): Promise<ExternalActionView> {
+export async function proposeExternalAction(env: Env, caller: ActionCaller, input: unknown, clock: () => bigint = nowUtc): Promise<ExternalActionView> {
     if (writesRefused(env)) fail(503, 'maintenance', 30);
     object(input, ['credentialRef', 'operation', 'content']);
     const {credentialRef, operation, content} = input as Record<string, unknown>;
@@ -88,21 +95,21 @@ export async function proposeExternalAction(env: Env, auth: AgentAuth, input: un
     if (typeof content !== 'string' || content.trim() === '' || content.length > maxContentLength) invalidField('content', `must be non-blank text of at most ${maxContentLength} characters`);
     return atomic(env.db, async tx => {
         const at = tx.store.now;
-        await liveCaller(tx, auth);
-        const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(auth.accountId).first<{human_id: string | null}>();
+        await caller.check(tx);
+        const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(caller.accountId).first<{human_id: string | null}>();
         if (!owner) fail(401, 'unauthenticated');
         // Only an owned agent has someone who can approve.
         if (owner.human_id === null) conflict('unowned-agent');
-        const credential = await readCredential(tx, auth.accountId, credentialRef);
+        const credential = await readCredential(tx, caller.accountId, credentialRef);
         if (!credential || credential.revoked_at !== null) invalidField('credentialRef', 'must name a live credential of this agent');
         const provider = findProvider(env, credential.provider);
         if (!provider) conflict('provider-unavailable');
         if (!provider.operations.includes(operation)) invalidField('operation', 'must be a supported operation');
         const waiting = await tx.db.prepare(`SELECT count(*) n FROM external_actions WHERE account_id=? AND status IN ('pending','approved') AND expires_at>CAST(? AS INTEGER)`)
-            .bind(auth.accountId, at.toString()).first<number>('n');
+            .bind(caller.accountId, at.toString()).first<number>('n');
         if (waiting === null) fail(503, 'storage');
         if (waiting >= pendingActionsPerAgent) fail(429, 'capacity');
-        const plan = {action_id: crypto.randomUUID(), account_id: auth.accountId, provider: provider.name, contract_revision: provider.contractRevision,
+        const plan = {action_id: crypto.randomUUID(), account_id: caller.accountId, provider: provider.name, contract_revision: provider.contractRevision,
             operation, content, credential_ref: credentialRef, credential_revision: credential.revision, target_account: credential.target_account,
             expires_at: (at + actionLifetimeTicks).toString()};
         const digest = await planDigest(plan);
@@ -114,8 +121,8 @@ export async function proposeExternalAction(env: Env, auth: AgentAuth, input: un
 }
 
 /** GET /v1/external-actions/{actionId}. */
-export async function getExternalAction(env: Env, auth: AgentAuth, actionId: string): Promise<ExternalActionView> {
-    return atomic(env.db, async tx => view(await ownAction(tx, auth, actionId), tx.store.now));
+export async function getExternalAction(env: Env, caller: ActionCaller, actionId: string): Promise<ExternalActionView> {
+    return atomic(env.db, async tx => { await caller.check(tx); return view(await ownAction(tx, caller, actionId), tx.store.now); });
 }
 
 type Claim = {row: Row; dispatch: true} | {row: Row; dispatch: false};
@@ -124,11 +131,11 @@ type Claim = {row: Row; dispatch: true} | {row: Row; dispatch: false};
  * Re-checks the approved plan against current state and commits 'dispatching' before any provider call. A plan that no
  * longer holds becomes 'failed' with nothing sent; anything not approved is returned unchanged, so a retry never re-sends.
  */
-async function claim(env: Env, auth: AgentAuth, actionId: string, clock: () => bigint): Promise<Claim> {
+async function claim(env: Env, caller: ActionCaller, actionId: string, clock: () => bigint): Promise<Claim> {
     return atomic(env.db, async tx => {
         const at = tx.store.now, stamp = at.toString();
-        await liveCaller(tx, auth);
-        const row = await ownAction(tx, auth, actionId);
+        await caller.check(tx);
+        const row = await ownAction(tx, caller, actionId);
         if (row.status !== 'approved') return {row, dispatch: false};
         if (exactInt64(row.expires_at) <= at) return {row, dispatch: false};
         const refuse = (reason: string): Claim => {
@@ -137,10 +144,10 @@ async function claim(env: Env, auth: AgentAuth, actionId: string, clock: () => b
             return {row: {...row, status: 'failed', failure: reason, completed_at: stamp}, dispatch: false};
         };
         const owner = await tx.db.prepare('SELECT a.human_id,CAST(h.frozen_at AS TEXT) frozen_at FROM accounts a LEFT JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=?')
-            .bind(auth.accountId).first<{human_id: string | null; frozen_at: string | null}>();
+            .bind(caller.accountId).first<{human_id: string | null; frozen_at: string | null}>();
         if (!owner || owner.human_id !== row.decided_by) return refuse('owner-changed');
         if (owner.frozen_at !== null) return refuse('owner-frozen');
-        const credential = await readCredential(tx, auth.accountId, row.credential_ref);
+        const credential = await readCredential(tx, caller.accountId, row.credential_ref);
         if (!credential || credential.revoked_at !== null || credential.revision !== row.credential_revision
             || credential.provider !== row.provider || credential.target_account !== row.target_account) return refuse('credential-changed');
         const provider = findProvider(env, row.provider);
@@ -152,9 +159,9 @@ async function claim(env: Env, auth: AgentAuth, actionId: string, clock: () => b
 }
 
 /** POST /v1/external-actions/{actionId}/execute: dispatches an approved plan once and records the provider's outcome. */
-export async function executeExternalAction(env: Env, auth: AgentAuth, actionId: string, clock: () => bigint = nowUtc): Promise<ExternalActionView> {
+export async function executeExternalAction(env: Env, caller: ActionCaller, actionId: string, clock: () => bigint = nowUtc): Promise<ExternalActionView> {
     if (writesRefused(env)) fail(503, 'maintenance', 30);
-    const claimed = await claim(env, auth, actionId, clock);
+    const claimed = await claim(env, caller, actionId, clock);
     if (!claimed.dispatch) return view(claimed.row, clock());
     const row = claimed.row;
     // claim() verified the provider and its contract revision in the committed transaction.
