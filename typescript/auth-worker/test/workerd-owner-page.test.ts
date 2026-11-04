@@ -66,11 +66,20 @@ function fakePostiz(request:Request):Response|null{
   if(request.headers.get("authorization")!==postizKey)return Response.json({message:"Unauthorized"},{status:401});
   return Response.json([{id:"cm4tiktok00000000000000001",name:"HSC Beats",identifier:"tiktok",profile:"hscbeats",disabled:false}]);
 }
+const blueskyHandle="hscbeats.bsky.social",blueskyPassword="abcd-efgh-ijkl-mnop",blueskyDid="did:plc:"+"a".repeat(24);
+async function fakeBluesky(request:Request):Promise<Response|null>{
+  if(request.method!=="POST"||request.url!=="https://bsky.social/xrpc/com.atproto.server.createSession")return null;
+  const {identifier,password}=await request.json() as {identifier:string;password:string};
+  return identifier===blueskyHandle&&password===blueskyPassword?Response.json({did:blueskyDid,handle:blueskyHandle,accessJwt:"jwt",active:true})
+    :Response.json({error:"AuthenticationRequired"},{status:401});
+}
 async function mailboxOutbound(request:Request):Promise<Response>{
   const google=await fakeGoogle(request);
   if(google)return google;
   const postiz=fakePostiz(request);
   if(postiz)return postiz;
+  const bluesky=await fakeBluesky(request);
+  if(bluesky)return bluesky;
   if(request.method!=="POST"||request.url!==providerEndpoint)return new Response("Outbound denied",{status:403});
   const call=await request.json() as {actionId:string;content:string;targetAccount:string};
   providerCalls.push(call);
@@ -613,6 +622,37 @@ test("connectPostiz_StaleSessionOrSingleFieldPost_NothingStored",{timeout:60_000
   const response=await postPostiz(human,token,postizKey,stale);
   assert.equal(new URL(response.headers.get("location")!).origin,"https://github.com");
   assert.equal(result(await postAccount(token,await sessionCookie(human))),"not-found","the key-less /account form cannot connect Postiz");
+  assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
+});
+
+function blueskyToken(html:string):string{
+  const token=/<form method="post" action="\/account\/bluesky"><input type="hidden" name="action" value="([^"]+)">/.exec(html)?.[1];
+  assert.ok(token,"the page offers Connect Bluesky");
+  return token;
+}
+const postBluesky=async(human:Human,token:string,fields:Record<string,string>,authAt?:number)=>shared.mf.dispatchFetch(issuer+"/account/bluesky",{method:"POST",redirect:"manual",
+  headers:{"Content-Type":"application/x-www-form-urlencoded",Origin:issuer,Cookie:await sessionCookie(human,authAt)},body:new URLSearchParams({action:token,...fields}).toString()});
+
+test("connectBluesky_OwnerSubmitsAppPassword_AccountStoredSealedAndListed",{timeout:90_000},async()=>{
+  const human=await seedHuman(),agent=await ownedAgent(human,"poster");
+  const token=blueskyToken(await (await account(await sessionCookie(human))).text());
+  const response=await postBluesky(human,token,{handle:"@"+blueskyHandle,appPassword:blueskyPassword});
+  assert.equal(response.headers.get("location"),"/account?result=bluesky-connected");
+  const rows=(await (await db()).prepare("SELECT credential_ref,target_account,target_display,secret IS NOT NULL sealed FROM external_credentials WHERE account_id=?").bind(agent.accountId).all()).results;
+  assert.deepEqual(rows,[{credential_ref:"bluesky:"+blueskyDid,target_account:blueskyDid,target_display:"@"+blueskyHandle,sealed:1}]);
+  const page=await (await account(await sessionCookie(human))).text();
+  assert.ok(page.includes("bluesky as @"+blueskyHandle));
+  assert.ok(!page.includes(blueskyPassword),"the app password is never rendered");
+  assert.equal(result(await postBluesky(human,token,{handle:blueskyHandle,appPassword:"zzzz-zzzz-zzzz-zzzz"})),"provider-refused");
+});
+
+test("connectBluesky_StaleSessionMissingFieldOrKeylessForm_NothingStored",{timeout:60_000},async()=>{
+  const human=await seedHuman(),agent=await ownedAgent(human,"poster"),stale=Date.now()-11*60_000;
+  const token=blueskyToken(await (await account(await sessionCookie(human,stale))).text());
+  const response=await postBluesky(human,token,{handle:blueskyHandle,appPassword:blueskyPassword},stale);
+  assert.equal(new URL(response.headers.get("location")!).origin,"https://github.com");
+  assert.equal(result(await postBluesky(human,token,{handle:blueskyHandle})),"not-found","the app password is required");
+  assert.equal(result(await postAccount(token,await sessionCookie(human))),"not-found","the password-less /account form cannot connect Bluesky");
   assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
 });
 

@@ -5,6 +5,7 @@
 import type { Env, Transaction } from './database.ts';
 import { youtubeUpload } from './youtube-provider.ts';
 import { postizPublish } from './postiz-provider.ts';
+import { blueskyPublish } from './bluesky-provider.ts';
 
 /** `secret` is the opened credential secret, null for a provider that needs none. It never leaves the provider. */
 export type ProviderCall = {accountId: string; operation: string; content: string; targetAccount: string; actionId: string; secret: string | null};
@@ -63,5 +64,6 @@ export function provider(env: Env, name: string): ExternalProvider | null {
     if (name === testHttp.name && env.EXTERNAL_ACTION_TEST_ENDPOINT) return testHttp;
     if (name === youtubeUpload.name && youtubeUpload.available(env)) return youtubeUpload;
     if (name === postizPublish.name && postizPublish.available(env)) return postizPublish;
+    if (name === blueskyPublish.name && env.EXTERNAL_CREDENTIAL_KEY) return blueskyPublish;
     return null;
 }

@@ -8,6 +8,7 @@ import { reauthFutureSkewMs, reauthWindowMs, type OwnerDecision } from './owner-
 import { sealSecret } from './credential-vault.ts';
 import { connectYoutube, youtubeConfigured, type ConnectRefusal } from './youtube-provider.ts';
 import { listPostizChannels } from './postiz-provider.ts';
+import { connectBluesky as verifyBluesky } from './bluesky-provider.ts';
 import { apiTime, nowUtc } from './time.ts';
 import { provider } from './external-providers.ts';
 import type { ActionCaller } from './external-actions.ts';
@@ -159,6 +160,48 @@ export async function connectPostiz(env: Env, input: ConnectPostizInput, clock: 
         }, clock);
     } catch {
         console.error('external-credential: postiz connect failed');
+        return {ok: false, reason: 'unavailable'};
+    }
+}
+
+export type ConnectBlueskyInput = {humanId: string; authAt: number; agentId: string; handle: string; appPassword: string};
+export type ConnectBlueskyResult = {ok: true; handle: string}
+    | {ok: false; reason: 'stale-authentication' | 'frozen' | 'not-found' | 'provider-unavailable' | 'provider-refused' | 'unavailable'};
+
+/**
+ * Owner RPC with a Bluesky handle and app password: Bluesky verifies the password and names the account (its DID), which
+ * becomes the credential `bluesky:<did>` with a fresh revision and the app password sealed to that row. Reconnecting the
+ * same account replaces it.
+ */
+export async function connectBluesky(env: Env, input: ConnectBlueskyInput, clock: () => bigint = nowUtc): Promise<ConnectBlueskyResult> {
+    if (writesRefused(env)) return {ok: false, reason: 'unavailable'};
+    const value = input as Record<string, unknown> | null;
+    if (typeof value !== 'object' || value === null || Object.keys(value).length !== 5 || typeof value.humanId !== 'string' || !uuidPattern.test(value.humanId)
+        || typeof value.agentId !== 'string' || !uuidPattern.test(value.agentId) || typeof value.authAt !== 'number' || !Number.isSafeInteger(value.authAt)
+        || typeof value.handle !== 'string' || value.handle.length > 260 || typeof value.appPassword !== 'string' || value.appPassword.length > 64) return {ok: false, reason: 'not-found'};
+    const nowMs = Number(clock() / 10000n);
+    if (nowMs - input.authAt > reauthWindowMs || input.authAt > nowMs + reauthFutureSkewMs) return {ok: false, reason: 'stale-authentication'};
+    if (!env.EXTERNAL_CREDENTIAL_KEY) return {ok: false, reason: 'provider-unavailable'};
+    try {
+        const before = await atomic(env.db, tx => ownership(tx, input.humanId, input.agentId), clock);
+        if (before !== 'ok') return {ok: false, reason: before};
+        const account = await verifyBluesky(input.handle, input.appPassword);
+        if (!account) return {ok: false, reason: 'provider-refused'};
+        const credentialRef = 'bluesky:' + account.did, revision = crypto.randomUUID();
+        const sealed = await sealSecret(env.EXTERNAL_CREDENTIAL_KEY, {accountId: input.agentId, credentialRef, provider: 'bluesky', revision}, input.appPassword);
+        return await atomic(env.db, async tx => {
+            const now = await ownership(tx, input.humanId, input.agentId);
+            if (now !== 'ok') return {ok: false, reason: now} as const;
+            const stamp = tx.store.now.toString();
+            tx.writes.push(tx.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,secret,created_at,updated_at)
+                VALUES(?,?,'bluesky',?,?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER))
+                ON CONFLICT(account_id,credential_ref) DO UPDATE SET provider=excluded.provider,revision=excluded.revision,target_account=excluded.target_account,
+                target_display=excluded.target_display,secret=excluded.secret,revoked_at=NULL,updated_at=excluded.updated_at`)
+                .bind(input.agentId, credentialRef, revision, account.did, '@' + account.handle, sealed.buffer as ArrayBuffer, stamp, stamp));
+            return {ok: true, handle: account.handle} as const;
+        }, clock);
+    } catch {
+        console.error('external-credential: bluesky connect failed');
         return {ok: false, reason: 'unavailable'};
     }
 }

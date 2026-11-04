@@ -9,7 +9,7 @@ import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
 import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
-import {readOwnerAction,readPostizConnect,destructiveKinds} from "./owner-forms.ts";
+import {readOwnerAction,readPostizConnect,readBlueskyConnect,destructiveKinds} from "./owner-forms.ts";
 import {ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
 import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
 import {beginYoutubeConnect,completeYoutubeConnect,youtubeCallbackPath,type YoutubeConnectEnv} from "./youtube-connect.ts";
@@ -282,7 +282,7 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
   // Connecting a credential leaves for the provider; the mailbox re-checks ownership and the sign-in window on the way back.
   if(action.kind==="connect-youtube")return beginYoutubeConnect(env,session,action.agentId,now);
   // Connecting Postiz needs the API key, which only its own form at /account/postiz carries.
-  if(action.kind==="connect-postiz")return accountRedirect("not-found");
+  if(action.kind==="connect-postiz"||action.kind==="connect-bluesky")return accountRedirect("not-found");
   let result:OwnerActionResult;
   try{result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});}
   catch{return directoryUnavailable();}
@@ -313,6 +313,27 @@ async function connectPostizAccount(req:Request,env:Env):Promise<Response>{
     return accountRedirect("unavailable");
   }
 }
+/** POST /account/bluesky: the owner's Bluesky handle and app password for one agent, passed to the mailbox and never kept here. */
+async function connectBlueskyAccount(req:Request,env:Env):Promise<Response>{
+  if(req.method!=="POST")return methodNotAllowed("POST");
+  if(req.headers.get("origin")!==new URL(req.url).origin)
+    return messagePage(403,"Request refused","This request did not come from the Weave account page.");
+  const now=Date.now(),accountUrl=new URL("/account",env.OAUTH_ISSUER);
+  const session=await readHumanSession(env.HUMAN_SESSION_KEY,req,now);
+  if(!session)return beginGithubLogin(env,accountUrl,now);
+  const form=await readBlueskyConnect(env.HUMAN_SESSION_KEY,req,session,now);
+  if(form==="expired")return accountRedirect("form-expired");
+  if(!form)return accountRedirect("not-found");
+  // The password is dropped here; the owner types it again after signing in.
+  if(!freshAuthentication(session,now))return beginGithubLogin(env,accountUrl,now,{reauthenticate:{login:session.login}});
+  try{
+    const result=await env.MAILBOX.connectBluesky({humanId:session.humanId,authAt:session.authAt,agentId:form.agentId,handle:form.handle,appPassword:form.appPassword});
+    return accountRedirect(result.ok?"bluesky-connected":result.reason);
+  }catch{
+    console.error("bluesky-connect: directory call failed");
+    return accountRedirect("unavailable");
+  }
+}
 const mediaPath=/^\/account\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 /** GET /account/media/{actionId}/{mediaId}: a file an action of the owner's agent names, for the approval preview. */
 async function ownerMedia(req:Request,env:Env,match:RegExpExecArray):Promise<Response>{
@@ -334,6 +355,7 @@ export default class AuthServer extends WorkerEntrypoint<Env>{
     if(path==="/authorize")return authorize(req,this.env,server);
     if(path==="/account")return account(req,this.env,server.getOAuthApi(this.env));
     if(path==="/account/postiz")return connectPostizAccount(req,this.env);
+    if(path==="/account/bluesky")return connectBlueskyAccount(req,this.env);
     const media=mediaPath.exec(path);
     if(media)return ownerMedia(req,this.env,media);
     if(path==="/login/github/callback")return req.method==="GET"?completeGithubLogin(this.env,req,Date.now())
