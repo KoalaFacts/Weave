@@ -57,7 +57,10 @@ test('issue comment release requires owner identity, #236, exact command and pro
     assert.match(workflow,/    environment: production/);
     assert.match(workflow,/WEAVE_RELEASE_CONFIGURATION_SCOPE: \$\{\{ github\.event_name == 'issue_comment' && 'production' \|\| inputs\.configuration_scope \}\}/);
     assert.match(workflow,/WEAVE_RELEASE_FIRST_PARTY_OAUTH: \$\{\{ github\.event_name == 'issue_comment' && 'false' \|\| inputs\.enable_first_party_oauth \}\}/);
-    assert.match(workflow,/WEAVE_DEPLOY_DATABASE_MODE: \$\{\{ github\.event_name == 'issue_comment' && 'completed-only' \|\| inputs\.database_mode \}\}/);
+    const protectedDeploy=workflow.split(/^  deploy-production:/m)[1];
+    assert.ok(protectedDeploy,'The protected production release job must exist.');
+    assert.match(protectedDeploy,/WEAVE_DEPLOY_DATABASE_MODE: completed-only/,
+        'The owner-triggered protected release must never select a schema migration mode.');
     assert.match(workflow,/WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: \$\{\{ github\.event_name == 'issue_comment' && 'false'/);
     assert.match(workflow,/  contents: read/);
     assert.doesNotMatch(workflow,/contents: write/);
