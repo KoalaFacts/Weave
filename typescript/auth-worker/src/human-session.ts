@@ -29,7 +29,7 @@ async function hmacKey(key:string):Promise<CryptoKey>{
 }
 
 /** Which cookie a signature was made for; a value signed for one purpose never verifies as another. */
-export type CookiePurpose="human-session"|"github-login"|"owner-action";
+export type CookiePurpose="human-session"|"github-login"|"owner-action"|"youtube-connect";
 /** The longest signed cookie value verifiedCookieValue reads back; issuers must stay within it. */
 export const maxSignedCookieValueLength=2048;
 const signedData=(purpose:CookiePurpose,json:Uint8Array)=>{

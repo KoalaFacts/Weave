@@ -17,7 +17,7 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   const requestId=randomUUID(),agentId=randomUUID();
   const overview=base({bindingRequests:[{requestId,agentId,displayName:'<script>alert(1)</script>',requestingKid:requesting,
     liveKeys:[{kid:live,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:iso(now+3_600_000)}],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+86_400_000)}],
-    agents:[{agentId:randomUUID(),displayName:null,keys:[{kid:kid(),label,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],keyRequests:[],grants:[],addresses:[],revokedGrantIds:[]}]});
+    agents:[{agentId:randomUUID(),displayName:null,keys:[{kid:kid(),label,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],keyRequests:[],grants:[],addresses:[],credentials:[],revokedGrantIds:[]}]});
   const tokens=new Map([["confirm-binding:"+requestId,"tok-confirm"],["reject-binding:"+requestId,"tok-reject"]]);
   const response=ownerPage(overview,human,tokens,null,now);
   assert.equal(response.status,200);
@@ -33,12 +33,12 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   assert.ok(body.includes("still in its 24 h cooling window"));
   assert.ok(body.includes("Signed in as @alice"));
   assert.ok(body.includes('value="tok-confirm"')&&body.includes('value="tok-reject"'));
-  assert.ok(body.includes("Confirming, approving an action, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes"));
-  assert.ok(body.includes("Revoking a connected client's access does not."));
+  assert.ok(body.includes("Confirming, approving an action, connecting an account, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes"));
+  assert.ok(body.includes("Revoking a connected client's access or disconnecting an account does not."));
 });
 
 const agent=(over:Partial<Extract<OwnerOverview,{frozen:false}>["agents"][number]>={})=>({agentId:randomUUID(),displayName:"a",keys:[],keyRequests:[],
-  grants:[],addresses:[],revokedGrantIds:[],...over});
+  grants:[],addresses:[],credentials:[],revokedGrantIds:[],...over});
 
 test("ownerPage_ConnectedClients_EscapedUnverifiedWithRevoke",async()=>{
   const hostile=randomUUID(),unnamed=randomUUID(),revoked=randomUUID();
@@ -83,7 +83,7 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,18);
+  assert.equal(Object.keys(ownerResultText).length,24);
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-pending",now))).includes("Access is revoked; token clean-up will be retried on your next visit."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-complete",now))).includes("Access is revoked and token clean-up is complete."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"form-expired",now))).includes("This page expired. Reload it and try again."));
@@ -100,13 +100,13 @@ test("ownerFormTokens_CoversEveryFormTheOverviewRenders",async()=>{
   const overview=base({bindingRequests:[{requestId,agentId:randomUUID(),displayName:null,requestingKid:kid(),liveKeys:[],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1)}],
     agents:[{agentId,displayName:"a",keys:[{kid:keyId,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],
       keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}],
-      grants:[{grantId,clientId:"https://client.example/cimd.json",clientName:"c",createdAt:iso(now)}],addresses:[],revokedGrantIds:[randomUUID()]}]});
-  const tokens=await ownerFormTokens(signingKey,human.humanId,overview,now);
+      grants:[{grantId,clientId:"https://client.example/cimd.json",clientName:"c",createdAt:iso(now)}],addresses:[],credentials:[],revokedGrantIds:[randomUUID()]}]});
+  const tokens=await ownerFormTokens(signingKey,human.humanId,overview,now,false);
   assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,"issue-recovery-code:"+agentId,
     "reject-binding:"+requestId,"reject-key:"+keyRequestId,"revoke-grant:"+grantId,"revoke-key:"+agentId+":"+keyId].sort());
   const body=await html(ownerPage(overview,human,tokens,null,now));
   assert.equal(body.match(/<form /g)!.length,tokens.size);
-  assert.equal((await ownerFormTokens(signingKey,human.humanId,{frozen:true},now)).size,0);
+  assert.equal((await ownerFormTokens(signingKey,human.humanId,{frozen:true},now,false)).size,0);
 });
 
 test("recoveryCodePage_ShowsCodeNoStoreAndRedeemInstructions",async()=>{
@@ -122,7 +122,7 @@ test("ownerPage_PendingAction_ShowsEscapedContentVerifiedAccountAndBoundForms",a
   const overview=base({agents:[agent({agentId,displayName:"Publisher"})],externalActions:[{actionId,agentId,provider:"test-http",operation:"publish_text",
     content:'Episode 12\n<script>alert(1)</script>',credentialRef:"linkedin-main",credentialRevision:"rev-7",targetAccount:"urn:li:person:alpha",
     targetDisplay:"Desk <b>Alpha</b>",planDigest,createdAt:iso(now),expiresAt:iso(now+3_600_000)}]});
-  const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now);
+  const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
   assert.ok(tokens.has("confirm-action:"+actionId)&&tokens.has("reject-action:"+actionId));
   const body=await html(ownerPage(overview,human,tokens,null,now));
   assert.ok(!body.includes("<script>")&&!body.includes("<b>"),"agent and provider text must be escaped");
@@ -132,4 +132,20 @@ test("ownerPage_PendingAction_ShowsEscapedContentVerifiedAccountAndBoundForms",a
   assert.ok(body.includes("Approve and allow sending once")&&body.includes('value="'+tokens.get("confirm-action:"+actionId)+'"'));
   const none=await html(ownerPage(base(),human,new Map(),null,now));
   assert.ok(none.includes("No agent is waiting for an action to be approved."));
+});
+
+test("ownerPage_ConnectedAccounts_ShowVerifiedChannelDisconnectAndConnectOnlyWhenConfigured",async()=>{
+  const agentId=randomUUID();
+  const overview=base({agents:[agent({agentId,credentials:[{credentialRef:"youtube",provider:"youtube",targetAccount:"UC"+"a".repeat(22),
+    targetDisplay:"HSC <i>Beats</i>",revision:"rev-1",connectedAt:iso(now)}]})]});
+  const key=randomBytes(32).toString("base64url");
+  const configured=await ownerFormTokens(key,human.humanId,overview,now,true);
+  assert.ok(configured.has("connect-youtube:"+agentId)&&configured.has("revoke-credential:"+agentId+":youtube"));
+  const body=await html(ownerPage(overview,human,configured,null,now));
+  assert.ok(body.includes("youtube as HSC &#60;i&#62;Beats&#60;/i&#62; (<code>UC"+"a".repeat(22)+"</code>); credential <code>youtube@rev-1</code>"));
+  assert.ok(body.includes(">Disconnect</button>")&&body.includes(">Connect YouTube</button>"));
+  const unconfigured=await ownerFormTokens(key,human.humanId,overview,now,false);
+  assert.equal(unconfigured.has("connect-youtube:"+agentId),false);
+  assert.ok(!(await html(ownerPage(overview,human,unconfigured,null,now))).includes("Connect YouTube"));
+  assert.ok((await html(ownerPage(base({agents:[agent()]}),human,new Map(),"no-channel",now))).includes(ownerResultText["no-channel"]));
 });

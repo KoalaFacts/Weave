@@ -5,6 +5,7 @@ import { maxAgentsPerHuman, requireReadable, writesRefused } from './humans.ts';
 import { rejectKeyRequest } from './key-requests.ts';
 import { revokeGrantIn } from './client-grants.ts';
 import { confirmExternalAction, pendingForOwner, rejectExternalAction, type OwnerExternalAction } from './external-actions.ts';
+import { ownedCredentials, revokeExternalCredential, type OwnerCredential } from './external-credentials.ts';
 import { issueRecoveryCode } from './recovery-codes.ts';
 import { apiTime, nowUtc } from './time.ts';
 
@@ -22,7 +23,7 @@ export type OwnerGrant = {grantId: string; clientId: string; clientName: string 
 export type OwnerAddress = {addressId: string; label: string | null; isPublic: boolean; hasAgentCard: boolean; createdAt: string};
 /** `revokedGrantIds` are grants revoked in the last 30 days, for the authorization server's token clean-up retry; never rendered. */
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[];
-    grants: OwnerGrant[]; addresses: OwnerAddress[]; revokedGrantIds: string[]};
+    grants: OwnerGrant[]; addresses: OwnerAddress[]; credentials: OwnerCredential[]; revokedGrantIds: string[]};
 /** `externalActions` are the pending governed actions of the human's agents, each confirmed by its `planDigest`. */
 export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]; externalActions: OwnerExternalAction[]};
 
@@ -32,7 +33,8 @@ export type OwnerAction = {humanId: string; authAt: number} & (
     | {kind: 'reject-binding' | 'confirm-key' | 'reject-key' | 'reject-action'; requestId: string}
     | {kind: 'revoke-key'; agentId: string; kid: string}
     | {kind: 'issue-recovery-code'; agentId: string}
-    | {kind: 'revoke-grant'; grantId: string});
+    | {kind: 'revoke-grant'; grantId: string}
+    | {kind: 'revoke-credential'; agentId: string; credentialRef: string});
 export type OwnerFailureReason = 'stale-authentication' | 'frozen' | 'not-found' | 'not-pending' | 'expired' | 'agent-limit' | 'already-owned' | 'key-in-use'
     | 'key-limit' | 'endorser-revoked' | 'requesting-key-revoked' | 'keys-changed' | 'plan-changed' | 'unavailable';
 export type OwnerFailure = {ok: false; reason: OwnerFailureReason};
@@ -46,6 +48,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const grantIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const kidPattern = /^[A-Za-z0-9_-]{43}$/;
 const digestPattern = /^[A-Za-z0-9_-]{43}$/;
+const credentialRefPattern = /^[A-Za-z0-9._:-]{1,64}$/;
 const destructive = new Set<string>(['confirm-binding', 'confirm-key', 'revoke-key', 'issue-recovery-code', 'confirm-action']);
 const notFound: OwnerFailure = {ok: false, reason: 'not-found'};
 const unavailable: OwnerFailure = {ok: false, reason: 'unavailable'};
@@ -99,6 +102,7 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
                 keysDigest: await liveKeysDigest(liveKeys.map(key => key.kid)), createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!});
         }
         const externalActions = await pendingForOwner(tx, ownedIds, nowTicks);
+        const credentials = await ownedCredentials(tx, ownedIds);
         return {
             frozen: false as const,
             bindingRequests,
@@ -110,6 +114,7 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
                 grants: grants.filter(row => row.account_id === agent.account_id).map(row => ({grantId: row.grant_id, clientId: row.client_id, clientName: row.client_name, createdAt: apiTime(row.created_at)!})),
                 addresses: addresses.filter(row => row.account_id === agent.account_id).map(row => ({addressId: row.address_id, label: row.label, isPublic: row.is_public === 1,
                     hasAgentCard: row.hasCard === 1, createdAt: apiTime(row.created_at)!})),
+                credentials: credentials.filter(row => row.agentId === agent.account_id).map(({agentId: _agentId, ...credential}) => credential),
                 revokedGrantIds: revoked.filter(row => row.account_id === agent.account_id).map(row => row.grant_id)})),
         };
     });
@@ -128,6 +133,7 @@ function validShape(input: unknown): OwnerAction | null {
         case 'revoke-key': return uuid(action.agentId) && typeof action.kid === 'string' && kidPattern.test(action.kid) ? input as OwnerAction : null;
         case 'issue-recovery-code': return uuid(action.agentId) ? input as OwnerAction : null;
         case 'revoke-grant': return typeof action.grantId === 'string' && grantIdPattern.test(action.grantId) ? input as OwnerAction : null;
+        case 'revoke-credential': return uuid(action.agentId) && typeof action.credentialRef === 'string' && credentialRefPattern.test(action.credentialRef) ? input as OwnerAction : null;
         default: return null;
     }
 }
@@ -148,6 +154,8 @@ async function decide(tx: Transaction, input: DecidedAction, at: bigint): Promis
         case 'revoke-key': return revokeKeyForOwner(tx, input.humanId, input.agentId, input.kid, at);
         // A protective action: no re-authentication window. The worst a stolen session does is disconnect the owner's own clients.
         case 'revoke-grant': return revokeGrantIn(tx, input.humanId, input.grantId);
+        // Protective, like revoking a grant: disconnecting needs no fresh authentication.
+        case 'revoke-credential': return revokeExternalCredential(tx, input.humanId, input.agentId, input.credentialRef, at);
     }
 }
 
