@@ -71,7 +71,9 @@ export async function inspectCloudflareAudit(
     let dbId: string;
     try {
         const subdomain = await get('/workers/subdomain');
-        if (!subdomain.ok || (object(await subdomain.json())?.result as RecordValue | undefined)?.subdomain !== 'weave-389')
+        const subdomainBody = object(await subdomain.json());
+        if (!subdomain.ok || subdomainBody?.success !== true
+            || object(subdomainBody.result)?.subdomain !== 'weave-389')
             return report;
         const settings = await get('/workers/scripts/demo/settings');
         const settingsBody = object(await settings.json());
@@ -145,8 +147,9 @@ export async function inspectCloudflareAudit(
             if (!isD1 && !isWorker) continue;
             const action = object(entry?.action);
             const time = action?.time;
-            if (typeof time !== 'string' || !Number.isFinite(Date.parse(time))
-                || time < auditWindow.since || time >= auditWindow.before)
+            const timeMs = typeof time === 'string' ? Date.parse(time) : NaN;
+            if (!Number.isFinite(timeMs) || timeMs < Date.parse(auditWindow.since)
+                || timeMs >= Date.parse(auditWindow.before))
                 continue;
             const method = allowed(raw?.method, ['GET','POST','PUT','PATCH','DELETE','other'] as const, 'other');
             const kind = allowed(action?.type, ['create','update','delete','view','other'] as const, 'other');
@@ -159,7 +162,7 @@ export async function inspectCloudflareAudit(
             } else report.matchedWorker++;
             if (report.events.length < maxEvents) {
                 report.events.push({
-                    time: new Date(time).toISOString(), target: isD1 ? 'existing-d1' : 'demo-worker',
+                    time: new Date(timeMs).toISOString(), target: isD1 ? 'existing-d1' : 'demo-worker',
                     action: kind, method, outcome,
                 });
             } else report.sampleTruncated = true;
