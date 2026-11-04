@@ -13,12 +13,13 @@ interface WorkerConfig {
     main: string;
     vars?: Record<string,string>;
     d1_databases: {binding:string;database_id:string;database_name:string;remote?:boolean;[key:string]:unknown}[];
+    r2_buckets?: {binding:string;bucket_name:string}[];
     [key:string]: unknown;
 }
 // The live settings API reports a binding to a Worker's default environment as
 // "production"; any other named environment is unreviewed.
 const defaultEnvironment=(environment:string|undefined)=>environment===undefined||environment==='production';
-interface Binding {name:string;type:string;id?:string;namespace_id?:string;class_name?:string;script_name?:string;text?:unknown;service?:string;environment?:string;entrypoint?:string;}
+interface Binding {name:string;type:string;id?:string;bucket_name?:string;namespace_id?:string;class_name?:string;script_name?:string;text?:unknown;service?:string;environment?:string;entrypoint?:string;}
 interface WorkerSettings {bindings:Binding[];}
 interface CommandResult {status:number|null;stdout?:string;stderr?:string;}
 interface DatabaseConnection {db:StorageDatabase;close:()=>Promise<void>;}
@@ -236,7 +237,10 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     }
     const binding=bindings[0];
     if(bindings.length!==1||binding?.type!=='d1'||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(binding.id??'')||binding.id==='00000000-0000-0000-0000-000000000000')throw Error('Expected one valid existing D1 binding named db.');
-    if(worker.bindings.some(binding=>!['plain_text','json','secret_text'].includes(binding?.type)&&!(binding?.type==='d1'&&binding.name==='db')&&binding!==authBinding))throw Error('Unexpected existing resource bindings; refusing to overwrite them.');
+    // An R2 binding this config declares (the external media bucket) is kept as is; any other bucket is refused.
+    const declaredBucket=(binding: Binding)=>binding?.type==='r2_bucket'&&
+        (config.r2_buckets??[]).some(bucket=>bucket.binding===binding.name&&bucket.bucket_name===binding.bucket_name);
+    if(worker.bindings.some(binding=>!['plain_text','json','secret_text'].includes(binding?.type)&&!(binding?.type==='d1'&&binding.name==='db')&&binding!==authBinding&&!declaredBucket(binding)))throw Error('Unexpected existing resource bindings; refusing to overwrite them.');
     const database=await inspect<{uuid:string;name:string}>('/d1/database/'+binding.id,'Existing D1 database');
     if(database.uuid!==binding.id||typeof database.name!=='string'||!/^[a-zA-Z0-9_-]+$/.test(database.name))throw Error('Existing D1 identity does not match its Worker binding or has an invalid name.');
     config.d1_databases[0].database_id=database.uuid;

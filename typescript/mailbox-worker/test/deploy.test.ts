@@ -567,3 +567,16 @@ test('ordinary releases carry no Access trial or OAuth identity-link settings',a
     assert.ok(f.configs.every(config=>Object.keys(config.vars).every(name=>!/^ACCESS_TRIAL_|^OAUTH_IDENTITY_LINKS_/.test(name))));
     assert.ok(requested.every(url=>!url.includes('/access/')),'The retired trial input must not trigger Access API calls');
 });
+const mediaBucket={name:'EXTERNAL_MEDIA',type:'r2_bucket',bucket_name:'weave-external-media'};
+test('a redeploy keeps the declared external media bucket binding',async()=>{
+    assert.deepEqual(base.r2_buckets,[{binding:'EXTERNAL_MEDIA',bucket_name:'weave-external-media'}]);
+    const f=fixture({bindingResult:[dbBinding,mediaBucket]});await deploy(f.options);
+    assert.equal(f.commands.length,3);
+    assert.ok(f.configs.every(config=>JSON.stringify(config.r2_buckets)===JSON.stringify(base.r2_buckets)),'every upload declares the same bucket');
+});
+for(const [label,bucket] of [['another bucket',{...mediaBucket,bucket_name:'someone-elses-bucket'}],['an undeclared binding',{...mediaBucket,name:'OTHER_MEDIA'}]])
+    test(`a redeploy refuses ${label} before any mutation`,async()=>{
+        const f=fixture({bindingResult:[dbBinding,bucket]});
+        await assert.rejects(deploy(f.options),/Unexpected existing resource bindings/);
+        assert.equal(f.commands.length,0);
+    });
