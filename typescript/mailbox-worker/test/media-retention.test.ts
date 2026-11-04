@@ -77,3 +77,45 @@ test('sweepMedia_Maintenance_DeletesNothing', () => scenario(async h => {
     await sweepMedia(env);
     assert.deepEqual(await stored(h, agent.accountId, mediaId), {record: 1, object: true});
 }));
+
+/** Stores `count` old media records with their objects directly, faster than uploading each. */
+async function oldMedia(h: Harness, accountId: string, count: number) {
+    const bucket = await h.mf.getR2Bucket('EXTERNAL_MEDIA'), ids: string[] = [];
+    for (let i = 0; i < count; i++) {
+        const mediaId = crypto.randomUUID();
+        await bucket.put(accountId + '/' + mediaId, new Uint8Array([i]));
+        await h.db.prepare(`INSERT INTO external_media(media_id,account_id,content_type,bytes,sha256,created_at) VALUES(?,?,'image/png',1,?,CAST(? AS INTEGER))`)
+            .bind(mediaId, accountId, 'a'.repeat(64), ticks(Date.now() - mediaRetentionMs - day - i)).run();
+        ids.push(mediaId);
+    }
+    return ids;
+}
+
+test('sweepMedia_ManyEligibleFiles_EachCronRunStaysWithinItsDatabaseBudget', () => scenario(async h => {
+    const agent = await h.register();
+    await oldMedia(h, agent.accountId, 60);
+    await cron(h);
+    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_media').first<number>('n'), 10, 'one run deletes a full batch without exceeding the budget');
+    await cron(h);
+    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_media').first<number>('n'), 0);
+    assert.equal((await (await h.mf.getR2Bucket('EXTERNAL_MEDIA')).list()).objects.length, 0);
+}));
+
+test('sweepMedia_ReferenceWrittenWithJsonEscapes_StillKeepsTheFile', () => scenario(async h => {
+    const agent = await h.register();
+    const [escaped, topLevel, plain] = await oldMedia(h, agent.accountId, 3);
+    const actionId = await naming(h, agent.accountId, escaped, day);
+    // The same plan with every hyphen JSON-escaped: it decodes to the same media ID.
+    await h.db.prepare('UPDATE external_actions SET content=? WHERE action_id=?')
+        .bind(JSON.stringify({text: 'x', media: [{mediaId: escaped, bytes: 1, sha256: 'a'.repeat(64)}], settings: {__type: 'x'}}).replaceAll('-', '\\u002d'), actionId).run();
+    const video = await naming(h, agent.accountId, topLevel, day);
+    await h.db.prepare('UPDATE external_actions SET content=? WHERE action_id=?')
+        .bind(JSON.stringify({title: 't', description: '', privacyStatus: 'private', mediaId: topLevel, bytes: 1, sha256: 'a'.repeat(64)}).replaceAll('-', '\\u002d'), video).run();
+    // Content that is not a plan (plain text, other JSON shapes) neither names a file nor stops the sweep.
+    for (const content of ['plain text post', '{"media":["not-an-object", 5]}', '[1,2]', '{"media":{"mediaId":"x"}}'])
+        await h.db.prepare('UPDATE external_actions SET content=? WHERE action_id=?').bind(content, await naming(h, agent.accountId, crypto.randomUUID(), 0)).run();
+    await cron(h);
+    assert.deepEqual(await stored(h, agent.accountId, escaped), {record: 1, object: true});
+    assert.deepEqual(await stored(h, agent.accountId, topLevel), {record: 1, object: true});
+    assert.deepEqual(await stored(h, agent.accountId, plain), {record: 0, object: false});
+}));

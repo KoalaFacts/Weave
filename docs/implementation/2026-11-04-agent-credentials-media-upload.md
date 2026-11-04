@@ -71,19 +71,30 @@ private address is not detected here; Cloudflare's network is the boundary for t
 ## Retention
 
 The 5-minute cron deletes media that was uploaded at least 7 days ago and that no
-action has named or changed in the last 7 days. "Named" means the action's content
-contains the media ID. Only the uploading agent's own actions count. The sweep handles
-at most 50 files per run.
+action of the same agent has named or changed in the last 7 days. The sweep handles at
+most 50 files per run.
 
-- The D1 record is deleted first, re-checked in the same transaction. A plan proposed
-  in the meantime therefore keeps its file, because the optimistic revision serializes
-  the two.
-- The R2 object is deleted next. If that deletion fails, it is logged and the object
-  is left behind; Weave can no longer reach it, and nothing retries it.
+An action names a file in either of two ways:
+
+- after JSON decoding, as plans are read: a top-level `mediaId`, or a `media[].mediaId`;
+- by the media ID appearing anywhere in the raw content.
+
+So a reference written with JSON escapes (`\u002d`) still keeps the file. Content
+that is not a plan neither names a file nor stops the sweep.
+
+How a file is deleted:
+
+- One transaction selects the files and deletes their D1 records. A plan proposed
+  meanwhile changes the revision, so the sweep retries and keeps that plan's file.
+  This takes a handful of statements, well inside the scheduled run's 48-statement
+  budget.
+- The R2 objects are deleted after that commit. If one deletion fails, it is logged
+  and the object is left behind; Weave can no longer reach it, and nothing retries it.
 - Nothing is deleted in maintenance or read-only recovery.
 - A plan naming deleted media is refused at proposal. An approved plan whose file is
   gone fails cleanly at dispatch: the media upload is refused, so nothing is posted.
 
+## Verification
 
 - `test/agent-credentials-media.test.ts`:
   - Listing shows live credentials of this agent only, with Postiz operations and
@@ -109,9 +120,12 @@ at most 50 files per run.
   unused media loses its record and object while recent media is kept; media named by
   a recent action of its own agent is kept until that action is old, and another
   agent's action does not keep it; a failed object deletion still removes the record
-  and the sweep continues; maintenance deletes nothing. Mutation checks: dropping the
-  same-agent condition, the action condition, or the per-object error handling each
-  fail a test.
+  and the sweep continues; maintenance deletes nothing. Sixty eligible files are
+  cleared in two cron runs within the scheduled budget. JSON-escaped top-level and
+  `media[]` references keep their files, and non-plan content does not break the
+  sweep. Both tests fail on the earlier per-file-transaction, substring-only sweep.
+  Mutation checks: dropping the same-agent condition, the action condition, or the
+  per-object error handling each fail a test.
 - `test/mcp-tool-contract.test.ts` exercises the new tools against their output
   schemas. `test/openapi.test.ts` covers the new HTTP operations.
   `test/in-process-media.ts` lets tools called in the Node test process store media
