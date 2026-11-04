@@ -20,7 +20,7 @@ interface Env extends GithubLoginEnv,RegistrationLimitEnv {
   OAUTH_RESOURCE:string;
 }
 const scopes=["weave:addresses.read","weave:addresses.write","weave:contacts.read",
- "weave:contacts.write","weave:messages.read","weave:messages.send","weave:messages.ack","offline_access"];
+ "weave:contacts.write","weave:messages.read","weave:messages.send","weave:messages.ack","weave:actions.read","weave:actions.write","offline_access"];
 type Binding={issuer:string;resource:string};
 /** One exact HTTPS issuer origin and one canonical /mcp resource; anything else is a configuration error. */
 function config(env:Env,requestUrl?:string):Binding{

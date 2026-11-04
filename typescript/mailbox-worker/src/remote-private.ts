@@ -17,6 +17,7 @@ import { checkMessage, inboxMessage, messagePayload } from './a2a-message.ts';
 import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyClaim } from './mcp-idempotency.ts';
 import { liveOwnedGrant } from './client-grants.ts';
 import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
+import { executeExternalAction, getExternalAction, proposeExternalAction } from './external-actions.ts';
 import type { PrivateAccess } from './remote-mcp.ts';
 
 export { privateMcpTools } from './private-mcp-tools';
@@ -214,6 +215,18 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             checkUuid(args.messageId,'messageId');checkUuid(args.senderAccountId,'senderAccountId');
             await sweep(env);
             return json(withoutSecrets(await atomic(env.db,guarded(tx=>ack(tx,accountId,args.messageId as string,{senderMailboxId:args.senderAccountId})))));
+        }
+        // The consent grant is the caller's live authority, re-checked in every transaction of the action.
+        const caller={accountId,check:guard};
+        if(name==='propose_external_action'){
+            parameters(args,['credentialRef','operation','content'],['credentialRef','operation','content']);
+            return json(await proposeExternalAction(env,caller,args));
+        }
+        if(name==='get_external_action'||name==='execute_external_action'){
+            parameters(args,['actionId'],['actionId']);
+            checkUuid(args.actionId,'actionId');
+            const actionId=args.actionId as string;
+            return json(name==='get_external_action'?await getExternalAction(env,caller,actionId):await executeExternalAction(env,caller,actionId));
         }
         fail(404,'unavailable');
     }catch(error){return problem(error);}

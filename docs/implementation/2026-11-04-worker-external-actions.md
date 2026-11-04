@@ -12,7 +12,7 @@ acceptance list: no provider call before approval, exactly one after, and every
 meaningful change after approval refuses dispatch.
 
 Not in this increment: a real provider (LinkedIn, YouTube), a credential connect
-flow or encrypted credential storage, an MCP tool, approval notifications (#277) and a logical-effect lock across actions (#278).
+flow or encrypted credential storage, approval notifications (#277) and a logical-effect lock across actions (#278).
 No remote migration or deployment was run.
 
 ## Storage
@@ -54,6 +54,17 @@ Two additive tables in `src/schema.ts`:
   is ever dispatched again. A 422 is the only confirmed rejection (`failed`).
 - The approval adds no authority; the plan expires one hour after creation, for
   approval and execution together.
+
+## MCP tools
+
+`propose_external_action` and `execute_external_action` (scope `weave:actions.write`)
+and `get_external_action` (`weave:actions.read`) call the same functions. For MCP
+the caller's live authority is its OAuth consent grant, re-checked inside every
+transaction (the HTTP API re-checks the DPoP key instead), so a grant revoked after
+approval cannot dispatch. `execute_external_action` is marked open-world. Both
+scopes are added to the authorization server and resource metadata;
+`test/external-actions-mcp.test.ts` covers scopes, the full MCP flow, a grant
+revoked after approval and argument validation.
 
 ## Provider
 
