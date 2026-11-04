@@ -42,6 +42,16 @@ async function fakeGithub(request:Request):Promise<Response>{
   return new Response("Outbound denied",{status:403});
 }
 
+// Fake external action provider for the mailbox worker: completes every post and records it.
+const providerEndpoint="https://provider.example/post";
+const providerCalls:{actionId:string;content:string;targetAccount:string}[]=[];
+async function mailboxOutbound(request:Request):Promise<Response>{
+  if(request.method!=="POST"||request.url!==providerEndpoint)return new Response("Outbound denied",{status:403});
+  const call=await request.json() as {actionId:string;content:string;targetAccount:string};
+  providerCalls.push(call);
+  return Response.json({externalId:"post-"+call.actionId});
+}
+
 const logs:string[]=[];
 function options(storage:string,authEnv:Record<string,unknown>={}){
   return {
@@ -66,6 +76,7 @@ function options(storage:string,authEnv:Record<string,unknown>={}){
         exports:{ConsentNonce:{type:"durable-object",storage:"sqlite"}}
       }
     },{
+      dev:{outboundService:{type:"fetcher",handler:mailboxOutbound}},
       config:{
         name:mailboxName,compatibilityDate:"2026-10-13",compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
         manifest:{mainModule:"mailbox.js",modules:{"mailbox.js":{type:"esm",contents:mailboxBundle}}},
@@ -76,7 +87,8 @@ function options(storage:string,authEnv:Record<string,unknown>={}){
           REGISTRATION_PER_IP_PER_HOUR:{type:"text",value:"1000"},
           REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"1000"},
           CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"}
+          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
+          EXTERNAL_ACTION_TEST_ENDPOINT:{type:"text",value:providerEndpoint}
         }
       }
     }]
@@ -167,6 +179,18 @@ async function ownedAgent(human:Human,displayName="owned"):Promise<Agent>{
   await (await db()).prepare("UPDATE accounts SET human_id=? WHERE account_id=?").bind(human.humanId,agent.accountId).run();
   return agent;
 }
+
+type ActionView={actionId:string;status:string;receipt:string|null};
+async function proposeAction(human:Human,content:string):Promise<{agent:Agent;action:ActionView}>{
+  const agent=await ownedAgent(human,"publisher"),at=(BigInt(Date.now())*10000n).toString();
+  await (await db()).prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
+    VALUES(?,'linkedin-main','test-http','rev-1','urn:li:person:alpha','Desk Alpha',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(agent.accountId,at,at).run();
+  const response=await agentFetch(agent,"/v1/external-actions",{method:"POST",body:{credentialRef:"linkedin-main",operation:"publish_text",content}});
+  assert.equal(response.status,200,await response.clone().text());
+  return {agent,action:await response.json() as ActionView};
+}
+const executeAction=async(agent:Agent,actionId:string)=>
+  (await agentFetch(agent,"/v1/external-actions/"+actionId+"/execute",{method:"POST",body:{}})).json() as Promise<ActionView>;
 
 // ---- tests ---------------------------------------------------------------------------------------------------------------
 test("account_NoSession_RedirectsToGithubReturningToAccount",{timeout:30_000},async()=>{
@@ -441,4 +465,43 @@ test("consent_StillIssuesCode",{timeout:60_000},async()=>{
   const redirect=new URL(approved.headers.get("location")!);
   assert.equal(redirect.origin+redirect.pathname,redirectUri);
   assert.ok(redirect.searchParams.get("code"));
+});
+
+test("account_ApproveExternalAction_Fresh_AgentSendsOnce",{timeout:90_000},async()=>{
+  const human=await seedHuman(),content="Episode "+randomUUID();
+  const {agent,action}=await proposeAction(human,content);
+  const html=await (await account(await sessionCookie(human))).text();
+  assert.ok(html.includes("<pre>"+content+"</pre>")&&html.includes("Desk Alpha (<code>urn:li:person:alpha</code>)"));
+  assert.equal((await executeAction(agent,action.actionId)).status,"pending");
+
+  const response=await postAccount(await tokenFor(human,"Approve and allow sending once"),await sessionCookie(human));
+  assert.equal(response.status,303);
+  assert.equal(response.headers.get("location"),"/account?result=done");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0,"approval alone sends nothing");
+
+  const sent=await executeAction(agent,action.actionId),again=await executeAction(agent,action.actionId);
+  assert.equal(sent.status,"completed");
+  assert.equal(sent.receipt,"post-"+action.actionId);
+  assert.equal(again.status,"completed");
+  assert.deepEqual(providerCalls.filter(call=>call.actionId===action.actionId),[{operation:"publish_text",content,targetAccount:"urn:li:person:alpha",actionId:action.actionId}]);
+});
+
+test("account_ApproveExternalAction_Stale_RedirectsToGithubNoEffect",{timeout:60_000},async()=>{
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"stale "+randomUUID());
+  const stale=Date.now()-11*60_000;
+  const response=await postAccount(await tokenFor(human,"Approve and allow sending once",0,stale),await sessionCookie(human,stale));
+  assert.equal(response.status,302);
+  assert.equal(new URL(response.headers.get("location")!).origin,"https://github.com");
+  assert.equal((await executeAction(agent,action.actionId)).status,"pending");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
+});
+
+test("account_ApproveExternalAction_CredentialRotatedSincePage_PlanChanged",{timeout:60_000},async()=>{
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"rotated "+randomUUID());
+  const token=await tokenFor(human,"Approve and allow sending once");
+  await (await db()).prepare("UPDATE external_credentials SET revision='rev-2' WHERE account_id=?").bind(agent.accountId).run();
+  const response=await postAccount(token,await sessionCookie(human));
+  assert.equal(result(response),"plan-changed");
+  assert.equal((await executeAction(agent,action.actionId)).status,"pending");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
 });

@@ -4,18 +4,20 @@ import {signedCookieValue,verifiedCookieValue,type HumanSession} from "./human-s
 /** What a signed owner-action token can name; the mailbox worker re-validates and decides. */
 export type OwnerFormAction=
   |{kind:"confirm-binding";requestId:string;keysDigest:string}
-  |{kind:"reject-binding"|"confirm-key"|"reject-key";requestId:string}
+  |{kind:"confirm-action";requestId:string;planDigest:string}
+  |{kind:"reject-binding"|"confirm-key"|"reject-key"|"reject-action";requestId:string}
   |{kind:"revoke-key";agentId:string;kid:string}
   |{kind:"issue-recovery-code";agentId:string}
   |{kind:"revoke-grant";grantId:string};
 /** Kinds that need a fresh GitHub authentication before they are offered or applied. Revoking a client's grant is protective and does not. */
 export const destructiveKinds:ReadonlySet<OwnerFormAction["kind"]>=
-  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code"]);
+  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action"]);
 
 const tokenSeconds=600;
 const maxBodyBytes=4096;
 const memberSets:Record<OwnerFormAction["kind"],readonly string[]>={
   "confirm-binding":["requestId","keysDigest"],"reject-binding":["requestId"],"confirm-key":["requestId"],"reject-key":["requestId"],
+  "confirm-action":["requestId","planDigest"],"reject-action":["requestId"],
   "revoke-key":["agentId","kid"],"issue-recovery-code":["agentId"],"revoke-grant":["grantId"]};
 
 /** A token bound to one human and one exact action; it lives as long as the re-authentication window. */

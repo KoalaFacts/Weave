@@ -1,4 +1,5 @@
 import type {OwnerAddress,OwnerBindingRequest,OwnerGrant,OwnerKey,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
+import type {OwnerExternalAction} from "../../mailbox-worker/src/external-actions.ts";
 import {freshAuthentication,type HumanSession} from "./human-session.ts";
 import {ownerActionToken} from "./owner-forms.ts";
 
@@ -27,6 +28,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "endorser-revoked":"The key that endorsed this request has been revoked.",
   "requesting-key-revoked":"The key that made this request has been revoked.",
   "keys-changed":"The agent's keys changed after you opened this page. Review the current keys and confirm again.",
+  "plan-changed":"That action or its account changed after you opened this page. Review the current action and approve again.",
   "form-expired":"This page expired. Reload it and try again.",
   "cleanup-pending":"Access is revoked; token clean-up will be retried on your next visit.",
   "cleanup-complete":"Access is revoked and token clean-up is complete.",
@@ -57,6 +59,24 @@ function bindingSection(requests:OwnerBindingRequest[],tokens:ReadonlyMap<string
     form("Confirm binding","confirm-binding:"+request.requestId,tokens),
     form("Reject","reject-binding:"+request.requestId,tokens),"</section>"
   ].join("")).join("");
+}
+
+/**
+ * Each pending action shows exactly what the approval binds: the full content, the provider-verified account it acts as and the
+ * credential revision. The content is agent-supplied text, escaped and shown verbatim.
+ */
+function actionsSection(actions:OwnerExternalAction[],agents:Extract<OwnerOverview,{frozen:false}>["agents"],tokens:ReadonlyMap<string,string>):string{
+  if(actions.length===0)return "<p>No agent is waiting for an action to be approved.</p>";
+  return actions.map(action=>{
+    const agent=agents.find(candidate=>candidate.agentId===action.agentId);
+    return ["<section><h3>"+agentName(action.agentId,agent?.displayName??null)+" wants to "+esc(action.operation)+" on "+esc(action.provider)+"</h3>",
+      "<p>As "+esc(action.targetDisplay)+" (<code>"+esc(action.targetAccount)+"</code>), verified by "+esc(action.provider)+
+        "; credential <code>"+esc(action.credentialRef)+"@"+esc(action.credentialRevision)+"</code></p>",
+      "<p>Content, exactly as it will be sent:</p><pre>"+esc(action.content)+"</pre>",
+      "<p>Requested "+esc(action.createdAt)+"; approval and sending must finish by "+esc(action.expiresAt)+"</p>",
+      form("Approve and allow sending once","confirm-action:"+action.actionId,tokens),
+      form("Reject","reject-action:"+action.actionId,tokens),"</section>"].join("");
+  }).join("");
 }
 
 /** Client names and IDs are self-reported by the client: escaped text, never a link. */
@@ -100,9 +120,10 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
   if(overview.frozen)return shell("Your Weave agents",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
   const fresh=freshAuthentication(human,now);
   return shell("Your Weave agents",[head,
-    "<p>Confirming, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":
+    "<p>Confirming, approving an action, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":
       "Your current sign-in is older, so you will be asked to sign in again first.")+" Revoking a connected client's access does not.</p>",
     "<h2>Binding requests</h2>",bindingSection(overview.bindingRequests,tokens,now),
+    "<h2>Actions waiting for approval</h2>",actionsSection(overview.externalActions,overview.agents,tokens),
     "<h2>Your agents</h2>",agentSection(overview,tokens)].join(""));
 }
 
@@ -127,6 +148,11 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
     // The confirmation is bound to the live keys shown next to it; the mailbox worker refuses it if they changed.
     await add("confirm-binding:"+request.requestId,{kind:"confirm-binding",requestId:request.requestId,keysDigest:request.keysDigest});
     await add("reject-binding:"+request.requestId,{kind:"reject-binding",requestId:request.requestId});
+  }
+  for(const action of overview.externalActions){
+    // The approval is bound to the plan shown above it; the mailbox worker refuses it if anything in that plan changed.
+    await add("confirm-action:"+action.actionId,{kind:"confirm-action",requestId:action.actionId,planDigest:action.planDigest});
+    await add("reject-action:"+action.actionId,{kind:"reject-action",requestId:action.actionId});
   }
   for(const agent of overview.agents){
     await add("issue-recovery-code:"+agent.agentId,{kind:"issue-recovery-code",agentId:agent.agentId});

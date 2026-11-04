@@ -12,8 +12,7 @@ acceptance list: no provider call before approval, exactly one after, and every
 meaningful change after approval refuses dispatch.
 
 Not in this increment: a real provider (LinkedIn, YouTube), a credential connect
-flow or encrypted credential storage, the owner page UI in the auth worker, an MCP
-tool, approval notifications (#277) and a logical-effect lock across actions (#278).
+flow or encrypted credential storage, an MCP tool, approval notifications (#277) and a logical-effect lock across actions (#278).
 No remote migration or deployment was run.
 
 ## Storage
@@ -36,6 +35,7 @@ Two additive tables in `src/schema.ts`:
 | `POST /v1/external-actions` `{credentialRef, operation, content}` | agent | `pending`; provider not called |
 | `ownerOverview` → `externalActions[]` | owner RPC | full content, provider, target display and ID, `credentialRef@revision`, `planDigest` |
 | `ownerAction` `confirm-action {requestId, planDigest}` / `reject-action` | owner RPC | `approved` or `rejected`; confirm needs fresh authentication |
+| `/account` "Approve and allow sending once" / "Reject" | auth worker owner page | signed form token bound to the shown `planDigest`; stale sign-in re-authenticates first |
 | `POST /v1/external-actions/{id}/execute` | agent | re-check, commit `dispatching`, call provider once, record outcome |
 
 - The plan digest is SHA-256 over the action and account IDs, provider and its
@@ -75,9 +75,16 @@ another agent reading or executing. Removing the revision check, or letting
 `unknown` be re-dispatched, fails four of these tests. The OpenAPI route test covers
 the three new paths.
 
+In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
+content in `<pre>`, verified account, credential revision, bound form tokens) and
+`test/workerd-owner-page.test.ts` runs both Workers together: an owner approves on
+`/account` and the agent's execute sends exactly once; a stale sign-in is sent to
+GitHub with no effect; a credential rotated after the page was rendered is
+`plan-changed`.
+
 ## Limits
 
 - Credentials and their revisions are trusted rows with no writer API yet.
 - The Worker is the trusted execution path; a real provider will receive a
   decrypted credential there.
-- The owner page does not render `externalActions` yet, so only the RPC can decide.
+- No notification tells the owner an action is waiting (#277); they must open `/account`.
