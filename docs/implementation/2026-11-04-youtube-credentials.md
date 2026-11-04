@@ -1,13 +1,11 @@
-# YouTube credentials: owner-connected, provider-verified, sealed
+# YouTube: owner-connected credentials and governed uploads
 
 ## Scope
 
 Builds on [governed external actions](2026-11-04-worker-external-actions.md). An owner
 connects YouTube for one of their agents from `/account`; the resulting credential is
-what a later YouTube action is approved for. This increment stores and shows the
-credential only: there is no YouTube operation yet (upload is the next increment), so
-no YouTube action can be proposed. No real Google project was used and nothing was
-deployed.
+what a YouTube upload is approved for. No real Google project was used and nothing
+was deployed.
 
 ## Flow
 
@@ -33,11 +31,38 @@ deployed.
 **Disconnect** (`revoke-credential`) needs no fresh sign-in, erases the sealed secret
 and marks the row revoked; a schema check keeps revoked rows secret-free.
 
+## Upload
+
+1. The agent stores the video with `PUT /v1/external-media` (raw body, `video/mp4`,
+   `video/quicktime` or `video/webm`, exact `Content-Length`, at most 100 MiB). It is
+   written once to R2 (`EXTERNAL_MEDIA`) under `<agent>/<random mediaId>`; the response
+   gives the SHA-256 computed from what R2 stored.
+2. It proposes `upload_video` through credential `youtube` with content
+   `{title, description, privacyStatus, mediaId, bytes, sha256}`. The plan is refused
+   unless it names the agent's own media with its exact size and SHA-256, and the
+   title and description fit YouTube's limits. The owner approves that JSON verbatim,
+   so the approval pins the file, the metadata and the channel.
+3. Execute opens the sealed refresh token (only for the approved revision), refreshes
+   an access token, starts a resumable session with the approved metadata
+   (`selfDeclaredMadeForKids: false`) and streams the R2 object to it.
+
+| Point of failure | Recorded | Uploads |
+| --- | --- | --- |
+| Sealed secret does not open | `failed`, `credential-unreadable`, before `dispatching` | 0 |
+| Token refresh refused | `failed`, `provider-rejected: credential-refused` | 0 |
+| Media missing or size changed | `failed`, `provider-rejected: media-unavailable` | 0 |
+| Session start refused or failed (no video exists yet) | `failed`, `provider-rejected: upload-refused` | 0 |
+| Upload error, lost response or unexpected body | `unknown`, never re-uploaded | 1 |
+| 200/201 with a video ID | `completed`, receipt is the video ID | 1 |
+
+Uploading media is HTTP only; there is no MCP tool for binary bodies.
+
 ## Configuration for a real deployment (not done here)
 
 - Google Cloud project with the YouTube Data API v3 enabled; OAuth consent screen
   with the two scopes; a Web OAuth client whose redirect URI is
   `<OAUTH_ISSUER>/connect/youtube/callback`.
+- An R2 bucket bound to the mailbox worker as `EXTERNAL_MEDIA`.
 - Auth worker: `GOOGLE_CLIENT_ID`. Mailbox worker secrets: `GOOGLE_CLIENT_ID`,
   `GOOGLE_CLIENT_SECRET`, `EXTERNAL_CREDENTIAL_KEY` (32 random bytes, base64url).
 - Until Google verifies the project, the consent screen warns users, and videos
@@ -59,9 +84,21 @@ and marks the row revoked; a schema check keeps revoked rows secret-free.
   re-authenticates before leaving for Google. Removing the callback's human check
   fails the second test.
 
+- mailbox-worker `test/youtube-upload.test.ts` (fake Google through the Worker's
+  outbound service): media SHA-256 matches the stored bytes; an approved upload
+  streams exactly those bytes once with the approved metadata and records the video
+  ID; plans with a wrong hash or size, another agent's media or invalid metadata are
+  refused; token refusal and a refused session start fail with nothing uploaded; a
+  503, a lost response and a malformed video ID record `unknown` and never
+  re-upload; a ciphertext sealed for another revision fails before Google is called.
+  Dropping the hash check or treating an upload error as a rejection fails four
+  tests.
+
 ## Limits
 
 - One YouTube credential per agent; reconnecting replaces it.
+- Media is never deleted yet and is limited to one request body (100 MiB).
+- An `unknown` upload is not reconciled automatically; check the channel.
 - Revoking does not revoke the token at Google; the owner can remove access in their
   Google account.
 - The worker that decrypts the refresh token is the trusted execution path.

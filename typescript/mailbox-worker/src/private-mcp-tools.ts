@@ -167,7 +167,7 @@ export const privateMcpTools = [
         + 'Only an agent with an owner can propose. The plan expires after 1 hour. Retrying creates another plan that needs its own approval.',
         'weave:actions.write', {credentialRef:{...str(64, 'One of your live credentials.'), minLength:1, pattern:'^[A-Za-z0-9._:-]{1,64}$'},
             operation:{...str(64, "An operation the credential's provider supports, e.g. publish_text."), minLength:1},
-            content:{...str(3000, 'The full content to publish, at most 3000 characters, shown to your owner verbatim.'), minLength:1}},
+            content:{...str(8000, 'The full content to publish, at most 8000 characters, shown to your owner verbatim.'), minLength:1}},
         ['credentialRef','operation','content'], externalAction),
     tool('get_external_action', 'Read one of your external actions: whether your owner approved it and, after execution, its receipt or failure.',
         'weave:actions.read', {actionId:id('actionId from propose_external_action.')}, ['actionId'], externalAction, {readOnly:true}),

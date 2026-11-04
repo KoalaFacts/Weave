@@ -13,11 +13,12 @@ import { atomic, type Env, type Transaction } from './database.ts';
 import { writesRefused } from './humans.ts';
 import type { OwnerDecision, OwnerHuman } from './owner-actions.ts';
 import { provider as findProvider } from './external-providers.ts';
+import { openSecret } from './credential-vault.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
 export const actionLifetimeTicks = 36_000_000_000n; // 1 h to approve and execute
 export const pendingActionsPerAgent = 20;
-export const maxContentLength = 3000;
+export const maxContentLength = 8000;
 
 export type ActionStatus = 'pending' | 'approved' | 'rejected' | 'dispatching' | 'completed' | 'failed' | 'unknown';
 export type ExternalActionView = {actionId: string; provider: string; operation: string; content: string; credentialRef: string;
@@ -31,7 +32,7 @@ type Row = {action_id: string; account_id: string; provider: string; contract_re
     credential_ref: string; credential_revision: string; target_account: string; plan_digest: string; status: string; created_at: string;
     expires_at: string; decided_at: string | null; decided_by: string | null; dispatched_at: string | null; completed_at: string | null;
     receipt: string | null; failure: string | null};
-type Credential = {provider: string; revision: string; target_account: string; target_display: string; revoked_at: string | null};
+type Credential = {provider: string; revision: string; target_account: string; target_display: string; revoked_at: string | null; secret: ArrayBuffer | number[] | null};
 
 const statuses = new Set<string>(['pending', 'approved', 'rejected', 'dispatching', 'completed', 'failed', 'unknown']);
 const credentialRefPattern = /^[A-Za-z0-9._:-]{1,64}$/;
@@ -63,7 +64,7 @@ function view(row: Row, now: bigint): ExternalActionView {
 const readRow = (tx: Transaction, actionId: string) =>
     tx.db.prepare(`SELECT ${columns} FROM external_actions WHERE action_id=?`).bind(actionId).first<Row>();
 const readCredential = (tx: Transaction, accountId: string, credentialRef: string) =>
-    tx.db.prepare('SELECT provider,revision,target_account,target_display,CAST(revoked_at AS TEXT) revoked_at FROM external_credentials WHERE account_id=? AND credential_ref=?')
+    tx.db.prepare('SELECT provider,revision,target_account,target_display,CAST(revoked_at AS TEXT) revoked_at,secret FROM external_credentials WHERE account_id=? AND credential_ref=?')
         .bind(accountId, credentialRef).first<Credential>();
 
 /**
@@ -105,6 +106,8 @@ export async function proposeExternalAction(env: Env, caller: ActionCaller, inpu
         const provider = findProvider(env, credential.provider);
         if (!provider) conflict('provider-unavailable');
         if (!provider.operations.includes(operation)) invalidField('operation', 'must be a supported operation');
+        const invalid = await provider.checkContent?.(tx, caller.accountId, operation, content);
+        if (invalid) invalidField('content', invalid);
         const waiting = await tx.db.prepare(`SELECT count(*) n FROM external_actions WHERE account_id=? AND status IN ('pending','approved') AND expires_at>CAST(? AS INTEGER)`)
             .bind(caller.accountId, at.toString()).first<number>('n');
         if (waiting === null) fail(503, 'storage');
@@ -125,7 +128,8 @@ export async function getExternalAction(env: Env, caller: ActionCaller, actionId
     return atomic(env.db, async tx => { await caller.check(tx); return view(await ownAction(tx, caller, actionId), tx.store.now); });
 }
 
-type Claim = {row: Row; dispatch: true} | {row: Row; dispatch: false};
+/** A claimed dispatch carries the opened credential secret, which is never stored or returned. */
+type Claim = {row: Row; dispatch: true; secret: string | null} | {row: Row; dispatch: false};
 
 /**
  * Re-checks the approved plan against current state and commits 'dispatching' before any provider call. A plan that no
@@ -152,9 +156,18 @@ async function claim(env: Env, caller: ActionCaller, actionId: string, clock: ()
             || credential.provider !== row.provider || credential.target_account !== row.target_account) return refuse('credential-changed');
         const provider = findProvider(env, row.provider);
         if (!provider || provider.contractRevision !== row.contract_revision || await planDigest(row) !== row.plan_digest) return refuse('plan-changed');
+        // The sealed secret opens only for this row's agent, reference, provider and revision.
+        let secret: string | null = null;
+        if (credential.secret !== null) {
+            try {
+                secret = await openSecret(env.EXTERNAL_CREDENTIAL_KEY, {accountId: caller.accountId, credentialRef: row.credential_ref,
+                    provider: row.provider, revision: row.credential_revision},
+                    credential.secret instanceof ArrayBuffer ? new Uint8Array(credential.secret) : Uint8Array.from(credential.secret));
+            } catch { return refuse('credential-unreadable'); }
+        }
         tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='dispatching',dispatched_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
             WHERE action_id=? AND status='approved'`).bind(stamp, stamp, actionId));
-        return {row: {...row, status: 'dispatching', dispatched_at: stamp}, dispatch: true};
+        return {row: {...row, status: 'dispatching', dispatched_at: stamp}, dispatch: true, secret};
     }, clock);
 }
 
@@ -168,7 +181,8 @@ export async function executeExternalAction(env: Env, caller: ActionCaller, acti
     const provider = findProvider(env, row.provider)!;
     let status: 'completed' | 'failed' | 'unknown', receipt: string | null = null, failure: string | null = null;
     try {
-        const result = await provider.execute(env, {operation: row.operation, content: row.content, targetAccount: row.target_account, actionId: row.action_id});
+        const result = await provider.execute(env, {accountId: row.account_id, operation: row.operation, content: row.content,
+            targetAccount: row.target_account, actionId: row.action_id, secret: claimed.secret});
         if (result.status === 'completed') { status = 'completed'; receipt = result.receipt; }
         else { status = 'failed'; failure = 'provider-rejected: ' + result.reason; }
     } catch {

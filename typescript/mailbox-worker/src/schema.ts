@@ -117,6 +117,20 @@ export const externalCredentials = sqliteTable("external_credentials", {
     check("external_credentials_revision",sql`length(revision) BETWEEN 1 AND 64`)
 ]);
 
+// Media an owned agent uploaded for an external action; the bytes are in R2 at "<account_id>/<media_id>", written once.
+export const externalMedia = sqliteTable("external_media", {
+    media_id: text("media_id").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    content_type: text("content_type").notNull(),
+    bytes: integer("bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+}, t => [
+    index("external_media_account").on(t.account_id, t.created_at),
+    check("external_media_sha256",sql`length(sha256)=64 AND sha256 NOT GLOB '*[^0-9a-f]*'`),
+    check("external_media_bytes",sql`bytes>0`)
+]);
+
 // One governed external effect: approved by the agent's owner for an exact plan, dispatched at most once.
 // 'dispatching' is committed before the provider is called and stays when its outcome was never recorded.
 export const externalActions = sqliteTable("external_actions", {

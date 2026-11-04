@@ -577,6 +577,71 @@
         }
       }
     },
+    "/v1/external-media": {
+      "put": {
+        "operationId": "uploadExternalMedia",
+        "summary": "Upload media for an external action",
+        "description": "Stores the raw request body once under a new mediaId, for use in an upload_video plan. Content-Type must be video/mp4, video/quicktime or video/webm and Content-Length the exact size, at most 100 MiB. The response gives the SHA-256 of the stored bytes; the plan names the mediaId with that size and SHA-256 so the owner approves exactly this file. Unavailable (404) where no media bucket is configured.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "video/mp4": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "video/quicktime": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "video/webm": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/fieldInvalid"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
     "/v1/key-requests": {
       "post": {
         "operationId": "redeemRecoveryCode",
@@ -5236,8 +5301,8 @@
           "content": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 3000,
-            "description": "The full content to publish, shown to the owner verbatim. Must not be blank."
+            "maxLength": 8000,
+            "description": "The full content, shown to the owner verbatim. Must not be blank. For publish_text, the text. For upload_video, JSON {title, description, privacyStatus (private, unlisted or public), mediaId, bytes, sha256} naming media from PUT /v1/external-media with its exact size and SHA-256."
           }
         }
       },
@@ -5407,6 +5472,47 @@
           }
         },
         "description": "unowned-agent: only an agent with a human owner can propose an action, because the owner approves it. provider-unavailable: the credential's provider is not available on this server."
+      },
+      "MediaView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mediaId",
+          "contentType",
+          "bytes",
+          "sha256",
+          "createdAt"
+        ],
+        "properties": {
+          "mediaId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "contentType": {
+            "enum": [
+              "video/mp4",
+              "video/quicktime",
+              "video/webm"
+            ]
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 104857600
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 of the stored bytes; an upload_video plan must repeat it."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+            "description": "UTC timestamp ending in Z."
+          }
+        }
       }
     }
   },

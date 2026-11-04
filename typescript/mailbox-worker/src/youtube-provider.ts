@@ -4,6 +4,8 @@
  * Tokens stay inside these functions: never logged, returned to a caller other than the vault, or put in an error.
  */
 import type { Env } from './database.ts';
+import type { ExternalProvider } from './external-providers.ts';
+import { openMedia, readMediaRecord } from './external-media.ts';
 
 export const youtubeScopes = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly'];
 const tokenEndpoint = 'https://oauth2.googleapis.com/token';
@@ -69,3 +71,79 @@ export async function connectYoutube(env: Env, input: {code: string; verifier: s
     if (typeof id !== 'string' || !/^UC[A-Za-z0-9_-]{22}$/.test(id) || typeof title !== 'string') return 'provider-refused';
     return {secret: refreshToken, targetAccount: id, targetDisplay: title.slice(0, 200)};
 }
+
+// ---- upload_video ---------------------------------------------------------------------------------------------------
+const uploadInit = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status';
+const uploadSessionPrefix = 'https://www.googleapis.com/upload/youtube/v3/videos?';
+const uploadTimeoutMs = 15 * 60_000;
+const privacyStatuses = new Set(['private', 'unlisted', 'public']);
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, sha = /^[0-9a-f]{64}$/;
+
+/** What an owner approves for one upload. The media is named by ID and pinned by its size and SHA-256. */
+export type VideoPlan = {title: string; description: string; privacyStatus: 'private' | 'unlisted' | 'public'; mediaId: string; bytes: number; sha256: string};
+
+/** The content of an upload_video action, or null when it is not exactly this shape. */
+export function videoPlan(content: string): VideoPlan | null {
+    let value: unknown;
+    try { value = JSON.parse(content); } catch { return null; }
+    const plan = value as Record<string, unknown>;
+    if (!plan || typeof plan !== 'object' || Array.isArray(plan) || Object.keys(plan).sort().join() !== 'bytes,description,mediaId,privacyStatus,sha256,title') return null;
+    const {title, description, privacyStatus, mediaId, bytes, sha256} = plan;
+    // YouTube's own limits: a 1-100 character title without angle brackets, a description of at most 5000 bytes.
+    if (typeof title !== 'string' || title.trim() === '' || title.length > 100 || /[<>]/.test(title)) return null;
+    if (typeof description !== 'string' || new TextEncoder().encode(description).byteLength > 5000 || /[<>]/.test(description)) return null;
+    if (typeof privacyStatus !== 'string' || !privacyStatuses.has(privacyStatus)) return null;
+    if (typeof mediaId !== 'string' || !uuid.test(mediaId) || typeof sha256 !== 'string' || !sha.test(sha256)) return null;
+    if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1) return null;
+    return {title, description, privacyStatus: privacyStatus as VideoPlan['privacyStatus'], mediaId, bytes, sha256};
+}
+
+/** A fresh access token from the sealed refresh token; null when Google refuses it (nothing has been uploaded). */
+async function accessToken(env: Env, refreshToken: string): Promise<string | null> {
+    try {
+        const response = await send(tokenEndpoint, {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json'},
+            body: new URLSearchParams({client_id: env.GOOGLE_CLIENT_ID!, client_secret: env.GOOGLE_CLIENT_SECRET!, refresh_token: refreshToken, grant_type: 'refresh_token'})});
+        const grant = response.ok ? await boundedJson(response) : (void response.body?.cancel().catch(() => {}), null);
+        return typeof grant?.access_token === 'string' && grant.access_token ? grant.access_token : null;
+    } catch { return null; }
+}
+
+export const youtubeUpload: ExternalProvider & {available(env: Env): boolean} = {
+    name: 'youtube',
+    contractRevision: 'youtube-upload-v1',
+    operations: ['upload_video'],
+    available: env => youtubeConfigured(env) && !!env.EXTERNAL_MEDIA,
+    async checkContent(tx, accountId, _operation, content) {
+        const plan = videoPlan(content);
+        if (!plan) return 'must be JSON {title, description, privacyStatus, mediaId, bytes, sha256} within YouTube limits';
+        const media = await readMediaRecord(tx, accountId, plan.mediaId);
+        // The plan must name the exact uploaded bytes, so the owner approves this file and no other.
+        if (!media || media.bytes !== plan.bytes || media.sha256 !== plan.sha256) return 'must name your uploaded media with its exact bytes and sha256';
+        return null;
+    },
+    async execute(env, call) {
+        const plan = videoPlan(call.content);
+        if (!plan || call.secret === null) return {status: 'rejected', reason: 'plan-unreadable'};
+        const token = await accessToken(env, call.secret);
+        if (!token) return {status: 'rejected', reason: 'credential-refused'};
+        const media = await openMedia(env, call.accountId, plan.mediaId);
+        if (!media || media.size !== plan.bytes) { void media?.body.cancel().catch(() => {}); return {status: 'rejected', reason: 'media-unavailable'}; }
+        // Starting a resumable session creates no video; a refused or failed start sent nothing.
+        let session: string | null = null;
+        try {
+            const start = await send(uploadInit, {method: 'POST', headers: {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json; charset=UTF-8',
+                'X-Upload-Content-Length': String(plan.bytes), 'X-Upload-Content-Type': 'video/*'},
+                body: JSON.stringify({snippet: {title: plan.title, description: plan.description}, status: {privacyStatus: plan.privacyStatus, selfDeclaredMadeForKids: false}})});
+            void start.body?.cancel().catch(() => {});
+            const location = start.headers.get('Location');
+            if (start.status === 200 && location?.startsWith(uploadSessionPrefix)) session = location;
+        } catch { /* reported as a refusal below */ }
+        if (session === null) { void media.body.cancel().catch(() => {}); return {status: 'rejected', reason: 'upload-refused'}; }
+        // From here the video may exist: any failure propagates and is recorded as unknown, never retried.
+        const upload = await fetch(session, {method: 'PUT', redirect: 'manual', signal: AbortSignal.timeout(uploadTimeoutMs),
+            headers: {Authorization: 'Bearer ' + token, 'Content-Length': String(plan.bytes), 'Content-Type': 'video/*'}, body: media.body});
+        const video = upload.status === 200 || upload.status === 201 ? await boundedJson(upload) : null;
+        if (typeof video?.id !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(video.id)) throw Error('Unconfirmed upload response.');
+        return {status: 'completed', receipt: video.id};
+    }
+};
