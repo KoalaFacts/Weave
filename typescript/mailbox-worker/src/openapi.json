@@ -5729,7 +5729,8 @@
           "dispatchedAt",
           "completedAt",
           "receipt",
-          "failure"
+          "failure",
+          "publication"
         ],
         "properties": {
           "actionId": {
@@ -5843,6 +5844,63 @@
               }
             ],
             "description": "credential-changed, owner-changed, owner-frozen or plan-changed: the plan no longer held and nothing was sent. provider-rejected: the provider confirmed nothing happened. outcome-unknown: see status unknown."
+          },
+          "publication": {
+            "description": "What the provider later reported about a completed effect it finishes after dispatch (a queued or scheduled Postiz post); null when not tracked. queued is re-checked with backoff for up to 7 days after the post was due. error is the platform's own message, untrusted and at most 300 characters.",
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "url",
+                  "error",
+                  "checkedAt"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "queued",
+                      "published",
+                      "failed"
+                    ]
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2048,
+                    "pattern": "^https://",
+                    "description": "The published post, when the provider gave one."
+                  },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 300
+                  },
+                  "checkedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                        "description": "UTC timestamp ending in Z."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "When the provider was last asked; null before the first check."
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

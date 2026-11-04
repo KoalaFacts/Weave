@@ -16,6 +16,7 @@ import { provider as findProvider } from './external-providers.ts';
 import { openSecret } from './credential-vault.ts';
 import { openMedia, readMediaRecord } from './external-media.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
+import { readPublication, trackPublication, type PublicationView } from './external-publications.ts';
 
 export const actionLifetimeTicks = 36_000_000_000n; // 1 h to approve and execute
 export const pendingActionsPerAgent = 20;
@@ -24,7 +25,9 @@ export const maxContentLength = 8000;
 export type ActionStatus = 'pending' | 'approved' | 'rejected' | 'dispatching' | 'completed' | 'failed' | 'unknown';
 export type ExternalActionView = {actionId: string; provider: string; operation: string; content: string; credentialRef: string;
     credentialRevision: string; targetAccount: string; status: ActionStatus | 'expired'; createdAt: string; expiresAt: string;
-    decidedAt: string | null; dispatchedAt: string | null; completedAt: string | null; receipt: string | null; failure: string | null};
+    decidedAt: string | null; dispatchedAt: string | null; completedAt: string | null; receipt: string | null; failure: string | null;
+    /** What the provider later reported about a completed effect it finishes after dispatch; null when not tracked. */
+    publication: PublicationView | null};
 /** What the owner page shows for a pending action; `planDigest` is what the owner confirms. */
 export type OwnerExternalAction = {actionId: string; agentId: string; provider: string; operation: string; content: string;
     credentialRef: string; credentialRevision: string; targetAccount: string; targetDisplay: string; planDigest: string; createdAt: string; expiresAt: string;
@@ -53,7 +56,7 @@ export async function planDigest(row: Pick<Row, 'action_id' | 'account_id' | 'pr
     return base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
 }
 
-function view(row: Row, now: bigint): ExternalActionView {
+function view(row: Row, now: bigint, publication: PublicationView | null = null): ExternalActionView {
     // Only these statuses are written; anything else is storage corruption.
     if (!statuses.has(row.status)) fail(503, 'storage');
     const live = row.status === 'pending' || row.status === 'approved';
@@ -61,7 +64,7 @@ function view(row: Row, now: bigint): ExternalActionView {
         credentialRevision: row.credential_revision, targetAccount: row.target_account,
         status: live && exactInt64(row.expires_at) <= now ? 'expired' : row.status as ActionStatus,
         createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!, decidedAt: apiTime(row.decided_at),
-        dispatchedAt: apiTime(row.dispatched_at), completedAt: apiTime(row.completed_at), receipt: row.receipt, failure: row.failure};
+        dispatchedAt: apiTime(row.dispatched_at), completedAt: apiTime(row.completed_at), receipt: row.receipt, failure: row.failure, publication};
 }
 
 const readRow = (tx: Transaction, actionId: string) =>
@@ -128,11 +131,15 @@ export async function proposeExternalAction(env: Env, caller: ActionCaller, inpu
 
 /** GET /v1/external-actions/{actionId}. */
 export async function getExternalAction(env: Env, caller: ActionCaller, actionId: string): Promise<ExternalActionView> {
-    return atomic(env.db, async tx => { await caller.check(tx); return view(await ownAction(tx, caller, actionId), tx.store.now); });
+    return atomic(env.db, async tx => {
+        await caller.check(tx);
+        const row = await ownAction(tx, caller, actionId);
+        return view(row, tx.store.now, await readPublication(tx, actionId));
+    });
 }
 
 /** A claimed dispatch carries the opened credential secret, which is never stored or returned. */
-type Claim = {row: Row; dispatch: true; secret: string | null} | {row: Row; dispatch: false};
+type Claim = {row: Row; dispatch: true; secret: string | null} | {row: Row; dispatch: false; publication?: PublicationView | null};
 
 /**
  * Re-checks the approved plan against current state and commits 'dispatching' before any provider call. A plan that no
@@ -143,7 +150,7 @@ async function claim(env: Env, caller: ActionCaller, actionId: string, clock: ()
         const at = tx.store.now, stamp = at.toString();
         await caller.check(tx);
         const row = await ownAction(tx, caller, actionId);
-        if (row.status !== 'approved') return {row, dispatch: false};
+        if (row.status !== 'approved') return {row, dispatch: false, publication: await readPublication(tx, actionId)};
         if (exactInt64(row.expires_at) <= at) return {row, dispatch: false};
         const refuse = (reason: string): Claim => {
             tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='failed',failure=?,completed_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
@@ -178,15 +185,15 @@ async function claim(env: Env, caller: ActionCaller, actionId: string, clock: ()
 export async function executeExternalAction(env: Env, caller: ActionCaller, actionId: string, clock: () => bigint = nowUtc): Promise<ExternalActionView> {
     if (writesRefused(env)) fail(503, 'maintenance', 30);
     const claimed = await claim(env, caller, actionId, clock);
-    if (!claimed.dispatch) return view(claimed.row, clock());
+    if (!claimed.dispatch) return view(claimed.row, clock(), claimed.publication ?? null);
     const row = claimed.row;
     // claim() verified the provider and its contract revision in the committed transaction.
     const provider = findProvider(env, row.provider)!;
-    let status: 'completed' | 'failed' | 'unknown', receipt: string | null = null, failure: string | null = null;
+    let status: 'completed' | 'failed' | 'unknown', receipt: string | null = null, failure: string | null = null, trackFrom: number | null = null;
     try {
         const result = await provider.execute(env, {accountId: row.account_id, operation: row.operation, content: row.content,
             targetAccount: row.target_account, actionId: row.action_id, secret: claimed.secret});
-        if (result.status === 'completed') { status = 'completed'; receipt = result.receipt; }
+        if (result.status === 'completed') { status = 'completed'; receipt = result.receipt; trackFrom = result.trackFrom ?? null; }
         else { status = 'failed'; failure = 'provider-rejected: ' + result.reason; }
     } catch {
         // The effect may have happened. Never report this as failed or dispatch it again.
@@ -197,7 +204,9 @@ export async function executeExternalAction(env: Env, caller: ActionCaller, acti
             const stamp = tx.store.now.toString();
             tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status=?,receipt=?,failure=?,completed_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
                 WHERE action_id=? AND status='dispatching'`).bind(status, receipt, failure, stamp, stamp, actionId));
-            return view({...row, status, receipt, failure, completed_at: stamp}, tx.store.now);
+            if (trackFrom !== null) trackPublication(tx, actionId, row.account_id, trackFrom);
+            return view({...row, status, receipt, failure, completed_at: stamp}, tx.store.now,
+                trackFrom === null ? null : {state: 'queued', url: null, error: null, checkedAt: null});
         }, clock);
     } catch {
         // The outcome could not be recorded; the row stays 'dispatching' and is never dispatched again.

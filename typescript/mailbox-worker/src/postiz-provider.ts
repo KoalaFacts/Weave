@@ -4,7 +4,8 @@
  * Endpoints are fixed, never configuration. The API key stays in these functions and the vault.
  */
 import type { Env } from './database.ts';
-import type { ExternalProvider } from './external-providers.ts';
+import type { ExternalProvider, PublicationState } from './external-providers.ts';
+import { replaceInvisible } from './visible-text.ts';
 import { readMediaRecord, signedMediaUrl } from './external-media.ts';
 
 const api = 'https://api.postiz.com/public/v1';
@@ -147,6 +148,40 @@ export const postizPublish: ExternalProvider & {available(env: Env): boolean} = 
         const created = response.ok ? await boundedJson(response) : null;
         const postId = Array.isArray(created) && created.length === 1 ? (created[0] as {postId?: unknown}).postId : null;
         if (typeof postId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(postId)) throw Error('Unconfirmed Postiz response.');
-        return {status: 'completed', receipt: (plan.publishAt ? 'scheduled:' : 'posted:') + postId};
+        // Postiz queues even an immediate post; either way the platform's answer comes later.
+        return {status: 'completed', receipt: (plan.publishAt ? 'scheduled:' : 'posted:') + postId,
+            trackFrom: Math.max(Date.now(), plan.publishAt ? Date.parse(plan.publishAt) : 0) + trackDelayMs};
+    },
+    async publicationStates(apiKey, items) {
+        // One listing covers every item: Postiz offers no read by ID, only a date range (and 30 calls per hour).
+        const from = Math.min(...items.map(item => item.trackFrom)) - trackDelayMs - listMarginMs;
+        const to = Math.max(...items.map(item => item.trackFrom)) + listMarginMs;
+        const query = new URLSearchParams({startDate: new Date(from).toISOString(), endDate: new Date(to).toISOString()});
+        const response = await call('/posts?' + query, apiKey);
+        const listed = response.ok ? await boundedJson(response) as {posts?: unknown} | null : (void response.body?.cancel().catch(() => {}), null);
+        if (!listed || !Array.isArray(listed.posts)) throw Error('Postiz did not list posts.');
+        const states = new Map<string, PublicationState>();
+        for (const post of listed.posts as Record<string, unknown>[]) {
+            if (typeof post?.id !== 'string' || !postIdPattern.test(post.id)) continue;
+            const state = publicationState(post);
+            for (const prefix of ['posted:', 'scheduled:']) states.set(prefix + post.id, state);
+        }
+        return new Map(items.filter(item => states.has(item.receipt)).map(item => [item.receipt, states.get(item.receipt)!]));
     }
 };
+
+const trackDelayMs = 2 * 60_000, listMarginMs = 24 * 3600_000, maxError = 300;
+const postIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
+/** Postiz's QUEUE and DRAFT are not final; PUBLISHED carries the post URL and ERROR the platform's message. */
+function publicationState(post: Record<string, unknown>): PublicationState {
+    if (post.state === 'PUBLISHED') {
+        const url = typeof post.releaseURL === 'string' && post.releaseURL.length <= 2048 && URL.canParse(post.releaseURL)
+            && new URL(post.releaseURL).protocol === 'https:' ? post.releaseURL : null;
+        return {state: 'published', url, error: null};
+    }
+    if (post.state === 'ERROR') {
+        const text = typeof post.error === 'string' ? replaceInvisible(post.error, ' ').replace(/\s+/g, ' ').trim().slice(0, maxError) : '';
+        return {state: 'failed', url: null, error: text || null};
+    }
+    return {state: 'queued', url: null, error: null};
+}

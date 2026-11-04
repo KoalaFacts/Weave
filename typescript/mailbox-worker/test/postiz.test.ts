@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { start } from './harness.ts';
+import { sweepPublications, firstRecheckMs } from '../src/external-publications.ts';
 import { connectPostiz } from '../src/external-credentials.ts';
 import { openSecret } from '../src/credential-vault.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
@@ -19,9 +20,9 @@ const integrations = [
 const environment = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
     REGISTRATION_GLOBAL_PER_HOUR: '100', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: 'http://localhost'}) as unknown as Env;
 
-type Postiz = {posts: any[]; uploads: string[]; fetched: Buffer[]; post: () => Response; upload: (bytes: Buffer) => Response};
+type Postiz = {posts: any[]; uploads: string[]; fetched: Buffer[]; listed: URL[]; post: () => Response; upload: (bytes: Buffer) => Response; list: () => Response};
 async function scenario(run: (s: {h: Harness; p: Postiz; env: Env}) => Promise<void>) {
-    const p: Postiz = {posts: [], uploads: [], fetched: [],
+    const p: Postiz = {posts: [], uploads: [], fetched: [], listed: [], list: () => Response.json({posts: []}),
         post: () => Response.json([{postId: 'post-' + p.posts.length, integration: 'x'}]),
         upload: bytes => Response.json({id: 'media-' + p.fetched.length, path: 'https://uploads.postiz.com/' + createHash('sha256').update(bytes).digest('hex').slice(0, 8), status: 'ready'})};
     let h: Harness;
@@ -38,6 +39,7 @@ async function scenario(run: (s: {h: Harness; p: Postiz; env: Env}) => Promise<v
             return p.upload(bytes);
         }
         if (request.method === 'POST' && request.url === api + '/posts') { p.posts.push(await request.json()); return p.post(); }
+        if (request.method === 'GET' && request.url.startsWith(api + '/posts?')) { p.listed.push(new URL(request.url)); return p.list(); }
         return new Response('refused', {status: 599});
     }});
     try { await run({h, p, env: environment(h)}); } finally { await h.close(); }
@@ -191,3 +193,109 @@ for (const [name, respond] of [['ServerError', () => new Response('{}', {status:
         assert.equal(again.status, 'unknown');
         assert.equal(p.posts.length, 1);
     }));
+
+// ---- publication tracking -------------------------------------------------------------------------------------------
+const listing = (posts: Record<string, unknown>[]) => () => Response.json({posts});
+const publication = (h: Harness, actionId: string) => h.db.prepare(`SELECT state,url,error,checks,CAST(checked_at AS TEXT) checked_at,
+    CAST(next_check_at AS TEXT) next_check_at,CAST(due_at AS TEXT) due_at FROM external_publications WHERE action_id=?`).bind(actionId).first<any>();
+/** Runs the sweep in this process, answering Postiz's post listing with `list`; returns the listing URLs it requested. */
+async function sweepWith(env: Env, list: () => Response, at: number) {
+    const original = globalThis.fetch, asked: URL[] = [];
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        assert.equal(init?.method ?? 'GET', 'GET', 'tracking only reads');
+        assert.equal(new Headers(init?.headers).get('Authorization'), apiKey);
+        assert.equal(url.origin + url.pathname, api + '/posts');
+        asked.push(url);
+        return list();
+    };
+    try { await sweepPublications(env, at); } finally { globalThis.fetch = original; }
+    return asked;
+}
+const ms = (ticks: string) => Number(BigInt(ticks) / 10000n);
+
+test('publication_ImmediatePost_TrackedThenPublishedWithUrl', () => scenario(async ({h, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    const executed = await execute(h, agent, actionId);
+    assert.deepEqual(executed.publication, {state: 'queued', url: null, error: null, checkedAt: null});
+    const tracked = await publication(h, actionId);
+    const due = ms(tracked.due_at);
+    assert.ok(due > Date.now() && due <= Date.now() + 3 * 60_000, 'first asked shortly after posting');
+
+    assert.deepEqual(await sweepWith(env, listing([]), due - 1000), [], 'nothing is asked before it is due');
+    const asked = await sweepWith(env, listing([{id: 'post-1', state: 'PUBLISHED', releaseURL: 'https://www.linkedin.com/feed/update/1', error: null}]), due + 1000);
+    assert.equal(asked.length, 1);
+    assert.ok(Date.parse(asked[0].searchParams.get('startDate')!) < due && Date.parse(asked[0].searchParams.get('endDate')!) > due, 'the listing covers the post');
+    const read = await h.ok(`/v1/external-actions/${actionId}`, agent);
+    assert.equal(read.status, 'completed');
+    assert.deepEqual([read.publication.state, read.publication.url, read.publication.error], ['published', 'https://www.linkedin.com/feed/update/1', null]);
+    assert.ok(read.publication.checkedAt);
+    assert.equal((await publication(h, actionId)).next_check_at, null, 'a final state is never asked again');
+    assert.deepEqual(await sweepWith(env, listing([]), due + 10 * 24 * 3600_000), []);
+}));
+
+test('publication_PlatformRefuses_FailedWithBoundedVisibleError', () => scenario(async ({h, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    const due = ms((await publication(h, actionId)).due_at);
+    await sweepWith(env, listing([{id: 'post-1', state: 'ERROR', releaseURL: 'https://x.example/', error: 'Token\u0000 expired\u202e ' + 'x'.repeat(400)}]), due + 1000);
+    const read = (await h.ok(`/v1/external-actions/${actionId}`, agent)).publication;
+    assert.equal(read.state, 'failed');
+    assert.equal(read.url, null, 'a failed post has no URL');
+    assert.ok(read.error.startsWith('Token expired x') && read.error.length === 300, read.error);
+}));
+
+test('publication_StillQueuedOrUnreachable_BacksOffWithoutChangingState', () => scenario(async ({h, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    const due = ms((await publication(h, actionId)).due_at);
+    await sweepWith(env, listing([{id: 'post-1', state: 'QUEUE', releaseURL: null, error: null}]), due);
+    let row = await publication(h, actionId);
+    assert.deepEqual([row.state, row.checks, ms(row.next_check_at)], ['queued', 1, due + firstRecheckMs * 2 ** 0]);
+    await sweepWith(env, listing([]), ms(row.next_check_at));
+    row = await publication(h, actionId);
+    assert.deepEqual([row.state, row.checks], ['queued', 2], 'a post Postiz no longer lists stays queued');
+    const at = ms(row.next_check_at);
+    await sweepWith(env, () => new Response('down', {status: 500}), at);
+    row = await publication(h, actionId);
+    assert.deepEqual([row.state, row.checks, ms(row.next_check_at)], ['queued', 2, at + firstRecheckMs * 4], 'an unanswered check postpones without counting');
+    // After the tracking window the post is left queued and never asked about again.
+    await sweepWith(env, listing([]), due + 8 * 24 * 3600_000);
+    assert.equal((await publication(h, actionId)).next_check_at, null);
+}));
+
+test('publication_SeveralPostsOneAgent_OneListingCall', () => scenario(async ({h, env}) => {
+    const {agent, humanId} = await connected(h, env);
+    const ids: string[] = [];
+    for (const text of ['one', 'two']) {
+        const {actionId} = await (await propose(h, agent, 'postiz:' + integrations[1].id, {text, media: [], settings: {__type: 'linkedin-page'}})).json() as {actionId: string};
+        await approve(h, env, humanId, actionId);
+        await execute(h, agent, actionId);
+        ids.push(actionId);
+    }
+    const due = Math.max(...await Promise.all(ids.map(async id => ms((await publication(h, id)).due_at))));
+    const asked = await sweepWith(env, listing([{id: 'post-1', state: 'PUBLISHED', releaseURL: null}, {id: 'post-2', state: 'ERROR', error: 'Duplicate'}]), due + 1000);
+    assert.equal(asked.length, 1);
+    assert.deepEqual(await Promise.all(ids.map(async id => (await publication(h, id)).state)), ['published', 'failed']);
+}));
+
+test('publication_CredentialDisconnected_TrackingStopsWithoutAsking', () => scenario(async ({h, env}) => {
+    const {agent, humanId, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    const due = ms((await publication(h, actionId)).due_at);
+    assert.deepEqual(await ownerAction(env, {humanId, authAt: 0, kind: 'revoke-credential', agentId: agent.accountId, credentialRef: 'postiz:' + integrations[1].id} as OwnerAction), {ok: true});
+    assert.deepEqual(await sweepWith(env, listing([]), due + 1000), []);
+    const row = await publication(h, actionId);
+    assert.deepEqual([row.state, row.next_check_at], ['queued', null]);
+}));
+
+test('publication_ScheduledSweep_WorkerCronAsksPostiz', () => scenario(async ({h, p, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    // Make it due now so the Worker's own cron run picks it up.
+    await h.db.prepare('UPDATE external_publications SET next_check_at=CAST(? AS INTEGER) WHERE action_id=?').bind((BigInt(Date.now() - 1000) * 10000n).toString(), actionId).run();
+    p.list = listing([{id: 'post-1', state: 'PUBLISHED', releaseURL: 'https://www.linkedin.com/feed/update/2'}]);
+    assert.equal((await (await h.mf.getWorker()).scheduled({cron: '*/5 * * * *', scheduledTime: Date.now()})).outcome, 'ok');
+    assert.equal(p.listed.length, 1);
+    assert.equal((await publication(h, actionId)).url, 'https://www.linkedin.com/feed/update/2');
+}));
