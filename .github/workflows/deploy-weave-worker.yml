@@ -28,7 +28,20 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: deploy-weave-worker-demo
+  # All issue comments trigger this workflow, even when its release job skips.
+  # Only an exact owner-authored release request may join the production lock
+  # shared with the read-only D1 inventory. Other comments get unique groups
+  # instead of cancelling an audit while it is pending behind a deployment.
+  group: >-
+    ${{ github.event_name == 'issue_comment' &&
+        (github.event.issue.number != 236 ||
+         github.event.issue.pull_request != null ||
+         github.event.comment.body != '/weave-deploy-demo' ||
+         github.event.comment.user.login != 'ldsenow' ||
+         github.event.comment.author_association != 'MEMBER' ||
+         github.actor != 'ldsenow') &&
+        format('ignored-issue-comment-{0}', github.run_id) ||
+        'deploy-weave-worker-demo' }}
   cancel-in-progress: false
 jobs:
   verify:
