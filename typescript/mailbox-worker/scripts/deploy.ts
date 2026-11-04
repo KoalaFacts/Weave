@@ -166,7 +166,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
                 .some(name=>worker.bindings.some(binding=>binding?.name===name)))||
            ['OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
              'OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
-                .some(name=>worker.bindings.some(binding=>binding?.name===name))))
+                .some(name=>worker.bindings.some(binding=>binding?.name===name)))
             throw Error('Resource OAuth bootstrap secrets are not preapproved; no mutation attempted.');
         const as=await inspect<WorkerSettings>('/workers/scripts/weave-auth-demo/settings','Approved existing OAuth authorization Worker');
         const kv=as.bindings?.filter(binding=>binding?.name==='OAUTH_KV')??[];
