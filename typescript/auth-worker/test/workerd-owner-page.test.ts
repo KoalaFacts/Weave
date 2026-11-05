@@ -127,7 +127,11 @@ function options(storage:string,authEnv:Record<string,unknown>={}){
           EXTERNAL_ACTION_TEST_ENDPOINT:{type:"text",value:providerEndpoint},
           GOOGLE_CLIENT_ID:{type:"text",value:"weave-test.apps.googleusercontent.com"},
           GOOGLE_CLIENT_SECRET:{type:"text",value:"google-test-secret"},
-          EXTERNAL_CREDENTIAL_KEY:{type:"text",value:randomBytes(32).toString("base64url")}
+          EXTERNAL_CREDENTIAL_KEY:{type:"text",value:randomBytes(32).toString("base64url")},
+          // First-party OAuth, as deployed: the mailbox then links owners to this authorization server's pages.
+          OAUTH_ISSUER:{type:"text",value:issuer},
+          OAUTH_RESOURCE:{type:"text",value:resource},
+          AUTH_SERVER:{type:"worker",worker:authName}
         }
       }
     }]
@@ -219,7 +223,7 @@ async function ownedAgent(human:Human,displayName="owned"):Promise<Agent>{
   return agent;
 }
 
-type ActionView={actionId:string;status:string;receipt:string|null};
+type ActionView={actionId:string;status:string;receipt:string|null;approvalUrl:string|null};
 async function proposeAction(human:Human,content:string):Promise<{agent:Agent;action:ActionView}>{
   const agent=await ownedAgent(human,"publisher"),at=(BigInt(Date.now())*10000n).toString();
   await (await db()).prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
@@ -228,6 +232,8 @@ async function proposeAction(human:Human,content:string):Promise<{agent:Agent;ac
   assert.equal(response.status,200,await response.clone().text());
   return {agent,action:await response.json() as ActionView};
 }
+const readAction=async(agent:Agent,actionId:string)=>
+  (await agentFetch(agent,"/v1/external-actions/"+actionId)).json() as Promise<ActionView>;
 const executeAction=async(agent:Agent,actionId:string)=>
   (await agentFetch(agent,"/v1/external-actions/"+actionId+"/execute",{method:"POST",body:{}})).json() as Promise<ActionView>;
 
@@ -580,13 +586,19 @@ test("actionPage_Fresh_ShowsOnlyThisActionAndApprovingSendsOnce",{timeout:90_000
   const human=await seedHuman(),content="Single "+randomUUID(),other="Other "+randomUUID();
   const {agent,action}=await proposeAction(human,content);
   const second=await proposeAction(human,other);
-  const html=await (await actionPage(action.actionId,await sessionCookie(human))).text();
+  // The mailbox hands the app this page's address; the app need not build it.
+  assert.equal(action.approvalUrl,issuer+"/account/actions/"+action.actionId);
+  const linked=await shared.mf.dispatchFetch(action.approvalUrl!,{redirect:"manual",headers:{Cookie:await sessionCookie(human)}});
+  assert.equal(linked.status,200);
+  const html=await linked.text();
   assert.ok(html.includes("<pre>"+content+"</pre>")&&!html.includes(other),"only the linked action is shown");
   assert.ok(html.includes('action="/account/actions/'+action.actionId+'"'),"its forms post back to this page");
   const response=await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),await sessionCookie(human));
   assert.equal(response.status,200);
   assert.equal(response.headers.get("location"),null,"the decision is answered with its outcome, not redirected");
   assert.ok((await response.text()).includes("Approved. The agent may now send it once."));
+  assert.equal((await readAction(agent,action.actionId)).approvalUrl,null,"a decided action has no page to decide on");
+  assert.equal((await readAction(second.agent,second.action.actionId)).approvalUrl,issuer+"/account/actions/"+second.action.actionId);
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0,"approval alone sends nothing");
   assert.equal((await executeAction(agent,action.actionId)).status,"completed");
   assert.equal((await executeAction(agent,action.actionId)).status,"completed");
