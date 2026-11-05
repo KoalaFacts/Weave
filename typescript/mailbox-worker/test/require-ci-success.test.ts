@@ -58,7 +58,20 @@ test('requireCiSuccess_LookupFailsOrMalformed_RefusesRelease', async () => {
     await assert.rejects(requireCiSuccess({...base, fetchImpl: (async () => { throw Error('offline'); }) as typeof fetch}), /lookup failed/);
     await assert.rejects(requireCiSuccess({...base, sha: 'HEAD'}), /required/);
     await assert.rejects(requireCiSuccess({...base, token: ''}), /required/);
-    await assert.rejects(requireCiSuccess({...base, workflow: 'ci.yml' as never}), /required/, 'only a known verification workflow can gate a release');
+    await assert.rejects(requireCiSuccess({...base, workflow: 'unknown.yml' as never}), /required/, 'only a known verification workflow can gate a release');
+});
+
+test('requireCiSuccess_FullCI_RequiresPassedExactMainPushWithCoverage', async () => {
+    const valid = gate([[run({})]], {workflow: 'ci.yml'});
+    assert.equal(await requireCiSuccess(valid.options), 'https://github.com/o/r/actions/runs/1');
+    assert.equal(new URL(valid.asked[0].url).pathname, '/repos/KoalaFacts/Weave/actions/workflows/ci.yml/runs');
+    const running = gate([[run({status: 'in_progress', conclusion: null})], [run({})]], {workflow: 'ci.yml'});
+    await requireCiSuccess(running.options);
+    assert.deepEqual(running.slept, [30_000]);
+    for (const source of [[run({conclusion: 'failure'})], [run({event: 'pull_request'})], [run({event: 'workflow_dispatch'})]]) {
+        await assert.rejects(requireCiSuccess(gate([source], {workflow: 'ci.yml'}).options),
+            /Complete CI and coverage (?:did not pass|run on main)/);
+    }
 });
 
 test('requireCiSuccess_OAuthVerification_AcceptsAPushOrManualMainRunOnly', async () => {

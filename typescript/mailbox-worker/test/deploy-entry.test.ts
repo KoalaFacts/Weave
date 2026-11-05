@@ -13,6 +13,11 @@ test('explicit publish branch keeps main ancestry and existing verification befo
     assert.match(workflow,/github\.event_name == 'push' && github\.ref == 'refs\/heads\/publish\/demo'/);
     assert.match(workflow,/environment: production/);
     // Release relies on the passed Worker verification run of this exact commit on main, not a repeated suite.
+    const verify = workflow.split(/^  verify:/m)[1]?.split(/^  deploy-repository:/m)[0] ?? '';
+    const ci = verify.indexOf('node typescript/mailbox-worker/scripts/require-ci-success.ts ci.yml');
+    const worker = verify.indexOf('node typescript/mailbox-worker/scripts/require-ci-success.ts worker-browser.yml');
+    assert.ok(ci >= 0 && worker > ci,
+        'Full main CI including coverage must pass before the narrower Worker/OAuth release gates');
     assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts worker-browser\.yml/);
     assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts oauth-auth-worker\.yml/);
     assert.match(workflow,/verify:[\s\S]*?permissions:\s*\n\s*contents: read\s*\n\s*actions: read/);
