@@ -186,7 +186,7 @@ export async function completeGithubLogin(env:GithubLoginEnv,request:Request,now
   if(url.searchParams.getAll("code").length!==1||!code||!/^[\x21-\x7e]{1,512}$/.test(code))return invalid();
   const user=await fetchGithubUser(env,code,pending.verifier);
   if(!user)return githubFailed();
-  // With an allowlist, an unlisted account is refused BEFORE the HumanDirectory RPC, which would persist a new human.
+  // A public trial needs a selected cohort; reject absent or unlisted subjects BEFORE the directory RPC persists a human.
   const allowed=trialSelectedSubjects(env.OAUTH_ISSUER,env.WEAVE_TRIAL_GITHUB_SUBJECTS);
   if(allowed===undefined)return messagePage(503,"Sign-in unavailable","Sign-in is not configured.");
   if(allowed!==null&&!allowed.has(user.subject))
