@@ -32,7 +32,11 @@ the mailbox changes. The job then deploys the mailbox Worker and runs
    - the `MAILBOX` → `demo#HumanDirectory` service;
    - the three authentication secrets, checked by metadata only. In particular, it refuses if the trial allowlist
      is missing, because the current code fails closed without it.
-3. rebuilds the configuration from those bindings (the same `demoManifest` the first publication uses);
+3. rebuilds the configuration from those bindings, using the same `demoManifest` the first publication uses:
+   - it carries the two registration budgets (`REGISTRATION_LIMITER`, `REGISTRATION_GLOBAL_LIMITER`) over exactly,
+     because dropping either would close dynamic client registration;
+   - it refuses when the running Worker has any other binding. A code update keeps every binding as it is, or it
+     changes nothing;
 4. publishes only the code;
 5. reads the settings back and checks OAuth discovery.
 
@@ -55,6 +59,7 @@ The first publication and its secrets remain the protected issuer workflow, unch
     - the settings lookup is denied;
     - any expected binding or secret is missing;
     - the service binding or issuer is unexpected;
+    - a binding is one it cannot carry over (registration budgets are carried over exactly);
     - the account or token is missing.
 - mailbox-worker:
   - `test/require-ci-success.test.ts` covers both gates. Worker verification accepts only main push runs; OAuth

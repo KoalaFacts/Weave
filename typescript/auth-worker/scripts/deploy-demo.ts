@@ -8,9 +8,9 @@ import {validSigningKey} from '../src/human-session.ts';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const issuer='https://weave-auth-demo.weave-389.workers.dev';
 const resource='https://demo.weave-389.workers.dev/mcp';
-const secretNames=['GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','WEAVE_TRIAL_GITHUB_SUBJECTS'] as const;
+export const secretNames=['GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','WEAVE_TRIAL_GITHUB_SUBJECTS'] as const;
 export type Binding={name:string;type:string;database_id?:string;id?:string;namespace_id?:string;class_name?:string;
-    service?:string;entrypoint?:string;environment?:string;text?:unknown};
+    service?:string;entrypoint?:string;environment?:string;text?:unknown;simple?:{limit?:unknown;period?:unknown}};
 type Settings={bindings:Binding[]};
 
 export function validateIssuerDeployment(env:NodeJS.ProcessEnv){

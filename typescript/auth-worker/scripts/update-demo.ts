@@ -6,10 +6,26 @@ import {writeFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {demoManifest} from './prepare-demo.ts';
-import {type Binding, validateIssuerReadback, verifyDiscovery, wrangler} from './deploy-demo.ts';
+import {type Binding, secretNames, validateIssuerReadback, verifyDiscovery, wrangler} from './deploy-demo.ts';
 
 const root=resolve(import.meta.dirname,'..');
 const hexId=/^[0-9a-f]{32}$/i;
+/** Every binding the manifest recreates, plus the secrets a deploy keeps. */
+const recreated=new Set(['OAUTH_ISSUER','OAUTH_RESOURCE','GITHUB_CLIENT_ID','OAUTH_KV','CONSENT_NONCES','MAILBOX',...secretNames]);
+/** Optional bindings the code uses and the update carries over unchanged: the two registration budgets. */
+const limiters=new Set(['REGISTRATION_LIMITER','REGISTRATION_GLOBAL_LIMITER']);
+type RateLimit={name:string;namespace_id:string;simple:{limit:number;period:number}};
+
+/** A registration budget exactly as configured, or null when it is not one this update can recreate. */
+function rateLimit(binding:Binding):RateLimit|null{
+    const {limit,period}=binding.simple??{};
+    if(binding.type!=='ratelimit'||!/^[1-9][0-9]{0,9}$/.test(binding.namespace_id??'')||!Number.isSafeInteger(limit)||!Number.isSafeInteger(period))return null;
+    return {name:binding.name,namespace_id:binding.namespace_id!,simple:{limit:limit as number,period:period as number}};
+}
+const sameLimits=(bindings:Binding[],expected:RateLimit[])=>expected.every(want=>bindings.some(b=>{
+    const have=b.name===want.name?rateLimit(b):null;
+    return have!==null&&JSON.stringify(have)===JSON.stringify(want);
+}));
 
 /** The running Worker's bindings; throws unless it exists with every binding and secret the code needs. */
 async function runningBindings(env:NodeJS.ProcessEnv,request:typeof fetch):Promise<Binding[]>{
@@ -34,17 +50,28 @@ export async function preflightUpdate(env:NodeJS.ProcessEnv,request:typeof fetch
     try{validateIssuerReadback(bindings,expected);}
     catch{throw Error('The running OAuth Worker lacks an expected binding or secret; no change made.');}
     if(!hexId.test(expected.WEAVE_AUTH_KV_NAMESPACE_ID))throw Error('The running OAuth Worker has an unexpected KV binding; no change made.');
-    return {manifest:demoManifest(env.CLOUDFLARE_ACCOUNT_ID!,expected.WEAVE_AUTH_KV_NAMESPACE_ID,expected.GITHUB_CLIENT_ID),expected};
+    // A code update must not drop configuration: each other binding is carried over exactly, or the update is refused.
+    const ratelimits:RateLimit[]=[];
+    for(const binding of bindings){
+        if(recreated.has(binding.name))continue;
+        const kept=limiters.has(binding.name)?rateLimit(binding):null;
+        if(!kept)throw Error('The running OAuth Worker has a binding this update cannot preserve; no change made.');
+        ratelimits.push(kept);
+    }
+    const manifest=demoManifest(env.CLOUDFLARE_ACCOUNT_ID!,expected.WEAVE_AUTH_KV_NAMESPACE_ID,expected.GITHUB_CLIENT_ID);
+    return {manifest:ratelimits.length?{...manifest,ratelimits}:manifest,expected,ratelimits};
 }
 
 export async function updateDemoIssuer(env:NodeJS.ProcessEnv=process.env,request:typeof fetch=fetch){
-    const {manifest,expected}=await preflightUpdate(env,request);
+    const {manifest,expected,ratelimits}=await preflightUpdate(env,request);
     const filename='wrangler.update.generated.jsonc';
     await writeFile(join(root,filename),JSON.stringify(manifest,null,2)+'\n',{flag:'wx',mode:0o600});
     await wrangler(['deploy','--config',filename,'--keep-vars'],env);
     // The published version must still carry every binding and secret, then answer discovery.
-    try{validateIssuerReadback(await runningBindings(env,request),expected);}
-    catch{throw Error('OAuth Worker code published but its settings readback no longer matches; review it before another release.');}
+    const published=await runningBindings(env,request);
+    let intact=sameLimits(published,ratelimits);
+    try{validateIssuerReadback(published,expected);}catch{intact=false;}
+    if(!intact)throw Error('OAuth Worker code published but its settings readback no longer matches; review it before another release.');
     await verifyDiscovery(request);
     console.log('Demo OAuth Worker code updated and verified; secrets and stored state unchanged.');
 }
