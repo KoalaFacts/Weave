@@ -66,7 +66,8 @@ test('refuses wrong account/resource/issuer, missing approved KV namespace or Gi
     for (const change of mutations)
         assert.throws(() => renderDemoConfig({...env,...change}),
             /approved|existing|identifier|issuer|resource|namespace|allowlist/i, JSON.stringify(change));
-    // The allowlist is optional: unset, sign-in is open; one listed account is enough.
+    // A production issuer without an owner-selected cohort must fail closed before any cloud operation.
     for (const allowlist of [undefined, '', '8101'])
-        assert.equal(renderDemoConfig({...env, WEAVE_TRIAL_GITHUB_SUBJECTS: allowlist}).name, 'weave-auth-demo', String(allowlist));
+        assert.throws(() => renderDemoConfig({...env, WEAVE_TRIAL_GITHUB_SUBJECTS: allowlist}),
+            /allowlist|selected|numeric/i, 'a missing or single-subject trial list cannot enable public sign-in: '+String(allowlist));
 });
