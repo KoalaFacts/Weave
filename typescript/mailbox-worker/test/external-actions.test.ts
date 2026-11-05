@@ -315,3 +315,17 @@ test('proposeExternalAction_ConcurrentSameKey_OnePlan', () => scenario(async ({h
     assert.equal(ids.size, 1);
     assert.equal((await pendingFor(h, humanId)).length, 1);
 }));
+
+test('proposeExternalAction_CrossAccountKeyLink_FailsClosed', () => scenario(async ({h}) => {
+    const {agent: first} = await ownedAgent(h);
+    const {agent: second} = await ownedAgent(h);
+    const initial = await proposeKeyed(h, second, 'mislinked');
+    assert.equal(initial.status, 200);
+    const {actionId} = await initial.json() as {actionId: string};
+    // The separate account and action FKs permit a structurally valid cross-account link.
+    // A corrupt/mislinked key must never return another agent's private proposal.
+    await h.db.prepare('UPDATE external_action_keys SET account_id=? WHERE action_id=?').bind(first.accountId, actionId).run();
+    const replay = await proposeKeyed(h, first, 'mislinked');
+    assert.equal(replay.status, 503, 'a mislinked key must fail closed rather than expose another agent\'s action');
+    assert.equal((await replay.json() as {code: string}).code, 'storage');
+}));
