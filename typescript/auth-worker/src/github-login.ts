@@ -40,9 +40,11 @@ const invalid=()=>messagePage(400,"Sign-in failed","The sign-in request is inval
 const githubFailed=()=>messagePage(502,"Sign-in failed","GitHub sign-in could not be completed. Try again.");
 
 /** Only this issuer's own /authorize endpoint or query-less /account page may receive the browser after sign-in. */
+/** The page for one action, which an app links its owner to; only the exact shape, never another /account path. */
+const actionPage=/^\/account\/actions\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function allowedReturnTo(issuer:string,returnTo:URL):boolean{
   return returnTo.origin===new URL(issuer).origin&&
-    (returnTo.pathname==="/authorize"||(returnTo.pathname==="/account"&&returnTo.search===""))&&
+    (returnTo.pathname==="/authorize"||((returnTo.pathname==="/account"||actionPage.test(returnTo.pathname))&&returnTo.search===""))&&
     !returnTo.username&&!returnTo.password&&!returnTo.hash;
 }
 async function s256(verifier:string):Promise<string>{

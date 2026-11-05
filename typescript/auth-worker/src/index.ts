@@ -10,8 +10,8 @@ import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
 import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
-import {readOwnerAction,readConnectForm,destructiveKinds} from "./owner-forms.ts";
-import {ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
+import {readOwnerAction,readConnectForm,destructiveKinds,ownerActionToken} from "./owner-forms.ts";
+import {actionPage,actionPagePath,ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
 import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
 import {beginYoutubeConnect,completeYoutubeConnect,youtubeCallbackPath,type YoutubeConnectEnv} from "./youtube-connect.ts";
 export {ConsentNonce} from "./nonce-do.ts";
@@ -316,6 +316,49 @@ async function connectAccountForm(req:Request,env:Env):Promise<Response>{
     return accountRedirect("unavailable");
   }
 }
+const actionPathPattern=/^\/account\/actions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+/**
+ * GET and POST /account/actions/{actionId}: one pending action, for an app such as Envoylet to send its owner to. It decides
+ * exactly as the owner page does (signed forms, the plan digest, a GitHub sign-in in the last 10 minutes) and accepts only a
+ * decision on this action. It never redirects off this origin: the app learns the outcome from the action's status.
+ */
+async function actionApproval(req:Request,env:Env,actionId:string):Promise<Response>{
+  if(req.method!=="GET"&&req.method!=="POST")return methodNotAllowed("GET, POST");
+  const url=new URL(req.url),now=Date.now(),pageUrl=new URL(actionPagePath(actionId),env.OAUTH_ISSUER);
+  const back=(result:string)=>new Response(null,{status:303,headers:{Location:actionPagePath(actionId)+"?result="+result,
+    "Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
+  if(req.method==="POST"&&req.headers.get("origin")!==url.origin)
+    return messagePage(403,"Request refused","This request did not come from the Weave account page.");
+  const session=await readHumanSession(env.HUMAN_SESSION_KEY,req,now);
+  if(!session)return beginGithubLogin(env,pageUrl,now);
+  // The page exists to approve, which needs a fresh sign-in, so a stale one signs in again before the page is shown.
+  if(!freshAuthentication(session,now))return beginGithubLogin(env,pageUrl,now,{reauthenticate:{login:session.login}});
+  if(req.method==="GET"){
+    let overview:OwnerOverview;
+    try{overview=await env.MAILBOX.ownerOverview(session.humanId);}catch{return directoryUnavailable();}
+    const action=overview.frozen?undefined:overview.externalActions.find(candidate=>candidate.actionId===actionId);
+    const tokens=new Map<string,string>();
+    try{
+      if(action){
+        // The approval is bound to the plan shown on this page; the mailbox refuses it if anything in that plan changed.
+        tokens.set("confirm-action:"+actionId,await ownerActionToken(env.HUMAN_SESSION_KEY,session.humanId,{kind:"confirm-action",requestId:actionId,planDigest:action.planDigest},now));
+        tokens.set("reject-action:"+actionId,await ownerActionToken(env.HUMAN_SESSION_KEY,session.humanId,{kind:"reject-action",requestId:actionId},now));
+      }
+    }catch{
+      console.error(failureLog.formSigning);
+      return messagePage(503,"Temporarily unavailable","Weave cannot show this action right now. Try again later.");
+    }
+    return actionPage(overview,session,actionId,tokens,url.searchParams.get("result"),now);
+  }
+  const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
+  if(action==="expired")return back("form-expired");
+  // Only a decision on this page's action is taken here; any other signed form belongs to the owner page.
+  if(!action||(action.kind!=="confirm-action"&&action.kind!=="reject-action")||action.requestId!==actionId)return back("not-found");
+  let result:OwnerActionResult;
+  try{result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});}
+  catch{return directoryUnavailable();}
+  return back(result.ok?(action.kind==="confirm-action"?"approved":"rejected"):result.reason);
+}
 const mediaPath=/^\/account\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 /** GET /account/media/{actionId}/{mediaId}: a file an action of the owner's agent names, for the approval preview. */
 async function ownerMedia(req:Request,env:Env,match:RegExpExecArray):Promise<Response>{
@@ -337,6 +380,8 @@ export default class AuthServer extends WorkerEntrypoint<Env>{
     if(path==="/authorize")return authorize(req,this.env,server);
     if(path==="/account")return account(req,this.env,server.getOAuthApi(this.env));
     if(path==="/account/connect")return connectAccountForm(req,this.env);
+    const decision=actionPathPattern.exec(path);
+    if(decision)return actionApproval(req,this.env,decision[1]);
     const media=mediaPath.exec(path);
     if(media)return ownerMedia(req,this.env,media);
     if(path==="/login/github/callback")return req.method==="GET"?completeGithubLogin(this.env,req,Date.now())

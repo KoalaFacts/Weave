@@ -50,9 +50,9 @@ const fingerprint=(kid:string)=>"<code><strong>"+esc(kid.slice(0,8))+"</strong>"
 const unverified=" (self-reported, not verified)";
 const agentName=(agentId:string,displayName:string|null)=>
   displayName===null?"Unnamed agent "+esc(agentId.slice(0,8)):esc(displayName)+unverified;
-const form=(label:string,key:string,tokens:ReadonlyMap<string,string>)=>{
+const form=(label:string,key:string,tokens:ReadonlyMap<string,string>,target="/account")=>{
   const token=tokens.get(key);
-  return token===undefined?"":'<form method="post" action="/account"><input type="hidden" name="action" value="'+esc(token)+
+  return token===undefined?"":'<form method="post" action="'+esc(target)+'"><input type="hidden" name="action" value="'+esc(token)+
     '"><button type="submit">'+esc(label)+"</button></form>";
 };
 const cooling=(key:OwnerKey,now:number)=>key.coolingUntil!==null&&Date.parse(key.coolingUntil)>now?" - still in its 24 h cooling window":"";
@@ -75,7 +75,8 @@ function bindingSection(requests:OwnerBindingRequest[],tokens:ReadonlyMap<string
  * Each pending action shows exactly what the approval binds: the full content, the provider-verified account it acts as and the
  * credential revision. The content is agent-supplied text, escaped and shown verbatim.
  */
-function actionsSection(actions:OwnerExternalAction[],agents:Extract<OwnerOverview,{frozen:false}>["agents"],tokens:ReadonlyMap<string,string>):string{
+function actionsSection(actions:OwnerExternalAction[],agents:Extract<OwnerOverview,{frozen:false}>["agents"],tokens:ReadonlyMap<string,string>,
+  target="/account"):string{
   if(actions.length===0)return "<p>No agent is waiting for an action to be approved.</p>";
   return actions.map(action=>{
     const agent=agents.find(candidate=>candidate.agentId===action.agentId);
@@ -88,8 +89,8 @@ function actionsSection(actions:OwnerExternalAction[],agents:Extract<OwnerOvervi
         return file.contentType.startsWith("video/")?'<video controls preload="metadata" width="360" src="'+src+'"></video>':'<img alt="Attached file '+esc(file.mediaId)+'" width="360" src="'+src+'">';
       }).join(""),
       "<p>Requested "+esc(action.createdAt)+"; approval and sending must finish by "+esc(action.expiresAt)+"</p>",
-      form("Approve and allow sending once","confirm-action:"+action.actionId,tokens),
-      form("Reject","reject-action:"+action.actionId,tokens),"</section>"].join("");
+      form("Approve and allow sending once","confirm-action:"+action.actionId,tokens,target),
+      form("Reject","reject-action:"+action.actionId,tokens,target),"</section>"].join("");
   }).join("");
 }
 
@@ -157,6 +158,32 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
     "<h2>Binding requests</h2>",bindingSection(overview.bindingRequests,tokens,now),
     "<h2>Actions waiting for approval</h2>",actionsSection(overview.externalActions,overview.agents,tokens),
     "<h2>Your agents</h2>",agentSection(overview,tokens)].join(""));
+}
+
+/** The address of the page for one action: what an app such as Envoylet links to so its owner can decide there. */
+export const actionPagePath=(actionId:string)=>"/account/actions/"+actionId;
+/** Text for `?result=` on the page for one action; failure reasons share the owner page's text. */
+const actionResultText:Readonly<Record<string,string>>=Object.freeze({
+  approved:"Approved. The agent may now send it once. You can close this page.",
+  rejected:"Rejected. Nothing will be sent. You can close this page."
+});
+
+/**
+ * The page for one pending action, so an app can send its owner here to decide: the same exact plan, files and forms as the
+ * owner page, posting back to this address. An action that is not pending for this human is described the same way whether it
+ * was decided, expired or belongs to someone else.
+ */
+export function actionPage(overview:OwnerOverview,human:HumanSession,actionId:string,tokens:ReadonlyMap<string,string>,result:string|null,now:number):Response{
+  const shown=result===null?null:Object.hasOwn(actionResultText,result)?actionResultText[result]:Object.hasOwn(ownerResultText,result)?ownerResultText[result]:null;
+  const head=(shown===null?"":"<p role=\"status\">"+esc(shown)+"</p>")+"<h1>Approve an action</h1><p>Signed in as @"+esc(human.login)+"</p>";
+  if(overview.frozen)return shell("Approve an action",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
+  const action=overview.externalActions.find(candidate=>candidate.actionId===actionId);
+  const all='<p><a href="/account">All your agents and actions</a></p>';
+  if(!action)return shell("Approve an action",head+"<p>This action is not waiting for your approval. It may already be decided or expired.</p>"+all);
+  const fresh=freshAuthentication(human,now);
+  return shell("Approve an action",[head,
+    "<p>Approving needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":"You will be asked to sign in again first.")+"</p>",
+    actionsSection([action],overview.agents,tokens,actionPagePath(actionId)),all].join(""));
 }
 
 /** The one-time recovery code, shown in the response body only: never in a URL, redirect or log. */
