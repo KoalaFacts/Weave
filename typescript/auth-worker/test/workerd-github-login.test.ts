@@ -463,10 +463,9 @@ async function publicTrialCallback(mf:Miniflare){
     });
 }
 
-test("trialIssuer_AbsentOrMalformedOwnerSelection_FailsClosedBeforeAnyGithubLogin",{timeout:120_000},async()=>{
-  // An unset, one-person or Everyone trial selector must never silently create
-  // an open first-party GitHub login service at the public approved issuer.
-  for(const selected of [undefined,"4242","4242,4242","Everyone"]){
+test("signInAllowlist_Malformed_FailsClosedBeforeAnyGithubLogin",{timeout:120_000},async()=>{
+  // A malformed allowlist is a configuration error, never read as open sign-in.
+  for(const selected of ["4242,4242","Everyone","4242, 4243",""+"4242,".repeat(10)+"4243"]){
     const authEnv:Record<string,unknown>={
       OAUTH_ISSUER:{type:"text",value:publicTrialIssuer},
       ...(selected===undefined?{}:{WEAVE_TRIAL_GITHUB_SUBJECTS:{type:"text",value:selected}})
@@ -474,10 +473,25 @@ test("trialIssuer_AbsentOrMalformedOwnerSelection_FailsClosedBeforeAnyGithubLogi
     const instance=await start(authEnv);
     try{
       const response=await instance.mf.dispatchFetch(publicTrialIssuer+"/account",{redirect:"manual"});
-      assert.equal(response.status,503,"invalid trial configuration must fail closed: "+selected);
+      assert.equal(response.status,503,"a malformed allowlist must fail closed: "+selected);
       assert.equal((await humans(instance.mf)).length,0);
     }finally{await stop(instance);}
   }
+});
+
+test("signInAllowlist_Unset_AnyGithubAccountSignsIn",{timeout:60_000},async()=>{
+  const instance=await start({OAUTH_ISSUER:{type:"text",value:publicTrialIssuer}});
+  try{
+    const result=await publicTrialCallback(instance.mf);
+    assert.equal(result.status,302,"with no allowlist, the demo is open to any GitHub account");
+    assert.ok(sessionCookie(result.headers));
+    assert.deepEqual((await humans(instance.mf)).map((x:any)=>x.subject),["4242"]);
+  }finally{await stop(instance);}
+});
+
+test("signInAllowlist_OneListedAccount_SignsIn",{timeout:60_000},async()=>{
+  const instance=await start({OAUTH_ISSUER:{type:"text",value:publicTrialIssuer},WEAVE_TRIAL_GITHUB_SUBJECTS:{type:"text",value:"4242"}});
+  try{assert.equal((await publicTrialCallback(instance.mf)).status,302);}finally{await stop(instance);}
 });
 
 test("trialIssuer_UnselectedGithubAccount_NeverCreatesHumanOrSession",{timeout:60_000},async()=>{

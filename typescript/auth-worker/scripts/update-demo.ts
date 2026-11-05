@@ -6,7 +6,7 @@ import {writeFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {demoManifest} from './prepare-demo.ts';
-import {type Binding, secretNames, validateIssuerReadback, verifyDiscovery, wrangler} from './deploy-demo.ts';
+import {type Binding, readbackMismatches, secretNames, verifyDiscovery, wrangler} from './deploy-demo.ts';
 
 const root=resolve(import.meta.dirname,'..');
 const hexId=/^[0-9a-f]{32}$/i;
@@ -47,8 +47,8 @@ export async function preflightUpdate(env:NodeJS.ProcessEnv,request:typeof fetch
     const clientId=bindings.find(b=>b.name==='GITHUB_CLIENT_ID')?.text;
     const kvId=bindings.find(b=>b.name==='OAUTH_KV')?.namespace_id;
     const expected={GITHUB_CLIENT_ID:typeof clientId==='string'?clientId:'',WEAVE_AUTH_KV_NAMESPACE_ID:kvId??''};
-    try{validateIssuerReadback(bindings,expected);}
-    catch{throw Error('The running OAuth Worker lacks an expected binding or secret; no change made.');}
+    const mismatched=readbackMismatches(bindings,expected);
+    if(mismatched.length)throw Error('The running OAuth Worker lacks or differs in '+mismatched.join(', ')+'; no change made.');
     if(!hexId.test(expected.WEAVE_AUTH_KV_NAMESPACE_ID))throw Error('The running OAuth Worker has an unexpected KV binding; no change made.');
     // A code update must not drop configuration: each other binding is carried over exactly, or the update is refused.
     const ratelimits:RateLimit[]=[];
@@ -69,9 +69,8 @@ export async function updateDemoIssuer(env:NodeJS.ProcessEnv=process.env,request
     await wrangler(['deploy','--config',filename,'--keep-vars'],env);
     // The published version must still carry every binding and secret, then answer discovery.
     const published=await runningBindings(env,request);
-    let intact=sameLimits(published,ratelimits);
-    try{validateIssuerReadback(published,expected);}catch{intact=false;}
-    if(!intact)throw Error('OAuth Worker code published but its settings readback no longer matches; review it before another release.');
+    const changed=[...readbackMismatches(published,expected),...(sameLimits(published,ratelimits)?[]:['registration budgets'])];
+    if(changed.length)throw Error('OAuth Worker code published but its readback differs in '+changed.join(', ')+'; review it before another release.');
     await verifyDiscovery(request);
     console.log('Demo OAuth Worker code updated and verified; secrets and stored state unchanged.');
 }

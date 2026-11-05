@@ -25,7 +25,7 @@ const binding=[
     {name:'WEAVE_TRIAL_GITHUB_SUBJECTS',type:'secret_text'}
 ];
 
-test('a protected issuer deployment refuses missing credentials and trial identities before Cloudflare GET',async()=>{
+test('a protected issuer deployment refuses missing credentials or a malformed allowlist before Cloudflare GET',async()=>{
     for(const update of [
         {CLOUDFLARE_API_TOKEN:undefined},{GITHUB_CLIENT_SECRET:undefined},
         {HUMAN_SESSION_KEY:'wrong'},{WEAVE_TRIAL_GITHUB_SUBJECTS:'Everyone'},
@@ -35,7 +35,7 @@ test('a protected issuer deployment refuses missing credentials and trial identi
         let called=false;
         await assert.rejects(()=>preflightIssuerDeployment({...env,...update},async()=>{
             called=true;throw Error('unexpected network');
-        }),/required|selected|approved|identifier|namespace|session/i);
+        }),/required|selected|approved|identifier|namespace|session|allowlist/i);
         assert.equal(called,false);
     }
     assert.equal(validateIssuerDeployment(env).name,'weave-auth-demo');
@@ -88,9 +88,10 @@ test('existing script, incorrect account binding and KV permission denials abort
     }
 });
 
-test('post-deploy verification requires exact issuer, consent DO, mailbox owner RPC and all three Worker secrets',()=>{
+test('post-deploy verification requires exact issuer, consent DO, mailbox owner RPC and both authentication secrets',()=>{
     assert.doesNotThrow(()=>validateIssuerReadback(binding,env));
-    for(const name of binding.map(x=>x.name)){
+    assert.doesNotThrow(()=>validateIssuerReadback(binding.filter(x=>x.name!=='WEAVE_TRIAL_GITHUB_SUBJECTS'),env),'the sign-in allowlist is optional');
+    for(const name of binding.map(x=>x.name).filter(name=>name!=='WEAVE_TRIAL_GITHUB_SUBJECTS')){
         assert.throws(()=>validateIssuerReadback(binding.filter(x=>x.name!==name),env),/mismatch/);
     }
     assert.throws(()=>validateIssuerReadback(binding.map(x=>x.name==='MAILBOX'?{...x,service:'unrelated'}:x),env),/mismatch/);

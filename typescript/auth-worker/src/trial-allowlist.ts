@@ -1,17 +1,14 @@
-/** Restrict the fixed public Weave OAuth trial to owner-selected GitHub numeric subjects.
- * No list or malformed list is a configuration error, not an "Everyone" fallback.
- * Local synthetic issuers are not the approved public-trial deployment.
+/** An optional sign-in allowlist of GitHub numeric subjects. Unset, anyone with a GitHub account may sign in; set,
+ * only the listed accounts may. A malformed list is a configuration error, never read as "everyone".
  */
-export const publicTrialIssuer = 'https://weave-auth-demo.weave-389.workers.dev';
 const numericSubject = /^[1-9][0-9]{0,15}$/;
 
-/** null: not the Weave trial issuer; undefined: invalid/missing trial selection. */
-export function trialSelectedSubjects(issuer: string, configured: unknown): ReadonlySet<string> | null | undefined {
-  if (!URL.canParse(issuer) || new URL(issuer).origin !== publicTrialIssuer) return null;
+/** null: no allowlist, anyone may sign in; undefined: a malformed allowlist. */
+export function allowedGithubSubjects(configured: unknown): ReadonlySet<string> | null | undefined {
+  if (configured === undefined || configured === '') return null;
   if (typeof configured !== 'string' || configured.length > 180) return undefined;
   const subjects = configured.split(',');
-  if (subjects.length < 2 || subjects.length > 10 ||
-      subjects.some(id => !numericSubject.test(id) || !Number.isSafeInteger(Number(id))) ||
+  if (subjects.length > 10 || subjects.some(id => !numericSubject.test(id) || !Number.isSafeInteger(Number(id))) ||
       new Set(subjects).size !== subjects.length) return undefined;
   return new Set(subjects);
 }

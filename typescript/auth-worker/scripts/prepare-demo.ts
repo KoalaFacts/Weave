@@ -2,7 +2,7 @@
  * OAuth Worker. This does not provision, deploy or modify either cloud service.
  */
 import {writeFile} from 'node:fs/promises';
-import {trialSelectedSubjects} from '../src/trial-allowlist.ts';
+import {allowedGithubSubjects} from '../src/trial-allowlist.ts';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
@@ -23,8 +23,9 @@ export function renderDemoConfig(env: NodeJS.ProcessEnv): Record<string, unknown
         throw Error('OAuth resource does not match the approved demo MCP endpoint.');
     if (!githubClientId.test(env.GITHUB_CLIENT_ID ?? ''))
         throw Error('Existing approved GitHub OAuth app client identifier is required.');
-    if (trialSelectedSubjects(issuer, env.WEAVE_TRIAL_GITHUB_SUBJECTS) === undefined)
-        throw Error('Two or more exact owner-approved GitHub numeric subjects are required for the trial.');
+    // Optional: unset, anyone may sign in; set, it must be a well-formed list of GitHub numeric subjects.
+    if (allowedGithubSubjects(env.WEAVE_TRIAL_GITHUB_SUBJECTS) === undefined)
+        throw Error('The sign-in allowlist must list 1-10 distinct GitHub numeric user IDs.');
     return demoManifest(env.CLOUDFLARE_ACCOUNT_ID!, env.WEAVE_AUTH_KV_NAMESPACE_ID!, env.GITHUB_CLIENT_ID!);
 }
 
