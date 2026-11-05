@@ -121,21 +121,25 @@ the same-origin metadata and browser PKCE consent proof, and its rollback.
 Even a green Wrangler dry run is **not** remote OAuth access or #236's
 two-independent-agent public proof.
 
-## Optional GitHub sign-in allowlist
+## Explicit GitHub sign-in trial cohort
 
-The demo is open: by default (on 2026-11-05 the owner decided anyone may use the demo for testing), any GitHub
-account can sign in.
+The first-party demo issuer must **not** silently admit everyone. The explicit #236 operator safety boundary
+requires 2–10 distinct, owner-selected numeric GitHub user IDs before any public trial sign-in.
+The open-by-default path introduced in #356 was reverted because an absent secret did not establish
+a selected cohort. No GitHub identity is inferred from repository authors or test fixtures.
 
-`WEAVE_TRIAL_GITHUB_SUBJECTS` is an optional secret on the **authorization Worker only**. When it is set, it restricts
-sign-in to 1–10 distinct numeric GitHub user IDs, comma-delimited with no spaces or wildcard:
+Install `WEAVE_TRIAL_GITHUB_SUBJECTS` as a secret on the **authorization Worker only** using the existing
+protected secret channel. The selection must be 2–10 distinct numeric user IDs, comma-delimited
+without whitespace or wildcard. Missing, empty, single-ID, duplicated or malformed values make
+the **public issuer** refuse sign-in (503). A valid but unselected GitHub account gets 403 **before**
+the private `HumanDirectory.signIn` call can persist a record. Local/synthetic issuers retain
+their existing testing behavior.
 
-- An account that is not listed gets 403 **before** the private `HumanDirectory.signIn` call creates a human record.
-- A malformed value is a configuration error: the Worker answers 503. It never treats such a value as open sign-in.
-- The IDs are never written to the generated manifest, console or GitHub Actions evidence.
-- Code-only releases keep the secret as it is, whether or not it is set.
-
-Changing the list does not revoke what was already issued. Existing human session cookies and OAuth grants stay
-valid until they expire, so removing someone needs revocation, not just editing this value.
+The IDs are never written to generated manifests, source, logs or CI evidence. The production
+release checks only the presence of the secret binding through Cloudflare metadata; it does not
+retrieve the protected value. Lack of this binding blocks the protected code update **before**
+the mailbox is changed. Previously issued human cookies or OAuth grants are not revoked merely
+by changing the cohort; removal requires separate revocation review.
 
 ## One-time, approved first-party AS-to-demo binding rollout (not executed)
 
