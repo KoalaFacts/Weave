@@ -12,6 +12,11 @@ links to (or opens a window on) the authorization server's page for that one act
 On the demo, the authorization server is `https://weave-auth-demo.weave-389.workers.dev`. The app learns the outcome
 from the action's status (`GET /v1/external-actions/{actionId}` with the agent's credential), never from a redirect.
 
+The action itself carries this address as `approvalUrl` (HTTP API and the MCP action tools), so an app does not need to
+know the authorization server. It is set only while the action is pending, and only on a relay with a first-party
+authorization server: one reached through the `AUTH_SERVER` Service Binding at an HTTPS `OAUTH_ISSUER`. A third-party
+issuer (introspection) hosts no such page, so it is null there, as it is once the action is decided or expired.
+
 This was chosen over letting the app approve on the owner's behalf, option A1 in the owner's discussion. A2 keeps
 the existing guarantee: Weave itself verifies the human, so approval does not depend on the app's own security. A1
 remains possible later for chat channels.
@@ -49,6 +54,8 @@ auth-worker workerd tests, against the real mailbox and authorization Workers:
 - approving sends nothing until the agent executes, then the action is sent once; the other pending action is untouched;
 - rejecting sends nothing;
 - a forged `?result=` claims no outcome on a pending or an approved action;
+- the proposal's `approvalUrl` is exactly this page, opening it shows that action, and it becomes null once decided
+  (the mailbox Worker bound to the authorization Worker, as deployed);
 - refused with no effect:
   - another action's token;
   - an unrelated owner-page token;
@@ -59,10 +66,11 @@ Mutation checks: each of these fails a test:
 
 - dropping the "this action only" check;
 - dropping the fresh-sign-in gate on the page;
-- dropping the page from the sign-in return allowlist.
+- dropping the page from the sign-in return allowlist;
+- returning `approvalUrl` after a decision;
+- returning `approvalUrl` without the first-party Service Binding (mailbox unit test).
 
 ## Limits
 
-- The agent API does not return the page address. The mailbox does not know the authorization server's address
-  unless first-party OAuth is enabled, so apps build it from the action id.
+- A relay without first-party OAuth returns `approvalUrl: null`: it has no Weave owner pages.
 - Deciding in a chat channel without visiting Weave (A1) is not provided.

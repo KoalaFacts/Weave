@@ -5730,7 +5730,8 @@
           "completedAt",
           "receipt",
           "failure",
-          "publication"
+          "publication",
+          "approvalUrl"
         ],
         "properties": {
           "actionId": {
@@ -5901,6 +5902,14 @@
                 "type": "null"
               }
             ]
+          },
+          "approvalUrl": {
+            "description": "While status is pending, the authorization server's page where the agent's owner signs in and approves or rejects this exact plan; link or open it for the owner. Null once decided or expired, and on a relay without a first-party authorization server. Learn the decision by reading this action, never from the page.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
           }
         }
       },

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
+import { approvalOrigin } from '../src/external-actions.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -85,6 +86,23 @@ test('executeExternalAction_ApprovedPlan_SendsExactlyOnceAfterApproval', () => s
     assert.deepEqual(provider.calls, [{operation: 'publish_text', content: 'Episode 12 is live.', targetAccount: 'urn:li:person:alpha', actionId: action.actionId}]);
     assert.deepEqual(await pendingFor(h, humanId), []);
 }));
+
+test('proposeExternalAction_NoFirstPartyAuthorizationServer_NoApprovalUrl', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {status: string; approvalUrl: string | null};
+    assert.equal(action.status, 'pending');
+    assert.equal(action.approvalUrl, null, 'without a first-party authorization server there is no page to link to');
+}));
+
+test('approvalOrigin_OnlyAFirstPartyHttpsIssuer_HasThePage', () => {
+    const service = {} as Env['AUTH_SERVER'];
+    assert.equal(approvalOrigin({AUTH_SERVER: service, OAUTH_ISSUER: 'https://auth.weave.example'}), 'https://auth.weave.example');
+    assert.equal(approvalOrigin({AUTH_SERVER: service, OAUTH_ISSUER: 'https://auth.weave.example/'}), 'https://auth.weave.example');
+    // A third-party issuer reached by introspection hosts no Weave owner page.
+    assert.equal(approvalOrigin({OAUTH_ISSUER: 'https://idp.example'}), null);
+    for (const issuer of [undefined, '', 'http://auth.weave.example', 'not a url'])
+        assert.equal(approvalOrigin({AUTH_SERVER: service, OAUTH_ISSUER: issuer}), null, String(issuer));
+});
 
 test('proposeExternalAction_UnownedAgent_Conflict', () => scenario(async ({h}) => {
     const agent = await h.register();

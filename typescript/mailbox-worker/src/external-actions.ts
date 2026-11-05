@@ -27,7 +27,9 @@ export type ExternalActionView = {actionId: string; provider: string; operation:
     credentialRevision: string; targetAccount: string; status: ActionStatus | 'expired'; createdAt: string; expiresAt: string;
     decidedAt: string | null; dispatchedAt: string | null; completedAt: string | null; receipt: string | null; failure: string | null;
     /** What the provider later reported about a completed effect it finishes after dispatch; null when not tracked. */
-    publication: PublicationView | null};
+    publication: PublicationView | null;
+    /** The page where the owner decides this pending action; null once it is decided or expired, or without a first-party authorization server. */
+    approvalUrl: string | null};
 /** What the owner page shows for a pending action; `planDigest` is what the owner confirms. */
 export type OwnerExternalAction = {actionId: string; agentId: string; provider: string; operation: string; content: string;
     credentialRef: string; credentialRevision: string; targetAccount: string; targetDisplay: string; planDigest: string; createdAt: string; expiresAt: string;
@@ -56,15 +58,27 @@ export async function planDigest(row: Pick<Row, 'action_id' | 'account_id' | 'pr
     return base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
 }
 
-function view(row: Row, now: bigint, publication: PublicationView | null = null): ExternalActionView {
+/**
+ * The origin of the first-party authorization server, which hosts the owner's page for one action. Only a Service Binding
+ * deployment has one: a third-party issuer (introspection) has no such page.
+ */
+export function approvalOrigin(env: Pick<Env, 'AUTH_SERVER' | 'OAUTH_ISSUER'>): string | null {
+    if (env.AUTH_SERVER === undefined || !env.OAUTH_ISSUER || !URL.canParse(env.OAUTH_ISSUER)) return null;
+    const issuer = new URL(env.OAUTH_ISSUER);
+    return issuer.protocol === 'https:' ? issuer.origin : null;
+}
+
+function view(env: Env, row: Row, now: bigint, publication: PublicationView | null = null): ExternalActionView {
     // Only these statuses are written; anything else is storage corruption.
     if (!statuses.has(row.status)) fail(503, 'storage');
     const live = row.status === 'pending' || row.status === 'approved';
+    const status = live && exactInt64(row.expires_at) <= now ? 'expired' : row.status as ActionStatus;
+    const origin = status === 'pending' ? approvalOrigin(env) : null;
     return {actionId: row.action_id, provider: row.provider, operation: row.operation, content: row.content, credentialRef: row.credential_ref,
-        credentialRevision: row.credential_revision, targetAccount: row.target_account,
-        status: live && exactInt64(row.expires_at) <= now ? 'expired' : row.status as ActionStatus,
+        credentialRevision: row.credential_revision, targetAccount: row.target_account, status,
         createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!, decidedAt: apiTime(row.decided_at),
-        dispatchedAt: apiTime(row.dispatched_at), completedAt: apiTime(row.completed_at), receipt: row.receipt, failure: row.failure, publication};
+        dispatchedAt: apiTime(row.dispatched_at), completedAt: apiTime(row.completed_at), receipt: row.receipt, failure: row.failure, publication,
+        approvalUrl: origin && origin + '/account/actions/' + row.action_id};
 }
 
 const readRow = (tx: Transaction, actionId: string) =>
@@ -124,7 +138,7 @@ export async function proposeExternalAction(env: Env, caller: ActionCaller, inpu
         const digest = await planDigest(plan);
         tx.store.stage(tx.store.orm.insert(schema.externalActions).values({...plan, plan_digest: digest, status: 'pending',
             created_at: at, expires_at: at + actionLifetimeTicks, updated_at: at}));
-        return view({...plan, plan_digest: digest, status: 'pending', created_at: at.toString(), decided_at: null, decided_by: null,
+        return view(env, {...plan, plan_digest: digest, status: 'pending', created_at: at.toString(), decided_at: null, decided_by: null,
             dispatched_at: null, completed_at: null, receipt: null, failure: null}, at);
     });
 }
@@ -134,7 +148,7 @@ export async function getExternalAction(env: Env, caller: ActionCaller, actionId
     return atomic(env.db, async tx => {
         await caller.check(tx);
         const row = await ownAction(tx, caller, actionId);
-        return view(row, tx.store.now, await readPublication(tx, actionId));
+        return view(env, row, tx.store.now, await readPublication(tx, actionId));
     });
 }
 
@@ -185,7 +199,7 @@ async function claim(env: Env, caller: ActionCaller, actionId: string, clock: ()
 export async function executeExternalAction(env: Env, caller: ActionCaller, actionId: string, clock: () => bigint = nowUtc): Promise<ExternalActionView> {
     if (writesRefused(env)) fail(503, 'maintenance', 30);
     const claimed = await claim(env, caller, actionId, clock);
-    if (!claimed.dispatch) return view(claimed.row, clock(), claimed.publication ?? null);
+    if (!claimed.dispatch) return view(env, claimed.row, clock(), claimed.publication ?? null);
     const row = claimed.row;
     // claim() verified the provider and its contract revision in the committed transaction.
     const provider = findProvider(env, row.provider)!;
@@ -205,13 +219,13 @@ export async function executeExternalAction(env: Env, caller: ActionCaller, acti
             tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status=?,receipt=?,failure=?,completed_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
                 WHERE action_id=? AND status='dispatching'`).bind(status, receipt, failure, stamp, stamp, actionId));
             if (trackFrom !== null) trackPublication(tx, actionId, row.account_id, trackFrom);
-            return view({...row, status, receipt, failure, completed_at: stamp}, tx.store.now,
+            return view(env, {...row, status, receipt, failure, completed_at: stamp}, tx.store.now,
                 trackFrom === null ? null : {state: 'queued', url: null, error: null, checkedAt: null});
         }, clock);
     } catch {
         // The outcome could not be recorded; the row stays 'dispatching' and is never dispatched again.
         console.error('external-action: outcome not recorded');
-        return view(row, clock());
+        return view(env, row, clock());
     }
 }
 
