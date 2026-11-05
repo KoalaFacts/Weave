@@ -545,6 +545,97 @@ test("account_ApproveExternalAction_CredentialRotatedSincePage_PlanChanged",{tim
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
 });
 
+// ---- the page for one action, which an app such as Envoylet links its owner to -------------------------------------------
+const actionPage=(actionId:string,cookie?:string,query="")=>shared.mf.dispatchFetch(issuer+"/account/actions/"+actionId+query,
+  {redirect:"manual",headers:cookie?{Cookie:cookie}:{}});
+function postActionPage(actionId:string,token:string,cookie:string,origin:string|null=issuer){
+  return shared.mf.dispatchFetch(issuer+"/account/actions/"+actionId,{method:"POST",redirect:"manual",headers:{
+    "Content-Type":"application/x-www-form-urlencoded",...origin?{Origin:origin}:{},Cookie:cookie},body:new URLSearchParams({action:token}).toString()});
+}
+const pageToken=async(human:Human,actionId:string,label:string)=>{
+  const found=forms(await (await actionPage(actionId,await sessionCookie(human))).text()).find(x=>x.label===label);
+  assert.ok(found,"the action page must render a "+label+" form");
+  return found.token;
+};
+
+test("actionPage_NoSessionOrStale_SignsInReturningToThisPageOnly",{timeout:60_000},async()=>{
+  const human=await seedHuman(),{action}=await proposeAction(human,"sign in "+randomUUID());
+  for(const cookie of [undefined,await sessionCookie(human,Date.now()-11*60_000)]){
+    const response=await actionPage(action.actionId,cookie);
+    assert.equal(response.status,302);
+    const location=new URL(response.headers.get("location")!);
+    assert.equal(location.origin+location.pathname,"https://github.com/login/oauth/authorize");
+    if(cookie)assert.equal(location.searchParams.get("prompt"),"select_account","a stale sign-in signs in again before the page is shown");
+    const login=response.headers.getSetCookie().find(x=>x.startsWith("__Host-weave_login="))!.split(";")[0].split("=")[1];
+    assert.equal((JSON.parse(Buffer.from(login.split(".")[0],"base64url").toString()) as {returnTo:string}).returnTo,issuer+"/account/actions/"+action.actionId);
+  }
+  // A query never travels through sign-in: the return address is always the bare page.
+  const queried=(await actionPage(action.actionId,undefined,"?next=https://evil.example")).headers.getSetCookie().find(x=>x.startsWith("__Host-weave_login="))!.split(";")[0].split("=")[1];
+  assert.equal((JSON.parse(Buffer.from(queried.split(".")[0],"base64url").toString()) as {returnTo:string}).returnTo,issuer+"/account/actions/"+action.actionId);
+  assert.equal((await shared.mf.dispatchFetch(issuer+"/account/actions/not-an-id",{redirect:"manual"})).status,404);
+  assert.equal((await shared.mf.dispatchFetch(issuer+"/account/actions/"+action.actionId,{method:"DELETE",redirect:"manual"})).status,405);
+});
+
+test("actionPage_Fresh_ShowsOnlyThisActionAndApprovingSendsOnce",{timeout:90_000},async()=>{
+  const human=await seedHuman(),content="Single "+randomUUID(),other="Other "+randomUUID();
+  const {agent,action}=await proposeAction(human,content);
+  const second=await proposeAction(human,other);
+  const html=await (await actionPage(action.actionId,await sessionCookie(human))).text();
+  assert.ok(html.includes("<pre>"+content+"</pre>")&&!html.includes(other),"only the linked action is shown");
+  assert.ok(html.includes('action="/account/actions/'+action.actionId+'"'),"its forms post back to this page");
+  const response=await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),await sessionCookie(human));
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get("location"),null,"the decision is answered with its outcome, not redirected");
+  assert.ok((await response.text()).includes("Approved. The agent may now send it once."));
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0,"approval alone sends nothing");
+  assert.equal((await executeAction(agent,action.actionId)).status,"completed");
+  assert.equal((await executeAction(agent,action.actionId)).status,"completed");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,1,"sent once");
+  assert.ok((await (await actionPage(action.actionId,await sessionCookie(human))).text()).includes("not waiting for your approval"));
+  assert.equal((await executeAction(second.agent,second.action.actionId)).status,"pending","the other action is untouched");
+});
+
+test("actionPage_Reject_NothingSent",{timeout:60_000},async()=>{
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"reject "+randomUUID());
+  const response=await postActionPage(action.actionId,await pageToken(human,action.actionId,"Reject"),await sessionCookie(human));
+  assert.ok((await response.text()).includes("Rejected. Nothing will be sent."));
+  assert.equal((await executeAction(agent,action.actionId)).status,"rejected");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
+});
+
+test("actionPage_ForgedResultQuery_ClaimsNoDecision",{timeout:60_000},async()=>{
+  // A link cannot make the page claim an outcome: the query is ignored, whatever the action's real state.
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"forged "+randomUUID());
+  const approved=await proposeAction(human,"approved "+randomUUID());
+  await postActionPage(approved.action.actionId,await pageToken(human,approved.action.actionId,"Approve and allow sending once"),await sessionCookie(human));
+  for(const [actionId,query] of [[action.actionId,"?result=approved"],[action.actionId,"?result=rejected"],[approved.action.actionId,"?result=rejected"]]){
+    const html=await (await actionPage(actionId,await sessionCookie(human),query)).text();
+    assert.ok(!html.includes("Approved.")&&!html.includes("Rejected.")&&!html.includes('role="status"'),"no outcome claimed for "+query);
+  }
+  assert.ok(forms(await (await actionPage(action.actionId,await sessionCookie(human),"?result=approved")).text()).length===2,"a pending action still offers its decision");
+  assert.equal((await executeAction(agent,action.actionId)).status,"pending");
+});
+
+test("actionPage_AnotherActionsTokenOrAnotherHuman_NotFoundNoEffect",{timeout:90_000},async()=>{
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"mine "+randomUUID());
+  const second=await proposeAction(human,"second "+randomUUID());
+  // A signed approval of the second action, posted to the first action's page, decides nothing.
+  const misplaced=await postActionPage(action.actionId,await pageToken(human,second.action.actionId,"Approve and allow sending once"),await sessionCookie(human));
+  assert.ok((await misplaced.text()).includes("That request, key or connected client was not found."));
+  assert.equal((await executeAction(second.agent,second.action.actionId)).status,"pending");
+  // An owner-page token for an unrelated decision is not taken here either.
+  const ownerToken=await tokenFor(human,"Issue recovery code");
+  assert.ok((await (await postActionPage(action.actionId,ownerToken,await sessionCookie(human))).text()).includes("was not found"));
+  // Another human sees the same "not waiting" page, with no forms, and cannot decide.
+  const stranger=await seedHuman();
+  const html=await (await actionPage(action.actionId,await sessionCookie(stranger))).text();
+  assert.ok(html.includes("not waiting for your approval")&&forms(html).length===0);
+  const forged=await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),await sessionCookie(stranger));
+  assert.ok((await forged.text()).includes("was not found"));
+  assert.equal((await postActionPage(action.actionId,await pageToken(human,action.actionId,"Reject"),await sessionCookie(human),"https://evil.example")).status,403);
+  assert.equal((await executeAction(agent,action.actionId)).status,"pending");
+});
+
 /** Starts connecting YouTube from the owner page and returns Google's redirect, the state and the pending-connection cookie. */
 async function beginConnect(human:Human,agent:Agent){
   const html=await (await account(await sessionCookie(human))).text();
