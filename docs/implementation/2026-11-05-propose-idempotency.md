@@ -50,6 +50,17 @@ The schema change is additive (a new table and index) and needs no data migratio
 current release: both deploy jobs run `completed-only`, which refuses any non-empty schema plan. Rolling it out needs
 the owner's approval of this table and a separate protected, opt-in path that applies exactly these two statements.
 
+
+### Restricted schema-release implementation (source only; still blocked)
+
+The deploy script now has a separately gated `WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA=true` maintain-mode path that
+checks the actual SQLite table shape and unique index, requires **only** those two generated DDL statements before
+maintenance and again immediately before the batch, and applies precisely the inspected statements rather than
+calling the generic add-all-missing-schema helper. Ordinary completed-only releases remain unchanged. A future
+protected, explicit owner-initiated workflow must still provide the flag and verify rollback/preservation evidence;
+**the flag alone is not schema approval, and no present workflow sets it**. Owner's independent approval on #365
+is outstanding. This implementation performs no D1 write until someone runs that separately authorized release.
+
 ## Verification
 
 mailbox-worker tests (real D1 through Miniflare; MCP through the bundled private-tool module):
