@@ -19,5 +19,6 @@ export function allowedGithubSubjects(configured: unknown): ReadonlySet<string> 
 export const publicTrialIssuer = 'https://weave-auth-demo.weave-389.workers.dev';
 export function trialSelectedSubjects(issuer: string, configured: unknown): ReadonlySet<string> | null | undefined {
   const subjects = allowedGithubSubjects(configured);
-  return issuer === publicTrialIssuer && (!subjects || subjects.size < 2) ? undefined : subjects;
+  const isPublicDemo = issuer === publicTrialIssuer || issuer === publicTrialIssuer + '/';
+  return isPublicDemo && (!subjects || subjects.size < 2) ? undefined : subjects;
 }
