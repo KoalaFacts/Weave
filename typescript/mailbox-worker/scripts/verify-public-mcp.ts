@@ -4,6 +4,11 @@ import {pathToFileURL} from 'node:url';
 const endpoint='https://demo.weave-389.workers.dev/mcp';
 const protocolVersion='2025-11-25';
 const maxResponseBytes=256*1024;
+/**
+ * A release first publishes a maintenance version (503 maintenance), then the active one. Edges switch versions within
+ * seconds, so the first request after a release can still meet the maintenance version: wait up to 30 s for it to pass.
+ */
+const propagationDelaysMs=[1000,2000,3000,4000,5000,5000,5000,5000];
 type ObjectValue=Record<string,unknown>;
 const object=(value:unknown):value is ObjectValue=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 
@@ -31,9 +36,9 @@ export async function verifyPublicMcp({fetchImpl=fetch,delayImpl=(ms:number)=>ne
     fetchImpl?:typeof fetch;delayImpl?:(ms:number)=>Promise<void>
 }={}){
     async function rpc(id:number,method:string,params:Record<string,unknown>={}):Promise<ObjectValue>{
-        // A newly deployed edge may briefly return a gateway error. Only retry
+        // A newly deployed edge may briefly return a gateway or maintenance error. Only retry
         // the public, idempotent initialize request; later RPCs are never replayed.
-        const retries=method==='initialize'?2:0;
+        const retries=method==='initialize'?propagationDelaysMs.length:0;
         for(let attempt=0;;attempt++){
             let response:Response;
             try{
@@ -47,7 +52,7 @@ export async function verifyPublicMcp({fetchImpl=fetch,delayImpl=(ms:number)=>ne
             if(response.status!==200||!contentTypeOk||!noStoreOk||!nosniffOk){
                 await response.body?.cancel();
                 if([502,503,504].includes(response.status)&&attempt<retries){
-                    await delayImpl(500*(attempt+1));
+                    await delayImpl(propagationDelaysMs[attempt]);
                     continue;
                 }
                 // Log only status and fixed header-validation flags, never
