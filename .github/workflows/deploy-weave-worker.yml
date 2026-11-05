@@ -99,7 +99,12 @@ jobs:
       # The Worker verification workflow already ran typecheck, the full Worker suite, audit and browser checks on
       # this commit on main; the release requires that exact run to have passed instead of repeating it here.
       - name: Require passed Worker verification on main for this commit
-        run: node typescript/mailbox-worker/scripts/require-ci-success.ts
+        run: node typescript/mailbox-worker/scripts/require-ci-success.ts worker-browser.yml
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      # The production release also updates the authorization Worker, whose suite is OAuth verification.
+      - name: Require passed OAuth verification on main for this commit
+        run: node typescript/mailbox-worker/scripts/require-ci-success.ts oauth-auth-worker.yml
         env:
           GITHUB_TOKEN: ${{ github.token }}
   deploy-repository:
@@ -176,6 +181,16 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts
         working-directory: typescript/mailbox-worker
+      # The release changes the mailbox and then the authorization Worker. A read-only check of the running
+      # authorization Worker first stops the release before either changes if the second could not follow.
+      - run: npm ci --ignore-scripts
+        working-directory: typescript/auth-worker
+      - name: Check the running demo authorization Worker before any change
+        run: node scripts/update-demo.ts --preflight
+        working-directory: typescript/auth-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Revalidate opt-in OAuth release inside protected production
         run: node scripts/oauth-rollout-intent.ts
         working-directory: typescript/mailbox-worker
@@ -197,3 +212,11 @@ jobs:
       - name: Verify published public MCP handshake, discovery and D1 read
         run: node scripts/verify-public-mcp.ts
         working-directory: typescript/mailbox-worker
+      # The owner pages and sign-in live in the authorization Worker. Only its code changes here; its first publication
+      # with secrets is the protected issuer workflow. It follows the mailbox, whose RPC it calls.
+      - name: Update the running demo authorization Worker's code
+        run: node scripts/update-demo.ts
+        working-directory: typescript/auth-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -8,9 +8,9 @@ import {validSigningKey} from '../src/human-session.ts';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const issuer='https://weave-auth-demo.weave-389.workers.dev';
 const resource='https://demo.weave-389.workers.dev/mcp';
-const secretNames=['GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','WEAVE_TRIAL_GITHUB_SUBJECTS'] as const;
-type Binding={name:string;type:string;database_id?:string;id?:string;namespace_id?:string;class_name?:string;
-    service?:string;entrypoint?:string;environment?:string;text?:unknown};
+export const secretNames=['GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','WEAVE_TRIAL_GITHUB_SUBJECTS'] as const;
+export type Binding={name:string;type:string;database_id?:string;id?:string;namespace_id?:string;class_name?:string;
+    service?:string;entrypoint?:string;environment?:string;text?:unknown;simple?:{limit?:unknown;period?:unknown}};
 type Settings={bindings:Binding[]};
 
 export function validateIssuerDeployment(env:NodeJS.ProcessEnv){
@@ -91,7 +91,7 @@ async function cloudReadback(env:NodeJS.ProcessEnv,request:typeof fetch){
 
 // Wrangler gets only the Cloudflare token. The three trial/authentication secrets
 // are uploaded together through "secret bulk" stdin, never command arguments, config, stdout or stderr.
-async function wrangler(args:string[],env:NodeJS.ProcessEnv,secret?:string){
+export async function wrangler(args:string[],env:NodeJS.ProcessEnv,secret?:string){
     const childEnv:NodeJS.ProcessEnv={...env,CI:'true',NO_COLOR:'1',WRANGLER_SEND_METRICS:'false'};
     for(const name of secretNames)delete childEnv[name];
     return new Promise<void>((done,reject)=>{
@@ -114,7 +114,12 @@ export async function deployApprovedIssuer(env:NodeJS.ProcessEnv=process.env,req
     await wrangler(['secret','bulk','--config','wrangler.demo.generated.jsonc'],env,
         JSON.stringify(Object.fromEntries(secretNames.map(name=>[name,env[name]!]))));
     await cloudReadback(env,request);
-    // Metadata proves protocol readiness, never actual GitHub login or consent.
+    await verifyDiscovery(request);
+    console.log('Protected Weave OAuth issuer published and verified; demo resource binding remains unchanged.');
+}
+
+/** Metadata proves protocol readiness, never actual GitHub login or consent. */
+export async function verifyDiscovery(request:typeof fetch=fetch){
     const metadata=await request(issuer+'/.well-known/oauth-authorization-server',{
         method:'GET',redirect:'error',headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)
     });
@@ -125,7 +130,6 @@ export async function deployApprovedIssuer(env:NodeJS.ProcessEnv=process.env,req
         !Array.isArray(body.code_challenge_methods_supported)||
         !body.code_challenge_methods_supported.includes('S256'))
         throw Error('OAuth Worker published but protocol discovery is incompatible.');
-    console.log('Protected Weave OAuth issuer published and verified; demo resource binding remains unchanged.');
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){

@@ -3,3 +3,4 @@ dist/
 .wrangler/
 .dev.vars*
 wrangler.demo.generated.jsonc
+wrangler.update.generated.jsonc

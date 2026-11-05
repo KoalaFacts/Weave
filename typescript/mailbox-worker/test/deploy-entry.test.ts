@@ -13,7 +13,8 @@ test('explicit publish branch keeps main ancestry and existing verification befo
     assert.match(workflow,/github\.event_name == 'push' && github\.ref == 'refs\/heads\/publish\/demo'/);
     assert.match(workflow,/environment: production/);
     // Release relies on the passed Worker verification run of this exact commit on main, not a repeated suite.
-    assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts/);
+    assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts worker-browser\.yml/);
+    assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts oauth-auth-worker\.yml/);
     assert.match(workflow,/verify:[\s\S]*?permissions:\s*\n\s*contents: read\s*\n\s*actions: read/);
     assert.doesNotMatch(workflow,/npm test/);
     assert.match(readFileSync(new URL('../../../.github/workflows/worker-browser.yml',import.meta.url),'utf8'),/push:\s*\n\s*branches: \[main\][\s\S]*npm test/,
@@ -86,4 +87,26 @@ test('unrelated issue comments cannot replace a pending protected D1 audit durin
         /'deploy-weave-worker-demo'/,
         /cancel-in-progress: false/,
     ]) assert.match(top,requirement);
+});
+test('the production release updates the authorization Worker code after the mailbox it calls, and only there',()=>{
+    const workflow=readFileSync(path,'utf8');
+    assert.equal((workflow.match(/node scripts\/update-demo\.ts\n/g)||[]).length,1,'one publication; the preflight only reads');
+    const production=workflow.slice(workflow.indexOf('  deploy-production:'));
+    const mailbox=production.indexOf('node scripts/deploy.ts'),auth=production.indexOf('node scripts/update-demo.ts\n');
+    assert.ok(mailbox>0&&auth>mailbox,'the mailbox deploys first');
+    assert.doesNotMatch(production.slice(auth),/GITHUB_CLIENT_SECRET|HUMAN_SESSION_KEY|WEAVE_TRIAL_GITHUB_SUBJECTS/,'a code update receives no authentication secrets');
+});
+
+test('protected production preflights the live authorization Worker before mutating the mailbox',()=>{
+    const workflow=readFileSync(path,'utf8');
+    const production=workflow.split(/^  deploy-production:/m)[1];
+    assert.ok(production,'the protected deployment job must exist');
+    const preflight=production.indexOf('node scripts/update-demo.ts --preflight');
+    const mailbox=production.indexOf('node scripts/deploy.ts');
+    assert.ok(preflight>=0 && mailbox>preflight,
+        'read-only OAuth settings/secret/binding preflight must run before any mailbox deploy or migration');
+    const authInstall=production.indexOf('working-directory: typescript/auth-worker');
+    assert.ok(authInstall>=0 && authInstall<preflight,'auth dependencies must be installed before preflight');
+    assert.match(production.slice(preflight,mailbox),/CLOUDFLARE_API_TOKEN:/);
+    assert.match(production.slice(preflight,mailbox),/CLOUDFLARE_ACCOUNT_ID:/);
 });

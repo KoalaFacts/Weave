@@ -8,7 +8,7 @@ const run = (fields: Record<string, unknown>) => ({head_sha: sha, head_branch: '
 function gate(pages: unknown[][], extra: Record<string, unknown> = {}) {
     const asked: {url: string; auth: string | null; redirect?: string}[] = [], slept: number[] = [];
     let clock = 0;
-    return {asked, slept, options: {repository: 'KoalaFacts/Weave', sha, token: 'ghs_synthetic', log: () => {}, now: () => clock,
+    return {asked, slept, options: {workflow: 'worker-browser.yml' as const, repository: 'KoalaFacts/Weave', sha, token: 'ghs_synthetic', log: () => {}, now: () => clock,
         sleep: async (ms: number) => { slept.push(ms); clock += ms; },
         fetchImpl: (async (url: string, init?: RequestInit) => {
             asked.push({url: String(url), auth: new Headers(init?.headers).get('Authorization'), redirect: init?.redirect});
@@ -21,7 +21,7 @@ test('requireCiSuccess_PassedMainPushRun_Releases', async () => {
     assert.equal(await requireCiSuccess(g.options), 'https://github.com/o/r/actions/runs/1');
     const url = new URL(g.asked[0].url);
     assert.equal(url.pathname, '/repos/KoalaFacts/Weave/actions/workflows/worker-browser.yml/runs');
-    assert.deepEqual([url.searchParams.get('head_sha'), url.searchParams.get('branch'), url.searchParams.get('event')], [sha, 'main', 'push']);
+    assert.deepEqual([url.searchParams.get('head_sha'), url.searchParams.get('branch')], [sha, 'main']);
     assert.deepEqual([g.asked[0].auth, g.asked[0].redirect], ['Bearer ghs_synthetic', 'error']);
 });
 
@@ -38,6 +38,7 @@ for (const [name, runs, message] of [
     ['missing', [], /No Worker verification run on main/],
     ['another commit', [run({head_sha: other})], /No Worker verification run on main/],
     ['a pull request run', [run({event: 'pull_request', head_branch: 'feature'})], /No Worker verification run on main/],
+    ['a manual run', [run({event: 'workflow_dispatch'})], /No Worker verification run on main/],
 ] as const) test(`requireCiSuccess_${name}_RefusesRelease`, async () => {
     const g = gate([runs as unknown[]]);
     await assert.rejects(requireCiSuccess(g.options), message);
@@ -57,4 +58,15 @@ test('requireCiSuccess_LookupFailsOrMalformed_RefusesRelease', async () => {
     await assert.rejects(requireCiSuccess({...base, fetchImpl: (async () => { throw Error('offline'); }) as typeof fetch}), /lookup failed/);
     await assert.rejects(requireCiSuccess({...base, sha: 'HEAD'}), /required/);
     await assert.rejects(requireCiSuccess({...base, token: ''}), /required/);
+    await assert.rejects(requireCiSuccess({...base, workflow: 'ci.yml' as never}), /required/, 'only a known verification workflow can gate a release');
+});
+
+test('requireCiSuccess_OAuthVerification_AcceptsAPushOrManualMainRunOnly', async () => {
+    for (const event of ['push', 'workflow_dispatch']) {
+        const g = gate([[run({event})]], {workflow: 'oauth-auth-worker.yml'});
+        assert.equal(await requireCiSuccess(g.options), 'https://github.com/o/r/actions/runs/1', event);
+        assert.equal(new URL(g.asked[0].url).pathname, '/repos/KoalaFacts/Weave/actions/workflows/oauth-auth-worker.yml/runs');
+    }
+    await assert.rejects(requireCiSuccess(gate([[run({event: 'pull_request'})]], {workflow: 'oauth-auth-worker.yml'}).options), /No OAuth verification run on main.*run it manually on main/);
+    await assert.rejects(requireCiSuccess(gate([[run({event: 'workflow_dispatch', conclusion: 'failure'})]], {workflow: 'oauth-auth-worker.yml'}).options), /OAuth verification did not pass/);
 });
