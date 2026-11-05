@@ -645,3 +645,12 @@ for(const [label,bucket] of [['another bucket',{...mediaBucket,bucket_name:'some
         await assert.rejects(deploy(f.options),/Unexpected existing resource bindings/);
         assert.equal(f.commands.length,0);
     });
+
+
+test('approved external-action-key D1 release rejects unexpected additive DDL before maintenance', async()=>{
+    const f=fixture({extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:'maintain',WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA:'true'}});
+    f.options.planSchema=async()=>({statements:['CREATE TABLE "unexpected" ("value" text);'],preservedUnmanagedTables:[]});
+    await assert.rejects(deploy(f.options),/approved external_action_keys schema/i);
+    assert.equal(f.commands.length,0,'an unapproved DDL plan must never pause the existing live Worker');
+    assert.equal(f.closed,true);
+});
