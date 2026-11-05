@@ -96,3 +96,17 @@ test('the production release updates the authorization Worker code after the mai
     assert.ok(mailbox>0&&auth>mailbox,'the mailbox deploys first');
     assert.doesNotMatch(production.slice(auth),/GITHUB_CLIENT_SECRET|HUMAN_SESSION_KEY|WEAVE_TRIAL_GITHUB_SUBJECTS/,'a code update receives no authentication secrets');
 });
+
+test('protected production preflights the live authorization Worker before mutating the mailbox',()=>{
+    const workflow=readFileSync(path,'utf8');
+    const production=workflow.split(/^  deploy-production:/m)[1];
+    assert.ok(production,'the protected deployment job must exist');
+    const preflight=production.indexOf('node scripts/update-demo.ts --preflight');
+    const mailbox=production.indexOf('node scripts/deploy.ts');
+    assert.ok(preflight>=0 && mailbox>preflight,
+        'read-only OAuth settings/secret/binding preflight must run before any mailbox deploy or migration');
+    const authInstall=production.indexOf('working-directory: typescript/auth-worker');
+    assert.ok(authInstall>=0 && authInstall<preflight,'auth dependencies must be installed before preflight');
+    assert.match(production.slice(preflight,mailbox),/CLOUDFLARE_API_TOKEN:/);
+    assert.match(production.slice(preflight,mailbox),/CLOUDFLARE_ACCOUNT_ID:/);
+});
