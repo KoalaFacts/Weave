@@ -1,7 +1,7 @@
 import type {HumanDirectory} from "../../mailbox-worker/src/index.ts";
 import type {SignInResult} from "../../mailbox-worker/src/humans.ts";
 import {createChallenge} from "./challenge.ts";
-import {trialSelectedSubjects} from "./trial-allowlist.ts";
+import {allowedGithubSubjects} from "./trial-allowlist.ts";
 import {hostCookie,issueHumanSession,maxSignedCookieValueLength,readCookie,signedCookieValue,verifiedCookieValue} from "./human-session.ts";
 
 export interface GithubLoginEnv{
@@ -186,12 +186,11 @@ export async function completeGithubLogin(env:GithubLoginEnv,request:Request,now
   if(url.searchParams.getAll("code").length!==1||!code||!/^[\x21-\x7e]{1,512}$/.test(code))return invalid();
   const user=await fetchGithubUser(env,code,pending.verifier);
   if(!user)return githubFailed();
-  // A valid GitHub login is not itself permission to join the owner's trial.
-  // Check BEFORE the HumanDirectory RPC, which would persist a new human.
-  const selected=trialSelectedSubjects(env.OAUTH_ISSUER,env.WEAVE_TRIAL_GITHUB_SUBJECTS);
-  if(selected===undefined)return messagePage(503,"Sign-in unavailable","This trial is not configured.");
-  if(selected!==null&&!selected.has(user.subject))
-    return messagePage(403,"Sign-in refused","This GitHub account is not enrolled in this trial.");
+  // With an allowlist, an unlisted account is refused BEFORE the HumanDirectory RPC, which would persist a new human.
+  const allowed=allowedGithubSubjects(env.WEAVE_TRIAL_GITHUB_SUBJECTS);
+  if(allowed===undefined)return messagePage(503,"Sign-in unavailable","Sign-in is not configured.");
+  if(allowed!==null&&!allowed.has(user.subject))
+    return messagePage(403,"Sign-in refused","This GitHub account is not allowed to sign in here.");
   let result:SignInResult;
   try{
     result=await env.MAILBOX.signIn({provider:"github",subject:user.subject,

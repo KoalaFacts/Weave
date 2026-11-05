@@ -8,7 +8,9 @@ import {validSigningKey} from '../src/human-session.ts';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const issuer='https://weave-auth-demo.weave-389.workers.dev';
 const resource='https://demo.weave-389.workers.dev/mcp';
-export const secretNames=['GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','WEAVE_TRIAL_GITHUB_SUBJECTS'] as const;
+/** The secrets every release requires, and the optional sign-in allowlist a release keeps when it is set. */
+export const requiredSecrets=['GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY'] as const;
+export const secretNames=[...requiredSecrets,'WEAVE_TRIAL_GITHUB_SUBJECTS'] as const;
 export type Binding={name:string;type:string;database_id?:string;id?:string;namespace_id?:string;class_name?:string;
     service?:string;entrypoint?:string;environment?:string;text?:unknown;simple?:{limit?:unknown;period?:unknown}};
 type Settings={bindings:Binding[]};
@@ -76,7 +78,7 @@ export function readbackMismatches(bindings:Binding[],env:NodeJS.ProcessEnv):str
         ['OAUTH_KV','kv_namespace',b=>b.namespace_id===env.WEAVE_AUTH_KV_NAMESPACE_ID],
         ['CONSENT_NONCES','durable_object_namespace',b=>b.class_name==='ConsentNonce'&&b.environment===undefined],
         ['MAILBOX','service',b=>b.service==='demo'&&b.entrypoint==='HumanDirectory'&&(b.environment===undefined||b.environment==='production')],
-        ...secretNames.map(name=>[name,'secret_text',()=>true] as [string,string,(b:Binding)=>boolean])];
+        ...requiredSecrets.map(name=>[name,'secret_text',()=>true] as [string,string,(b:Binding)=>boolean])];
     return expected.filter(([name,type,extra])=>!requiredBinding(bindings,name,type,extra)).map(([name])=>name);
 }
 export function validateIssuerReadback(bindings:Binding[],env:NodeJS.ProcessEnv){
@@ -94,7 +96,7 @@ async function cloudReadback(env:NodeJS.ProcessEnv,request:typeof fetch){
     validateIssuerReadback(json.result.bindings,env);
 }
 
-// Wrangler gets only the Cloudflare token. The three trial/authentication secrets
+// Wrangler gets only the Cloudflare token. The authentication secrets and any sign-in allowlist
 // are uploaded together through "secret bulk" stdin, never command arguments, config, stdout or stderr.
 export async function wrangler(args:string[],env:NodeJS.ProcessEnv,secret?:string){
     const childEnv:NodeJS.ProcessEnv={...env,CI:'true',NO_COLOR:'1',WRANGLER_SEND_METRICS:'false'};
@@ -115,9 +117,9 @@ export async function deployApprovedIssuer(env:NodeJS.ProcessEnv=process.env,req
     const filename=join(root,'wrangler.demo.generated.jsonc');
     await writeFile(filename,JSON.stringify(manifest,null,2)+'\n',{flag:'wx',mode:0o600});
     await wrangler(['deploy','--config','wrangler.demo.generated.jsonc','--keep-vars'],env);
-    // A single bulk upload avoids three successive publicly deployed partial-secret versions.
+    // A single bulk upload avoids successive publicly deployed partial-secret versions.
     await wrangler(['secret','bulk','--config','wrangler.demo.generated.jsonc'],env,
-        JSON.stringify(Object.fromEntries(secretNames.map(name=>[name,env[name]!]))));
+        JSON.stringify(Object.fromEntries(secretNames.filter(name=>env[name]).map(name=>[name,env[name]!]))));
     await cloudReadback(env,request);
     await verifyDiscovery(request);
     console.log('Protected Weave OAuth issuer published and verified; demo resource binding remains unchanged.');

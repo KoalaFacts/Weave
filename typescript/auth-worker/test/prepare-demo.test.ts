@@ -57,8 +57,6 @@ test('refuses wrong account/resource/issuer, missing approved KV namespace or Gi
         {OAUTH_ISSUER: 'http://weave-auth-demo.weave-389.workers.dev'},
         {GITHUB_CLIENT_ID: undefined},
         {GITHUB_CLIENT_ID: 'not a client id'},
-        {WEAVE_TRIAL_GITHUB_SUBJECTS: undefined},
-        {WEAVE_TRIAL_GITHUB_SUBJECTS: '8101'},
         {WEAVE_TRIAL_GITHUB_SUBJECTS: '8101,8101'},
         {WEAVE_TRIAL_GITHUB_SUBJECTS: 'Everyone'},
         {WEAVE_TRIAL_GITHUB_SUBJECTS: '8101, 8102'},
@@ -67,5 +65,8 @@ test('refuses wrong account/resource/issuer, missing approved KV namespace or Gi
     ];
     for (const change of mutations)
         assert.throws(() => renderDemoConfig({...env,...change}),
-            /approved|existing|identifier|issuer|resource|namespace/i, JSON.stringify(change));
+            /approved|existing|identifier|issuer|resource|namespace|allowlist/i, JSON.stringify(change));
+    // The allowlist is optional: unset, sign-in is open; one listed account is enough.
+    for (const allowlist of [undefined, '', '8101'])
+        assert.equal(renderDemoConfig({...env, WEAVE_TRIAL_GITHUB_SUBJECTS: allowlist}).name, 'weave-auth-demo', String(allowlist));
 });

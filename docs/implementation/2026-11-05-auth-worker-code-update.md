@@ -30,8 +30,8 @@ the mailbox changes. The job then deploys the mailbox Worker and runs
    - the KV namespace;
    - the `ConsentNonce` Durable Object;
    - the `MAILBOX` → `demo#HumanDirectory` service;
-   - the three authentication secrets, checked by metadata only. In particular, it refuses if the trial allowlist
-     is missing, because the current code fails closed without it.
+   - the GitHub client secret and the human-session key, checked by metadata only. The optional sign-in allowlist
+     is kept if it is set.
 3. rebuilds the configuration from those bindings, using the same `demoManifest` the first publication uses:
    - it carries the two registration budgets (`REGISTRATION_LIMITER`, `REGISTRATION_GLOBAL_LIMITER`) over exactly,
      because dropping either would close dynamic client registration;
@@ -75,3 +75,17 @@ The first publication and its secrets remain the protected issuer workflow, unch
   secret first. If the code publication itself then fails after the mailbox succeeded, the release fails and demo is
   half updated until the next release.
 - The `repository` scope still publishes only the mailbox Worker.
+
+## Follow-up: open sign-in and named refusals
+
+The first production run stopped at the preflight. The message gave no names, and the likely cause was that the
+running Worker predates the then-mandatory trial allowlist. Two changes followed:
+
+- **Named refusals.** A refusal, before or after publication, now lists the mismatched binding or secret names.
+  Values are never printed.
+- **Optional allowlist.** The owner decided the demo is open to anyone for testing, so the allowlist is now optional:
+  - unset: any GitHub account signs in;
+  - set: only the listed 1–10 accounts sign in;
+  - malformed: still 503.
+
+  The preflight and the readback no longer require it.
