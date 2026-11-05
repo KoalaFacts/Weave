@@ -57,16 +57,63 @@ function proseLines(content: string): Line[] {
     return lines;
 }
 
-const stripInlineCode = (text: string) => text.replace(/(`+)(?:(?!\1).)+\1/g, (match) => ' '.repeat(match.length));
+/** Blanks inline code spans (a run of backticks up to the next run of the same length), keeping column positions. */
+function stripInlineCode(text: string): string {
+    let out = '';
+    let i = 0;
+    while (i < text.length) {
+        if (text[i] !== '`') { out += text[i++]; continue; }
+        let run = 0;
+        while (text[i + run] === '`') run++;
+        const fence = '`'.repeat(run);
+        let close = text.indexOf(fence, i + run);
+        while (close !== -1 && text[close + run] === '`') close = text.indexOf(fence, close + run + 1);
+        if (close === -1) { out += fence; i += run; continue; }
+        out += ' '.repeat(close + run - i);
+        i = close + run;
+    }
+    return out;
+}
+
+/** The value of one attribute in an HTML tag's attribute text, or null. */
+function attribute(attributes: string, name: string): string | null {
+    for (const match of attributes.matchAll(/([A-Za-z-]+)="([^"]*)"/g)) if (match[1] === name) return match[2];
+    return null;
+}
+
+/** A heading line's text without its marker and closing hashes, or null when the line is not an ATX heading. */
+function headingText(line: string): string | null {
+    const marker = /^#{1,6}[ \t]/.exec(line);
+    if (!marker) return null;
+    let text = line.slice(marker[0].length).trim();
+    let end = text.length;
+    while (end > 0 && text[end - 1] === '#') end--;
+    if (end < text.length && (end === 0 || text[end - 1] === ' ' || text[end - 1] === '\t')) text = text.slice(0, end).trim();
+    return text === '' ? null : text;
+}
+
+/** A Markdown link destination without angle brackets or a title. */
+function destination(inner: string): string | null {
+    const trimmed = inner.trim();
+    if (trimmed.startsWith('<')) {
+        const close = trimmed.indexOf('>');
+        return close > 1 ? trimmed.slice(1, close) : null;
+    }
+    const target = trimmed.split(/[ \t]/)[0];
+    return target === '' ? null : target;
+}
 
 export function anchors(content: string): Set<string> {
     const found = new Set<string>();
     const counts = new Map<string, number>();
     for (const { text } of proseLines(content)) {
-        for (const match of text.matchAll(/<a\s+(?:[^>]*\s)?(?:id|name)="([^"]+)"/g)) found.add(match[1]);
-        const heading = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(text);
-        if (!heading) continue;
-        const base = slug(heading[1]);
+        for (const match of text.matchAll(/<a[ \t]([^>]*)>/g)) {
+            const id = attribute(match[1], 'id') ?? attribute(match[1], 'name');
+            if (id) found.add(id);
+        }
+        const heading = headingText(text);
+        if (heading === null) continue;
+        const base = slug(heading);
         const seen = counts.get(base) ?? 0;
         counts.set(base, seen + 1);
         found.add(seen === 0 ? base : `${base}-${seen}`);
@@ -78,12 +125,25 @@ export function links(content: string): { target: string; line: number }[] {
     const found: { target: string; line: number }[] = [];
     for (const { text, line } of proseLines(content)) {
         const prose = stripInlineCode(text);
-        for (const match of prose.matchAll(/\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)) found.push({ target: match[1], line });
-        const definition = /^\s{0,3}\[[^\]]+\]:\s*<?(\S+?)>?(?:\s+.*)?$/.exec(prose);
-        if (definition) found.push({ target: definition[1], line });
-        for (const match of prose.matchAll(/<a\s+[^>]*href="([^"]+)"/g)) found.push({ target: match[1], line });
+        for (const match of prose.matchAll(/\]\(([^)]*)\)/g)) {
+            const target = destination(match[1]);
+            if (target) found.push({ target, line });
+        }
+        const definition = /^ {0,3}\[[^\]]+\]:([^\n]*)$/.exec(prose);
+        const defined = definition && destination(definition[1]);
+        if (defined) found.push({ target: defined, line });
+        for (const match of prose.matchAll(/<a[ \t]([^>]*)>/g)) {
+            const href = attribute(match[1], 'href');
+            if (href) found.push({ target: href, line });
+        }
     }
     return found;
+}
+
+/** `file.ts:12` or `file.ts:12-20` names a file at a line. */
+function withoutLineSuffix(path: string): string {
+    const colon = path.lastIndexOf(':');
+    return colon !== -1 && /^\d+(-\d+)?$/.test(path.slice(colon + 1)) ? path.slice(0, colon) : path;
 }
 
 const isExternal = (target: string) => /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('//');
@@ -156,10 +216,11 @@ export function checkNamedPaths(repo: Repo, report: Reporter): void {
         const lines = content.split('\n');
         lines.forEach((text, index) => {
             for (const match of text.matchAll(/`([^`\s]+)`/g)) {
-                const candidate = match[1].replace(/[),.:;]+$/, '');
+                let candidate = match[1];
+                while (candidate !== '' && '),.:;'.includes(candidate[candidate.length - 1])) candidate = candidate.slice(0, -1);
                 if (!checkedRoots.some((root) => candidate.startsWith(root))) continue;
                 if (/[*{}<>$]|\.\.\./.test(candidate)) continue; // Globs and placeholders are not concrete paths.
-                const path = candidate.replace(/#.*$/, '').replace(/:\d+(-\d+)?$/, '').replace(/\/$/, '');
+                const path = withoutLineSuffix(candidate.split('#')[0]).replace(/\/$/, '');
                 // A package README may name its own files relative to the package (`scripts/deploy.ts`).
                 if (repo.exists(path) || repo.exists(posix.join(posix.dirname(file), path))) continue;
                 report(file, index + 1, candidate, `named path does not exist: ${candidate}`);

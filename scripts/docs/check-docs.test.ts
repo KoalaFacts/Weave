@@ -164,3 +164,25 @@ test('repository_DocsAreConsistent', () => {
     const problems = check(loadRepo(root), loadAllowances(fileURLToPath(new URL('./allowances.json', import.meta.url))));
     assert.deepEqual(problems, []);
 });
+
+test('links_AngleBracketsTitlesAndDoubleBacktickCode', () => {
+    const found = links('[a](<with space.md> "Title") [b](plain.md "t") ``[c](code.md) ` `` and [d](after.md)\n').map((link) => link.target);
+    assert.deepEqual(found, ['with space.md', 'plain.md', 'after.md']);
+});
+
+test('anchors_ClosingHashesAndAttributeOrder', () => {
+    const found = anchors('## Closing hashes ##\n\n# C# notes\n\n<a class="x" name="legacy"></a>\n');
+    assert.deepEqual([...found].sort(), ['c-notes', 'closing-hashes', 'legacy']);
+});
+
+test('check_NamedPathWithLineSuffixOrTrailingPunctuation_ResolvesFile', () => {
+    const docs = { ...base, 'docs/guide.md': '# Guide\n\nSee `scripts/x.ts:12-20`, `scripts/x.ts#L4` and `scripts/x.ts).`\n' };
+    assert.deepEqual(messages(docs, { extra: ['scripts/x.ts'] }), []);
+});
+
+test('check_LongPathologicalLines_FinishQuickly', () => {
+    const line = '#'.repeat(6) + ' ' + ' '.repeat(20000) + 'x' + ' #'.repeat(5000) + '<a ' + 'b="'.repeat(5000) + '](' + ' '.repeat(20000);
+    const started = performance.now();
+    messages({ ...base, 'docs/guide.md': `# Guide\n\n${line}\n\`${'`'.repeat(5000)}\n` });
+    assert.ok(performance.now() - started < 2000);
+});
