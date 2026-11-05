@@ -6,8 +6,9 @@ The repository has 17 current workflow YAML files (plus this README). Ordinary v
 
 | Workflow | Triggers | Purpose and checks |
 | --- | --- | --- |
-| [ci.yml](ci.yml) | Main push, PR to main, merge queue, manual | Build & Test, nonpublishing tool-package smoke, tested-owner coverage, Code Quality, Windows CLI boundaries, exact locked dependency graphs, verified snapshots and Dependency Review. |
+| [ci.yml](ci.yml) | Main push, PR to main, merge queue, manual | Build & Test, nonpublishing tool-package smoke, tested-owner coverage, Code Quality, Windows CLI boundaries, documentation links and paths ([check-docs](../../scripts/docs/check-docs.ts)), exact locked dependency graphs, verified snapshots and Dependency Review. |
 | [scan-security.yml](scan-security.yml) | Monday 03:00 UTC, main push, PR to main, manual | Vulnerability Audit: locked restore with low-severity/direct/transitive audit, strict JSON evidence validation and deprecation report. |
+| [oauth-auth-worker.yml](oauth-auth-worker.yml) | Main push and PR to main on authorization-Worker, mailbox-Worker source/scripts and OAuth example paths, manual | OAuth authorization Worker isolated verification without deployment credentials: provider-neutral issuer experiment, strict mailbox Worker typecheck and bundle, issuer and callback binding regressions, portable consent/sign-in tests and real workerd Durable Object tests, then anonymous read-only probes of the public demo's MCP and metadata. |
 | [worker-browser.yml](worker-browser.yml) | Main push, PR to main, merge queue | Worker API, D1, MCP, C# compatibility and real Playwright browser checks with Chromium protection; retains browser evidence. |
 | [codex-bridge-contract.yml](codex-bridge-contract.yml) | Relevant PR paths, manual | Real Host UUID contract across restart and explicit approval; scripted protocol verification, not live human acceptance. |
 | [first-use-acceptance.yml](first-use-acceptance.yml) | Relevant main/PR paths, manual | Fresh Host public HTTP walkthrough and restart at the reviewed revision. Rejects acceptance-time modifications to tracked product/build inputs and dependency locks. |
