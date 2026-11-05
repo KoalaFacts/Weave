@@ -66,16 +66,21 @@ function requiredBinding(bindings:Binding[],name:string,type:string,extra:(b:Bin
     return bindings.filter(b=>b.name===name).length===1
         &&bindings.some(b=>b.name===name&&b.type===type&&extra(b));
 }
+/** The names of the expected bindings and secrets that are missing, duplicated or configured otherwise. Names are not secret. */
+export function readbackMismatches(bindings:Binding[],env:NodeJS.ProcessEnv):string[]{
+    if(!Array.isArray(bindings))return ['settings'];
+    const expected:[string,string,(b:Binding)=>boolean][]=[
+        ['OAUTH_ISSUER','plain_text',b=>b.text===issuer],
+        ['OAUTH_RESOURCE','plain_text',b=>b.text===resource],
+        ['GITHUB_CLIENT_ID','plain_text',b=>b.text===env.GITHUB_CLIENT_ID],
+        ['OAUTH_KV','kv_namespace',b=>b.namespace_id===env.WEAVE_AUTH_KV_NAMESPACE_ID],
+        ['CONSENT_NONCES','durable_object_namespace',b=>b.class_name==='ConsentNonce'&&b.environment===undefined],
+        ['MAILBOX','service',b=>b.service==='demo'&&b.entrypoint==='HumanDirectory'&&(b.environment===undefined||b.environment==='production')],
+        ...secretNames.map(name=>[name,'secret_text',()=>true] as [string,string,(b:Binding)=>boolean])];
+    return expected.filter(([name,type,extra])=>!requiredBinding(bindings,name,type,extra)).map(([name])=>name);
+}
 export function validateIssuerReadback(bindings:Binding[],env:NodeJS.ProcessEnv){
-    if(!Array.isArray(bindings)||
-        !requiredBinding(bindings,'OAUTH_ISSUER','plain_text',b=>b.text===issuer)||
-        !requiredBinding(bindings,'OAUTH_RESOURCE','plain_text',b=>b.text===resource)||
-        !requiredBinding(bindings,'GITHUB_CLIENT_ID','plain_text',b=>b.text===env.GITHUB_CLIENT_ID)||
-        !requiredBinding(bindings,'OAUTH_KV','kv_namespace',b=>b.namespace_id===env.WEAVE_AUTH_KV_NAMESPACE_ID)||
-        !requiredBinding(bindings,'CONSENT_NONCES','durable_object_namespace',b=>b.class_name==='ConsentNonce'&&b.environment===undefined)||
-        !requiredBinding(bindings,'MAILBOX','service',b=>b.service==='demo'&&b.entrypoint==='HumanDirectory'&&(b.environment===undefined||b.environment==='production'))||
-        secretNames.some(name=>!requiredBinding(bindings,name,'secret_text')))
-        throw Error('Deployed OAuth Worker binding or secret metadata mismatch.');
+    if(readbackMismatches(bindings,env).length)throw Error('Deployed OAuth Worker binding or secret metadata mismatch.');
 }
 
 async function cloudReadback(env:NodeJS.ProcessEnv,request:typeof fetch){

@@ -39,11 +39,14 @@ test('preflightUpdate_NotPublishedMissingBindingOrSecret_RefusesWithoutChange',a
     await assert.rejects(()=>preflightUpdate(env,cloudflare(()=>new Response('{}',{status:404}))),/not published yet/);
     await assert.rejects(()=>preflightUpdate(env,cloudflare(()=>new Response('{}',{status:403}))),/denied \(HTTP 403\)/);
     for(const name of ['WEAVE_TRIAL_GITHUB_SUBJECTS','HUMAN_SESSION_KEY','OAUTH_KV','CONSENT_NONCES','MAILBOX','GITHUB_CLIENT_ID'])
-        await assert.rejects(()=>preflightUpdate(env,cloudflare(settings(running.filter(b=>b.name!==name)))),/lacks an expected binding or secret/,name);
+        await assert.rejects(()=>preflightUpdate(env,cloudflare(settings(running.filter(b=>b.name!==name)))),
+            new RegExp('lacks or differs in '+name+'; no change made'),'the refusal names what is missing: '+name);
     const otherService=running.map(b=>b.name==='MAILBOX'?{...b,service:'elsewhere'}:b);
-    await assert.rejects(()=>preflightUpdate(env,cloudflare(settings(otherService))),/lacks an expected binding/);
+    await assert.rejects(()=>preflightUpdate(env,cloudflare(settings(otherService))),/lacks or differs in MAILBOX;/);
     const otherIssuer=running.map(b=>b.name==='OAUTH_ISSUER'?{...b,text:'https://evil.example'}:b);
-    await assert.rejects(()=>preflightUpdate(env,cloudflare(settings(otherIssuer))),/lacks an expected binding/);
+    await assert.rejects(()=>preflightUpdate(env,cloudflare(settings(otherIssuer))),/lacks or differs in OAUTH_ISSUER;/);
+    await assert.rejects(()=>preflightUpdate(env,cloudflare(settings(running.filter(b=>b.type!=='secret_text')))),
+        /lacks or differs in GITHUB_CLIENT_SECRET, HUMAN_SESSION_KEY, WEAVE_TRIAL_GITHUB_SUBJECTS;/,'every missing name at once');
 });
 
 test('preflightUpdate_NoAccountOrToken_RefusesBeforeAnyRequest',async()=>{
