@@ -171,3 +171,15 @@ test('executeDiscordPost_RefusedOrUncertain_FailedOrUnknownAndNeverResent', () =
     const {agent, actionId} = await approvedPost(h, env, fake, {text: 'elsewhere', media: []});
     assert.equal((await execute(h, agent, actionId)).status, 'unknown');
 }));
+
+test('executeDiscordPost_WebhookMovedOrDeletedAfterApproval_FailedWithNothingPosted', () => scenario(async ({h, fake, env}) => {
+    for (const [name, webhook, failure] of [['moved to another channel', hook({channel_id: '1'.repeat(18)}), 'provider-rejected: webhook-moved'],
+        ['deleted', () => Response.json({message: 'Unknown Webhook'}, {status: 404}), 'provider-rejected: credential-refused']] as const) {
+        fake.webhook = hook();
+        const {agent, actionId} = await approvedPost(h, env, fake, {text: name, media: []});
+        fake.webhook = webhook;
+        const result = await execute(h, agent, actionId);
+        assert.deepEqual([result.status, result.failure], ['failed', failure], name);
+        assert.equal(posts(fake).length, 0, 'the approved post never reaches another channel: ' + name);
+    }
+}));

@@ -40,18 +40,22 @@ async function boundedJson(response: Response): Promise<Record<string, unknown> 
     finally { void reader.cancel().catch(() => {}); }
 }
 
-/** The channel this webhook posts to; null when Discord refuses it or the text is not a webhook URL. */
-async function verify(url: string) {
-    const hook = webhook(url);
-    if (!hook) return null;
+/** The incoming webhook as Discord reports it now; null when Discord refuses it or does not answer. Reading it posts nothing. */
+async function readWebhook(hook: {id: string; token: string}): Promise<{channelId: string; name: string} | null> {
     try {
         const response = await fetch(api + hook.id + '/' + hook.token, {redirect: 'manual', signal: AbortSignal.timeout(timeoutMs)});
         const found = response.status === 200 ? await boundedJson(response) : (void response.body?.cancel().catch(() => {}), null);
         // Only an incoming webhook (type 1) posts messages; channel-follower and application webhooks do not.
         if (!found || found.id !== hook.id || found.type !== 1 || typeof found.channel_id !== 'string' || !/^[0-9]{17,20}$/.test(found.channel_id)) return null;
-        const name = typeof found.name === 'string' && found.name ? found.name.slice(0, 80) : 'Webhook';
-        return [{ref: hook.id, targetAccount: found.channel_id, targetDisplay: `${name} (channel ${found.channel_id})`}];
+        return {channelId: found.channel_id, name: typeof found.name === 'string' && found.name ? found.name.slice(0, 80) : 'Webhook'};
     } catch { return null; }
+}
+
+/** The channel this webhook posts to; null when Discord refuses it or the text is not a webhook URL. */
+async function verify(url: string) {
+    const hook = webhook(url);
+    const found = hook && await readWebhook(hook);
+    return found && [{ref: hook!.id, targetAccount: found.channelId, targetDisplay: `${found.name} (channel ${found.channelId})`}];
 }
 
 export const discord: PublishingAdapter = {
@@ -74,6 +78,11 @@ export const discord: PublishingAdapter = {
     async publish({env, accountId, targetAccount: channelId, secret, post}) {
         const hook = webhook(secret);
         if (!hook) return {status: 'rejected', reason: 'credential-refused'};
+        // A server administrator can move a webhook to another channel. The approved channel is checked again before
+        // anything is sent, so a moved, deleted or unreadable webhook posts nothing and needs reconnecting.
+        const current = await readWebhook(hook);
+        if (!current) return {status: 'rejected', reason: 'credential-refused'};
+        if (current.channelId !== channelId) return {status: 'rejected', reason: 'webhook-moved'};
         // Each file is read in full before anything is sent, so a missing file refuses with nothing posted.
         const files: Blob[] = [];
         for (const file of post.media) {

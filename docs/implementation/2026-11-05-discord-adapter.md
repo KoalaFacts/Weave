@@ -27,6 +27,9 @@ which the form's help text states.
 
 ## Dispatch
 
+- The webhook is read again before anything is sent. A server administrator can move a webhook to another channel,
+  so a webhook that has moved since the plan was approved posts nothing (`webhook-moved`); the owner reconnects it
+  and approves again. A deleted or unreadable webhook also posts nothing (`credential-refused`).
 - Every file is read in full before anything is sent, so a missing file refuses with nothing posted.
 - One `POST ...?wait=true` multipart request carries `payload_json` and the files. `wait=true` makes Discord return
   the created message.
@@ -49,17 +52,21 @@ which the form's help text states.
 - text is posted once, with mentions that never ping;
 - files are uploaded as the exact stored bytes, with alt text;
 - unsupported or unpinned media is refused at proposal;
+- a webhook moved to another channel or deleted after approval fails with nothing posted;
 - 400, 404 and 429 fail; 502, or a reply for another channel, is unknown, and neither is sent again.
 
 Mutation checks: each of these breaks a test:
 
 - dropping `allowed_mentions`;
 - accepting non-incoming webhooks;
-- accepting a reply for another channel.
+- accepting a reply for another channel;
+- skipping the channel check before dispatch.
 
 ## Limits
 
 - No scheduling, threads, forum posts, embeds, buttons or text-to-speech.
 - A boosted server's larger upload limit is not used: posts stay within 10 MiB.
-- Deleting the webhook in Discord makes the next post a definite refusal (404). The credential stays listed until
-  it is revoked.
+- Deleting the webhook in Discord makes the next post a definite refusal. The credential stays listed until it is
+  revoked.
+- A move between the pre-dispatch read and the post itself, a window of milliseconds, is not detected before
+  sending. The reply's channel check then marks the outcome unknown.
