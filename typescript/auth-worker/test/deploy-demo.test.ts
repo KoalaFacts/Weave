@@ -28,7 +28,8 @@ const binding=[
 test('a protected issuer deployment refuses missing credentials or a malformed allowlist before Cloudflare GET',async()=>{
     for(const update of [
         {CLOUDFLARE_API_TOKEN:undefined},{GITHUB_CLIENT_SECRET:undefined},
-        {HUMAN_SESSION_KEY:'wrong'},{WEAVE_TRIAL_GITHUB_SUBJECTS:'Everyone'},
+        {HUMAN_SESSION_KEY:'wrong'},{WEAVE_TRIAL_GITHUB_SUBJECTS:undefined},
+        {WEAVE_TRIAL_GITHUB_SUBJECTS:'8101'},{WEAVE_TRIAL_GITHUB_SUBJECTS:'Everyone'},
         {WEAVE_APPROVED_ISSUER_DEPLOY:undefined},
         {WEAVE_AUTH_KV_NAMESPACE_ID:undefined}
     ]){
@@ -90,8 +91,9 @@ test('existing script, incorrect account binding and KV permission denials abort
 
 test('post-deploy verification requires exact issuer, consent DO, mailbox owner RPC and both authentication secrets',()=>{
     assert.doesNotThrow(()=>validateIssuerReadback(binding,env));
-    assert.doesNotThrow(()=>validateIssuerReadback(binding.filter(x=>x.name!=='WEAVE_TRIAL_GITHUB_SUBJECTS'),env),'the sign-in allowlist is optional');
-    for(const name of binding.map(x=>x.name).filter(name=>name!=='WEAVE_TRIAL_GITHUB_SUBJECTS')){
+    assert.throws(()=>validateIssuerReadback(binding.filter(x=>x.name!=='WEAVE_TRIAL_GITHUB_SUBJECTS'),env),/mismatch/,
+        'the public issuer must have the selected cohort secret before release');
+    for(const name of binding.map(x=>x.name)){
         assert.throws(()=>validateIssuerReadback(binding.filter(x=>x.name!==name),env),/mismatch/);
     }
     assert.throws(()=>validateIssuerReadback(binding.map(x=>x.name==='MAILBOX'?{...x,service:'unrelated'}:x),env),/mismatch/);
