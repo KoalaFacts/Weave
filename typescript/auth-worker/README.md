@@ -125,7 +125,7 @@ two-independent-agent public proof.
 
 The first-party demo issuer must **not** silently admit everyone. The explicit #236 operator safety boundary
 requires 2–10 distinct, owner-selected numeric GitHub user IDs before any public trial sign-in.
-The open-by-default path introduced in #356 was reverted because an absent secret did not establish
+This change reverses #356's open-by-default path because an absent secret does not establish
 a selected cohort. No GitHub identity is inferred from repository authors or test fixtures.
 
 Install `WEAVE_TRIAL_GITHUB_SUBJECTS` as a secret on the **authorization Worker only** using the existing
