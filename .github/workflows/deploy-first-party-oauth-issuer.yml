@@ -63,6 +63,10 @@ jobs:
       - name: Install locked mailbox Worker dependencies for real workerd integration tests
         working-directory: typescript/mailbox-worker
         run: npm ci --ignore-scripts --no-audit --no-fund
+      # The workerd tests load both bundles, so each is built before they run.
+      - name: Bundle the real mailbox Worker without publishing
+        working-directory: typescript/mailbox-worker
+        run: npm run build
       - name: Install pinned authorization Worker dependencies
         working-directory: typescript/auth-worker
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -71,8 +75,8 @@ jobs:
         run: |
           npm run typecheck
           npm run test:portable
-          npm run test:workerd
           npm run build
+          npm run test:workerd
           npm audit --audit-level=high
 
   publish:
