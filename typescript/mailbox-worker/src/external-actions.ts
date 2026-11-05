@@ -68,11 +68,16 @@ export function approvalOrigin(env: Pick<Env, 'AUTH_SERVER' | 'OAUTH_ISSUER'>): 
     return issuer.protocol === 'https:' ? issuer.origin : null;
 }
 
-function view(env: Env, row: Row, now: bigint, publication: PublicationView | null = null): ExternalActionView {
+/** The status an agent sees: a pending or approved plan past its expiry reads as expired. */
+export function effectiveStatus(stored: string, expiresAt: string, now: bigint): ActionStatus | 'expired' {
     // Only these statuses are written; anything else is storage corruption.
-    if (!statuses.has(row.status)) fail(503, 'storage');
-    const live = row.status === 'pending' || row.status === 'approved';
-    const status = live && exactInt64(row.expires_at) <= now ? 'expired' : row.status as ActionStatus;
+    if (!statuses.has(stored)) fail(503, 'storage');
+    const live = stored === 'pending' || stored === 'approved';
+    return live && exactInt64(expiresAt) <= now ? 'expired' : stored as ActionStatus;
+}
+
+function view(env: Env, row: Row, now: bigint, publication: PublicationView | null = null): ExternalActionView {
+    const status = effectiveStatus(row.status, row.expires_at, now);
     const origin = status === 'pending' ? approvalOrigin(env) : null;
     return {actionId: row.action_id, provider: row.provider, operation: row.operation, content: row.content, credentialRef: row.credential_ref,
         credentialRevision: row.credential_revision, targetAccount: row.target_account, status,

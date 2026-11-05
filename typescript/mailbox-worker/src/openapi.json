@@ -4648,6 +4648,89 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "actionId",
+              "status",
+              "credentialRef",
+              "operation",
+              "createdAt",
+              "expiresAt",
+              "decidedAt",
+              "completedAt"
+            ],
+            "properties": {
+              "kind": {
+                "const": "external-action"
+              },
+              "actionId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "approved",
+                  "rejected",
+                  "expired",
+                  "dispatching",
+                  "completed",
+                  "failed",
+                  "unknown"
+                ],
+                "description": "The action's current status, as GET /v1/external-actions/{actionId} returns it."
+              },
+              "credentialRef": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "UTC timestamp ending in Z."
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "UTC timestamp ending in Z."
+              },
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                    "description": "UTC timestamp ending in Z."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                    "description": "UTC timestamp ending in Z."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "description": "One of this agent's external actions that was proposed, decided, executed or expired in the window, reported once with its current status. The planned content is not included: read GET /v1/external-actions/{actionId}. Later publication updates of a completed post do not produce a notice."
           }
         ]
       },
@@ -4712,7 +4795,7 @@
             "items": {
               "$ref": "#/components/schemas/Notice"
             },
-            "description": "Recent changes to this agent from the last 24 hours, newest first, derived on every inbox read. Check them each time: revoke a key you did not add (ownerless agent) or tell your owner."
+            "description": "Recent changes to this agent from the last 24 hours, newest first, derived on every inbox read: keys, key and binding requests, and its external actions' status changes. Check them each time: revoke a key you did not add (ownerless agent) or tell your owner."
           }
         },
         "required": [

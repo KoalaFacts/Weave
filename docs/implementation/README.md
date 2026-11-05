@@ -9,6 +9,7 @@ Newest first within each area. Every record in this directory is listed once.
 
 ## Publishing router and governed external actions (TypeScript Workers)
 
+- 2026-11-06: [External-action status notices on the inbox](2026-11-06-external-action-notices.md)
 - 2026-11-05: [Telegram publishing adapter](2026-11-05-telegram-adapter.md)
 - 2026-11-05: [Publishing router: one post format, one connect flow, platforms as adapters](2026-11-05-publishing-router.md)
 - 2026-11-05: [Discord publishing adapter](2026-11-05-discord-adapter.md)
@@ -122,13 +123,21 @@ Last docs housekeeping: 2026-11-06, `weave/docs-housekeeping-2026-11-06` (adds t
 | Item | Status |
 | --- | --- |
 | `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | blocked (#366; owner decision `schema-366` on #365: approve or reject the additive `external_action_keys` table. No further schema work until then) |
-| Status-change notification for apps (shared plan step 4) | todo |
+| Status-change notification for apps (shared plan step 4) | 1/2 in progress: external-action notices on the inbox, no schema (this PR). 2/2, a push webhook, needs somewhere to keep a callback address: an owner schema decision first |
 | Native X adapter, then native LinkedIn (shared plan step 4) | todo |
 
 ### Run log
 
-- 2026-11-06 04:17 (Sydney): merged #367 (records index, historical banners). Housekeeping: added
-  `scripts/docs/check-docs.ts` with tests and a CI job; renamed the docs index to `docs/README.md`; fixed stale paths
-  and claims in `docs/best-practices.md`.
+- 2026-11-06 04:17 (Sydney):
+  - Merged #367 (records index, historical banners).
+  - Housekeeping, #368, merged: added `scripts/docs/check-docs.ts` with tests and a CI job; renamed the docs index to
+    `docs/README.md`; fixed stale paths and claims in `docs/best-practices.md`.
+  - CodeQL flagged two problems in the first checker, both fixed: a polynomial regex and incomplete sanitization. An
+    independent review then found quadratic regexes still in place and a timing test that passed for the wrong reason.
+    All parsing is now linear scans.
+  - Opened external-action status notices (status-change notification, step 1). A push webhook was considered first
+    and set aside because storing the callback address is a schema change. Server-side long-polling was also set aside:
+    with D1 polling it costs more reads than client polling.
+  - Baseline on `main` `5cbd784`: mailbox-worker 50 + 926, auth-worker 92 + 93, all passing.
 - 2026-11-05: merged #363 and #364 (`approvalUrl` on pending actions). Opened #366 (`propose-idempotency`), which now
   waits on the owner's schema decision, and #367 (docs tidy).
