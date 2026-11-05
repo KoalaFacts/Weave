@@ -34,8 +34,10 @@ remains possible later for chat channels.
   - a form signed for another human.
 - **No disclosure.** An action that is decided, expired or another human's shows the same page: "not waiting for
   your approval", with no forms.
-- **No open redirect.** After a decision the page redirects to itself with `?result=approved`, `?result=rejected`
-  or a failure reason, and tells the owner they can close it. It never redirects to the app.
+- **No open redirect, no forgeable outcome.** A decision is answered directly with what that request just did
+  (approved, rejected or the failure reason), and the owner is told they can close the page. Nothing is redirected to
+  the app. The page never reads an outcome from its URL, so a link carrying `?result=approved` or `?result=rejected`
+  cannot make it claim a decision that was not made.
 
 ## Verification
 
@@ -46,6 +48,7 @@ auth-worker workerd tests, against the real mailbox and authorization Workers:
 - only the linked action is shown, and its forms post back to the page;
 - approving sends nothing until the agent executes, then the action is sent once; the other pending action is untouched;
 - rejecting sends nothing;
+- a forged `?result=` claims no outcome on a pending or an approved action;
 - refused with no effect:
   - another action's token;
   - an unrelated owner-page token;

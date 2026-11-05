@@ -162,20 +162,29 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
 
 /** The address of the page for one action: what an app such as Envoylet links to so its owner can decide there. */
 export const actionPagePath=(actionId:string)=>"/account/actions/"+actionId;
-/** Text for `?result=` on the page for one action; failure reasons share the owner page's text. */
+/** The outcome of a decision on the page for one action; failure reasons share the owner page's text. */
 const actionResultText:Readonly<Record<string,string>>=Object.freeze({
   approved:"Approved. The agent may now send it once. You can close this page.",
   rejected:"Rejected. Nothing will be sent. You can close this page."
 });
 
 /**
+ * The response to a decision posted on the page for one action. The outcome is what this request just did, never read back
+ * from a URL, so a link cannot make the page claim a decision that was not made.
+ */
+export function actionDecisionPage(human:HumanSession,actionId:string,result:string):Response{
+  const text=Object.hasOwn(actionResultText,result)?actionResultText[result]:Object.hasOwn(ownerResultText,result)?ownerResultText[result]:ownerResultText.unavailable;
+  return shell("Approve an action",'<p role="status">'+esc(text)+"</p><h1>Approve an action</h1><p>Signed in as @"+esc(human.login)+"</p>"+
+    '<p><a href="'+esc(actionPagePath(actionId))+'">Back to this action</a> · <a href="/account">All your agents and actions</a></p>');
+}
+
+/**
  * The page for one pending action, so an app can send its owner here to decide: the same exact plan, files and forms as the
  * owner page, posting back to this address. An action that is not pending for this human is described the same way whether it
  * was decided, expired or belongs to someone else.
  */
-export function actionPage(overview:OwnerOverview,human:HumanSession,actionId:string,tokens:ReadonlyMap<string,string>,result:string|null,now:number):Response{
-  const shown=result===null?null:Object.hasOwn(actionResultText,result)?actionResultText[result]:Object.hasOwn(ownerResultText,result)?ownerResultText[result]:null;
-  const head=(shown===null?"":"<p role=\"status\">"+esc(shown)+"</p>")+"<h1>Approve an action</h1><p>Signed in as @"+esc(human.login)+"</p>";
+export function actionPage(overview:OwnerOverview,human:HumanSession,actionId:string,tokens:ReadonlyMap<string,string>,now:number):Response{
+  const head="<h1>Approve an action</h1><p>Signed in as @"+esc(human.login)+"</p>";
   if(overview.frozen)return shell("Approve an action",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
   const action=overview.externalActions.find(candidate=>candidate.actionId===actionId);
   const all='<p><a href="/account">All your agents and actions</a></p>';

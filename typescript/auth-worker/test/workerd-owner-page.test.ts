@@ -584,23 +584,36 @@ test("actionPage_Fresh_ShowsOnlyThisActionAndApprovingSendsOnce",{timeout:90_000
   assert.ok(html.includes("<pre>"+content+"</pre>")&&!html.includes(other),"only the linked action is shown");
   assert.ok(html.includes('action="/account/actions/'+action.actionId+'"'),"its forms post back to this page");
   const response=await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),await sessionCookie(human));
-  assert.equal(response.status,303);
-  assert.equal(response.headers.get("location"),"/account/actions/"+action.actionId+"?result=approved","the outcome stays on this origin");
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get("location"),null,"the decision is answered with its outcome, not redirected");
+  assert.ok((await response.text()).includes("Approved. The agent may now send it once."));
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0,"approval alone sends nothing");
   assert.equal((await executeAction(agent,action.actionId)).status,"completed");
   assert.equal((await executeAction(agent,action.actionId)).status,"completed");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,1,"sent once");
-  const after=await (await actionPage(action.actionId,await sessionCookie(human),"?result=approved")).text();
-  assert.ok(after.includes("Approved. The agent may now send it once.")&&after.includes("not waiting for your approval"));
+  assert.ok((await (await actionPage(action.actionId,await sessionCookie(human))).text()).includes("not waiting for your approval"));
   assert.equal((await executeAction(second.agent,second.action.actionId)).status,"pending","the other action is untouched");
 });
 
 test("actionPage_Reject_NothingSent",{timeout:60_000},async()=>{
   const human=await seedHuman(),{agent,action}=await proposeAction(human,"reject "+randomUUID());
   const response=await postActionPage(action.actionId,await pageToken(human,action.actionId,"Reject"),await sessionCookie(human));
-  assert.equal(response.headers.get("location"),"/account/actions/"+action.actionId+"?result=rejected");
+  assert.ok((await response.text()).includes("Rejected. Nothing will be sent."));
   assert.equal((await executeAction(agent,action.actionId)).status,"rejected");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
+});
+
+test("actionPage_ForgedResultQuery_ClaimsNoDecision",{timeout:60_000},async()=>{
+  // A link cannot make the page claim an outcome: the query is ignored, whatever the action's real state.
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"forged "+randomUUID());
+  const approved=await proposeAction(human,"approved "+randomUUID());
+  await postActionPage(approved.action.actionId,await pageToken(human,approved.action.actionId,"Approve and allow sending once"),await sessionCookie(human));
+  for(const [actionId,query] of [[action.actionId,"?result=approved"],[action.actionId,"?result=rejected"],[approved.action.actionId,"?result=rejected"]]){
+    const html=await (await actionPage(actionId,await sessionCookie(human),query)).text();
+    assert.ok(!html.includes("Approved.")&&!html.includes("Rejected.")&&!html.includes('role="status"'),"no outcome claimed for "+query);
+  }
+  assert.ok(forms(await (await actionPage(action.actionId,await sessionCookie(human),"?result=approved")).text()).length===2,"a pending action still offers its decision");
+  assert.equal((await executeAction(agent,action.actionId)).status,"pending");
 });
 
 test("actionPage_AnotherActionsTokenOrAnotherHuman_NotFoundNoEffect",{timeout:90_000},async()=>{
@@ -608,17 +621,17 @@ test("actionPage_AnotherActionsTokenOrAnotherHuman_NotFoundNoEffect",{timeout:90
   const second=await proposeAction(human,"second "+randomUUID());
   // A signed approval of the second action, posted to the first action's page, decides nothing.
   const misplaced=await postActionPage(action.actionId,await pageToken(human,second.action.actionId,"Approve and allow sending once"),await sessionCookie(human));
-  assert.equal(misplaced.headers.get("location"),"/account/actions/"+action.actionId+"?result=not-found");
+  assert.ok((await misplaced.text()).includes("That request, key or connected client was not found."));
   assert.equal((await executeAction(second.agent,second.action.actionId)).status,"pending");
   // An owner-page token for an unrelated decision is not taken here either.
   const ownerToken=await tokenFor(human,"Issue recovery code");
-  assert.equal((await postActionPage(action.actionId,ownerToken,await sessionCookie(human))).headers.get("location"),"/account/actions/"+action.actionId+"?result=not-found");
+  assert.ok((await (await postActionPage(action.actionId,ownerToken,await sessionCookie(human))).text()).includes("was not found"));
   // Another human sees the same "not waiting" page, with no forms, and cannot decide.
   const stranger=await seedHuman();
   const html=await (await actionPage(action.actionId,await sessionCookie(stranger))).text();
   assert.ok(html.includes("not waiting for your approval")&&forms(html).length===0);
   const forged=await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),await sessionCookie(stranger));
-  assert.equal(forged.headers.get("location"),"/account/actions/"+action.actionId+"?result=not-found");
+  assert.ok((await forged.text()).includes("was not found"));
   assert.equal((await postActionPage(action.actionId,await pageToken(human,action.actionId,"Reject"),await sessionCookie(human),"https://evil.example")).status,403);
   assert.equal((await executeAction(agent,action.actionId)).status,"pending");
 });
