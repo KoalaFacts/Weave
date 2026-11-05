@@ -12,3 +12,12 @@ export function allowedGithubSubjects(configured: unknown): ReadonlySet<string> 
       new Set(subjects).size !== subjects.length) return undefined;
   return new Set(subjects);
 }
+
+/** The public demo is not an Everyone registration policy. It requires 2-10 expressly selected GitHub identities.
+ * Other synthetic/local issuers retain their existing testing behavior.
+ */
+export const publicTrialIssuer = 'https://weave-auth-demo.weave-389.workers.dev';
+export function trialSelectedSubjects(issuer: string, configured: unknown): ReadonlySet<string> | null | undefined {
+  const subjects = allowedGithubSubjects(configured);
+  return issuer === publicTrialIssuer && (!subjects || subjects.size < 2) ? undefined : subjects;
+}
