@@ -479,19 +479,24 @@ test("signInAllowlist_Malformed_FailsClosedBeforeAnyGithubLogin",{timeout:120_00
   }
 });
 
-test("signInAllowlist_Unset_AnyGithubAccountSignsIn",{timeout:60_000},async()=>{
+test("signInAllowlist_Unset_PublicIssuerRefusesBeforeDirectory",{timeout:60_000},async()=>{
   const instance=await start({OAUTH_ISSUER:{type:"text",value:publicTrialIssuer}});
   try{
+    const account=await instance.mf.dispatchFetch(publicTrialIssuer+"/account",{redirect:"manual"});
+    assert.equal(account.status,503,"no selected cohort means no public account or OAuth access");
     const result=await publicTrialCallback(instance.mf);
-    assert.equal(result.status,302,"with no allowlist, the demo is open to any GitHub account");
-    assert.ok(sessionCookie(result.headers));
-    assert.deepEqual((await humans(instance.mf)).map((x:any)=>x.subject),["4242"]);
+    assert.equal(result.status,503,"missing enrollment must not permit GitHub sign-in");
+    assert.equal(sessionCookie(result.headers),undefined);
+    assert.equal((await humans(instance.mf)).length,0,"unauthorized login must not persist a human");
   }finally{await stop(instance);}
 });
 
-test("signInAllowlist_OneListedAccount_SignsIn",{timeout:60_000},async()=>{
+test("signInAllowlist_OnlyOneSelected_PublicIssuerRefuses",{timeout:60_000},async()=>{
   const instance=await start({OAUTH_ISSUER:{type:"text",value:publicTrialIssuer},WEAVE_TRIAL_GITHUB_SUBJECTS:{type:"text",value:"4242"}});
-  try{assert.equal((await publicTrialCallback(instance.mf)).status,302);}finally{await stop(instance);}
+  try{
+    assert.equal((await publicTrialCallback(instance.mf)).status,503);
+    assert.equal((await humans(instance.mf)).length,0);
+  }finally{await stop(instance);}
 });
 
 test("trialIssuer_UnselectedGithubAccount_NeverCreatesHumanOrSession",{timeout:60_000},async()=>{
