@@ -63,14 +63,18 @@ Every ordinary demo release path (manual dispatch, `publish/demo` and the
 protected owner comment) now uses **completed-only**. It cannot select schema
 migration or the old maintain-mode conversion. This mode
 requires the original migration checksum, a completed ledger record, an absent
-migration write gate and an empty schema plan before maintenance, after maintenance
+migration write gate and an empty schema plan at preflight, before the ledger check
 and before active deployment. A residual migration trigger is rejected, never removed.
 Its planner receives only a restricted metadata-reading database interface.
 The historical converter and schema applier are never called. Its sole DDL is the
 generated `CREATE TABLE IF NOT EXISTS data_migrations` statement, whose successful
 zero-change metadata is required; the ledger and schema are checked again afterward.
 No other DDL/DML is permitted, and a failed check never falls back to maintenance
-conversion. A failure after the maintenance deployment leaves maintenance in place.
+conversion. It does not pause the service: nothing in the schema or data changes, so
+the version already serving stays compatible and keeps serving until the active
+deployment replaces it, and a failed check leaves that version serving. (Pausing used
+to add about a minute of 503 responses to every release while protecting nothing.)
+The one-time OAuth bootstrap still deploys maintenance first, because it adds bindings.
 Verified recovery version information is saved before the final database check, so
 it remains available in the failure report if that check fails.
 This protects the permitted SQL scope; it does not lock out concurrent administrators
@@ -111,7 +115,7 @@ using `tsconfig.tools.json`. New tools use `.ts`; no custom TypeScript loader is
 required. Tests and browser fixtures also use `.ts`.
 
 1. Build the active and read-only recovery bundles and record their SHA-256 values.
-2. Connect through Wrangler's official remote D1 binding, then deploy and verify maintenance mode. HTTP business requests and scheduled work are paused.
+2. Connect through Wrangler's official remote D1 binding, then deploy and verify maintenance mode. HTTP business requests and scheduled work are paused. Completed-only releases skip this pause (above).
 3. Verify, read-only, that `data_migrations` records the historical `normalize-mailbox-records` conversion as completed with its original checksum (`scripts/completed-migration.ts`). That conversion has run in every deployed database and its runner has been removed; a missing, incomplete or mismatched ledger stops the release in maintenance and nothing is converted.
 4. Compare the live database with the latest TypeScript Drizzle schema. Only missing tables/indexes are applied automatically. Existing column, foreign-key, CHECK or index drift stops for explicit review. No table/column drop or reconstruction is permitted.
 5. Upload and verify a separate schema-aware recovery version before routing business traffic to the active version. Record that version ID and exact recovery command in `test-results/deployment/result.json` and the workflow log.
@@ -121,7 +125,7 @@ required. Tests and browser fixtures also use `.ts`.
 
 Use the workflow, or `node scripts/deploy.ts` with the approved Cloudflare environment, only when remote migration/deployment is authorized. The remote connection uses the pinned Wrangler `getPlatformProxy` with `remote:true` on the one verified D1 binding, so `db.batch()` remains a D1 transaction. There is no sequential REST transaction emulation, new remote credential or public migration endpoint. Temporary configs have owner-only permissions, exclude the API token, and are removed on exit.
 
-A failure before active cutover leaves maintenance in place. A failure after the active deployment reports that stage explicitly; it does not silently restore old code or data. Use the retained **schema-aware read-only recovery version** to read the current normalized tables, including subsequent registrations, revocations, accepted/deleted contacts and ACKs. Recovery rejects writes and streaming and skips scheduled cleanup and public rate writes. It is a service recovery option with read-only availability, not a full business rollback. Never deploy a pre-conversion Worker or restore a frozen database snapshot over newer writes.
+In maintain mode, a failure before active cutover leaves maintenance in place; in completed-only mode the previous version keeps serving. A failure after the active deployment reports that stage explicitly; it does not silently restore old code or data. Use the retained **schema-aware read-only recovery version** to read the current normalized tables, including subsequent registrations, revocations, accepted/deleted contacts and ACKs. Recovery rejects writes and streaming and skips scheduled cleanup and public rate writes. It is a service recovery option with read-only availability, not a full business rollback. Never deploy a pre-conversion Worker or restore a frozen database snapshot over newer writes.
 
 Local tests exercise the ledger check, orchestration and recovery against actual workerd/D1. Remote success requires a successful authorized deployment and its post-deployment checks, including the public MCP probe. The release probe never sends an agent key, access token or OAuth bearer token, makes one bounded public registry read, rejects malformed or oversized responses and does not call private tools. Local tests do not establish deployment, OAuth authorization or independent Agent messaging. Concurrent deployment workflows remain serialized without cancelling an in-progress release.
 
