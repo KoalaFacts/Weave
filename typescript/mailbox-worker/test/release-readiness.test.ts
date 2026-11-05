@@ -21,7 +21,7 @@ test('release initialization tolerates bounded transient 503 without retrying di
     const result=await verifyPublicMcp({fetchImpl:fetcher,delayImpl:async(ms:number)=>{delays.push(ms);}});
     assert.equal(result.directoryRead,true);
     assert.deepEqual(calls,['initialize','initialize','initialize','tools/list','tools/call']);
-    assert.deepEqual(delays,[500,1000]);
+    assert.deepEqual(delays,[1000,2000]);
 });
 test('release initialization never retries forbidden response and reports only status and fixed header flags',async()=>{
     let calls=0;const fetcher=(async()=>{calls++;return new Response('private token text',{status:403,headers:{'Content-Type':'text/html'}});}) as typeof fetch;
@@ -41,7 +41,8 @@ test('release initialization fails after bounded transient retries and exposes n
         assert.doesNotMatch(String(error),/possibly-sensitive-cloudflare-body/);
         return true;
     });
-    assert.equal(calls,3);assert.deepEqual(delays,[500,1000]);
+    // About 30 s in all: long enough for edges to leave the release's maintenance version, then a real failure.
+    assert.equal(calls,9);assert.deepEqual(delays,[1000,2000,3000,4000,5000,5000,5000,5000]);
 });
 test('release still fails immediately for 200 with incorrect no-store, without retry',async()=>{
     let calls=0;const fetcher=(async()=>{calls++;return new Response('{}',{status:200,headers:{...goodHeaders,'Cache-Control':'public'}});}) as typeof fetch;
