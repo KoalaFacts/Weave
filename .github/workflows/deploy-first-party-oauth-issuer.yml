@@ -71,8 +71,8 @@ jobs:
         run: |
           npm run typecheck
           npm run test:portable
-          npm run test:workerd
           npm run build
+          npm run test:workerd
           npm audit --audit-level=high
 
   publish:
