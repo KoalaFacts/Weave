@@ -51,8 +51,13 @@ export async function updateDemoIssuer(env:NodeJS.ProcessEnv=process.env,request
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
     try{
-        if(process.argv.length!==2)throw Error('No command-line arguments accepted.');
-        await updateDemoIssuer();
+        // --preflight only checks the running Worker, so a release can stop before it changes anything else.
+        const args=process.argv.slice(2);
+        if(args.length>1||(args.length===1&&args[0]!=='--preflight'))throw Error('Only --preflight is accepted.');
+        if(args[0]==='--preflight'){
+            await preflightUpdate(process.env);
+            console.log('The running demo OAuth Worker has every binding and secret its code needs.');
+        }else await updateDemoIssuer();
     }catch(error){
         // Only our own fixed, nonsecret error messages are emitted.
         console.error(error instanceof Error?error.message:'OAuth Worker update failed.');

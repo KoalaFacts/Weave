@@ -90,9 +90,9 @@ test('unrelated issue comments cannot replace a pending protected D1 audit durin
 });
 test('the production release updates the authorization Worker code after the mailbox it calls, and only there',()=>{
     const workflow=readFileSync(path,'utf8');
-    assert.equal((workflow.match(/node scripts\/update-demo\.ts/g)||[]).length,1);
+    assert.equal((workflow.match(/node scripts\/update-demo\.ts\n/g)||[]).length,1,'one publication; the preflight only reads');
     const production=workflow.slice(workflow.indexOf('  deploy-production:'));
-    const mailbox=production.indexOf('node scripts/deploy.ts'),auth=production.indexOf('node scripts/update-demo.ts');
+    const mailbox=production.indexOf('node scripts/deploy.ts'),auth=production.indexOf('node scripts/update-demo.ts\n');
     assert.ok(mailbox>0&&auth>mailbox,'the mailbox deploys first');
     assert.doesNotMatch(production.slice(auth),/GITHUB_CLIENT_SECRET|HUMAN_SESSION_KEY|WEAVE_TRIAL_GITHUB_SUBJECTS/,'a code update receives no authentication secrets');
 });

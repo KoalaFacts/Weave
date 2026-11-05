@@ -18,7 +18,9 @@ A release that changes a contract between the two Workers left demo half updated
 
 ## Change
 
-The production job of **Deploy Weave Worker** now deploys the mailbox Worker first, then runs
+The production job of **Deploy Weave Worker** now runs `update-demo.ts --preflight` before it changes anything.
+This is the read-only check in steps 1 and 2 below, so a release whose second half could not follow stops before
+the mailbox changes. The job then deploys the mailbox Worker and runs
 `typescript/auth-worker/scripts/update-demo.ts`. The script:
 
 1. reads the running `weave-auth-demo` settings with one GET;
@@ -57,11 +59,14 @@ The first publication and its secrets remain the protected issuer workflow, unch
 - mailbox-worker:
   - `test/require-ci-success.test.ts` covers both gates. Worker verification accepts only main push runs; OAuth
     verification also accepts a manual main run, but never a PR run.
-  - `test/deploy-entry.test.ts` checks that production updates the authorization Worker after the mailbox and
-    passes it no authentication secrets.
+  - `test/deploy-entry.test.ts` checks that production:
+    - runs the read-only preflight before the mailbox deploy;
+    - updates the authorization Worker after the mailbox;
+    - passes it no authentication secrets.
 
 ## Limits
 
-- The two Workers are published one after the other, not atomically. If the mailbox succeeds and the update
-  fails, the release fails and demo is half updated until the next release.
+- The two Workers are published one after the other, not atomically. The preflight catches a missing binding or
+  secret first. If the code publication itself then fails after the mailbox succeeded, the release fails and demo is
+  half updated until the next release.
 - The `repository` scope still publishes only the mailbox Worker.
