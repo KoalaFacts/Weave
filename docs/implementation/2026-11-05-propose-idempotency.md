@@ -46,8 +46,9 @@ credential reference, operation and content), `action_id` (unique, references `e
 The key row is written in the same atomic batch as the action. Two concurrent proposals with the same key are
 serialized by the mailbox revision guard: the second retries, finds the key and returns the first action.
 
-The schema change is additive (a new table and index), so the release's schema plan creates it without touching
-existing tables. No data migration.
+The schema change is additive (a new table and index) and needs no data migration. It still cannot ship through the
+current release: both deploy jobs run `completed-only`, which refuses any non-empty schema plan. Rolling it out needs
+the owner's approval of this table and a separate protected, opt-in path that applies exactly these two statements.
 
 ## Verification
 
@@ -85,5 +86,5 @@ Mutation checks: each of these fails at least one test:
 - No list endpoint (`GET /v1/external-actions?status=pending`); the key is the reconciliation path.
 - The key identifies a proposal, not an execution. `execute` was already safe to repeat: it never re-sends a
   dispatched action.
-- Envoylet's demo check (propose with a key, drop the response, repeat, see one plan on `/account`) needs the owner's
-  deploy of this change.
+- Not deployable through the current `completed-only` release (see Storage). Envoylet's demo check (propose with a
+  key, drop the response, repeat, see one plan on `/account`) waits for that path and the owner's approval.
