@@ -4,7 +4,7 @@ import type {CreateAgentResult} from "../../mailbox-worker/src/humans.ts";
 import type {RecordGrantResult} from "../../mailbox-worker/src/client-grants.ts";
 import type {OwnerActionResult,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import {validChallenge,validHandle,readConsent} from "./challenge.ts";
-import {allowedGithubSubjects} from "./trial-allowlist.ts";
+import {trialSelectedSubjects} from "./trial-allowlist.ts";
 import {consentClientName,normalisedClientName} from "./client-name.ts";
 import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
@@ -37,7 +37,7 @@ function config(env:Env,requestUrl?:string):Binding{
     target.search||target.hash||target.pathname!=="/mcp"||target.href!==cfg.resource||
     (requestUrl&&new URL(requestUrl).origin!==issuer.origin))throw Error("Invalid AS binding");
   // A malformed sign-in allowlist is a configuration error, never read as open sign-in.
-  if(allowedGithubSubjects(env.WEAVE_TRIAL_GITHUB_SUBJECTS)===undefined)throw Error("Invalid sign-in allowlist");
+  if(trialSelectedSubjects(env.OAUTH_ISSUER,env.WEAVE_TRIAL_GITHUB_SUBJECTS)===undefined)throw Error("Invalid sign-in allowlist");
   // Human sign-in is mandatory: no GitHub client, session key or directory means no service at all.
   if(!/^[A-Za-z0-9._-]{1,128}$/.test(env.GITHUB_CLIENT_ID??"")||!/^[!-~]{1,256}$/.test(env.GITHUB_CLIENT_SECRET??"")||
     !validSigningKey(env.HUMAN_SESSION_KEY)||!env.MAILBOX)throw Error("Invalid human sign-in binding");

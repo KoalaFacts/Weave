@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {renderDemoConfig} from '../scripts/prepare-demo.ts';
+import {publicTrialIssuer,trialSelectedSubjects} from '../src/trial-allowlist.ts';
 
 const env = {
     CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
@@ -66,7 +67,16 @@ test('refuses wrong account/resource/issuer, missing approved KV namespace or Gi
     for (const change of mutations)
         assert.throws(() => renderDemoConfig({...env,...change}),
             /approved|existing|identifier|issuer|resource|namespace|allowlist/i, JSON.stringify(change));
-    // The allowlist is optional: unset, sign-in is open; one listed account is enough.
+    // A production issuer without an owner-selected cohort must fail closed before any cloud operation.
     for (const allowlist of [undefined, '', '8101'])
-        assert.equal(renderDemoConfig({...env, WEAVE_TRIAL_GITHUB_SUBJECTS: allowlist}).name, 'weave-auth-demo', String(allowlist));
+        assert.throws(() => renderDemoConfig({...env, WEAVE_TRIAL_GITHUB_SUBJECTS: allowlist}),
+            /allowlist|selected|numeric/i, 'a missing or single-subject trial list cannot enable public sign-in: '+String(allowlist));
+});
+
+test('the exact public demo issuer with or without trailing slash requires two selected subjects', () => {
+    for (const issuer of [publicTrialIssuer,publicTrialIssuer+'/']) {
+        assert.equal(trialSelectedSubjects(issuer,undefined),undefined,issuer+' cannot open on missing secret');
+        assert.equal(trialSelectedSubjects(issuer,'8101'),undefined,issuer+' cannot open on one selected identity');
+        assert.equal(trialSelectedSubjects(issuer,'8101,8102')?.size,2,'both invited subjects can sign in');
+    }
 });

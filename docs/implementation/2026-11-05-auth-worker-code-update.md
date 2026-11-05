@@ -30,8 +30,7 @@ the mailbox changes. The job then deploys the mailbox Worker and runs
    - the KV namespace;
    - the `ConsentNonce` Durable Object;
    - the `MAILBOX` → `demo#HumanDirectory` service;
-   - the GitHub client secret and the human-session key, checked by metadata only. The optional sign-in allowlist
-     is kept if it is set.
+   - the GitHub client secret, human-session key, and required selected trial cohort, checked by metadata only.
 3. rebuilds the configuration from those bindings, using the same `demoManifest` the first publication uses:
    - it carries the two registration budgets (`REGISTRATION_LIMITER`, `REGISTRATION_GLOBAL_LIMITER`) over exactly,
      because dropping either would close dynamic client registration;
@@ -76,16 +75,17 @@ The first publication and its secrets remain the protected issuer workflow, unch
   half updated until the next release.
 - The `repository` scope still publishes only the mailbox Worker.
 
-## Follow-up: open sign-in and named refusals
+## Follow-up: named refusals and public enrollment safeguard
 
-The first production run stopped at the preflight. The message gave no names, and the likely cause was that the
-running Worker predates the then-mandatory trial allowlist. Two changes followed:
+The first protected production run stopped at the read-only preflight. The failure initially did
+not name the missing binding; the update now lists only missing or mismatched binding and secret
+**names**, never their values. A missing authorization-Worker secret therefore has an actionable
+nonsecret diagnosis.
 
-- **Named refusals.** A refusal, before or after publication, now lists the mismatched binding or secret names.
-  Values are never printed.
-- **Optional allowlist.** The owner decided the demo is open to anyone for testing, so the allowlist is now optional:
-  - unset: any GitHub account signs in;
-  - set: only the listed 1–10 accounts sign in;
-  - malformed: still 503.
-
-  The preflight and the readback no longer require it.
+PR #356 temporarily made the trial allowlist optional. This conflicted with #236's explicit rule
+against an Everyone/default-open trial without a selected cohort. The public issuer is restored to
+**fail closed**: its sign-in flow and release preparation require 2–10 distinct, explicitly selected
+numeric GitHub IDs. The code-only update requires the allowlist secret metadata in addition to the
+GitHub client and session secrets, and aborts in its read-only preflight when missing. Tests use
+synthetic subjects only. This change does not install or rotate a real secret, deploy a Worker,
+alter an account, change D1 or revoke existing cookies/grants.
