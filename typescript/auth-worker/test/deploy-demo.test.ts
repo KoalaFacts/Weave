@@ -95,3 +95,52 @@ test('post-deploy verification requires exact issuer, consent DO, mailbox owner 
     }
     assert.throws(()=>validateIssuerReadback(binding.map(x=>x.name==='MAILBOX'?{...x,service:'unrelated'}:x),env),/mismatch/);
 });
+
+
+test('already-installed approved AUTH_SERVER may coexist with issuer preflight without a demo write',async()=>{
+    const database={name:'db',type:'d1',database_id:'01234567-89ab-cdef-0123-456789abcdef'};
+    const approved=[
+        database,
+        {name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',environment:'production'},
+        {name:'OAUTH_ISSUER',type:'plain_text',text:env.OAUTH_ISSUER},
+        {name:'OAUTH_RESOURCE',type:'plain_text',text:env.OAUTH_RESOURCE}
+    ];
+    const scenarios: {name:string;bindings:typeof approved;accepted:boolean}[]=[
+        {name:'exact already-bound issuer',bindings:approved,accepted:true},
+        {name:'foreign service',bindings:approved.map(b=>b.name==='AUTH_SERVER'?{...b,service:'foreign-auth'}:b),accepted:false},
+        {name:'unapproved named environment',bindings:approved.map(b=>b.name==='AUTH_SERVER'?{...b,environment:'staging'}:b),accepted:false},
+        {name:'unexpected RPC entrypoint',bindings:approved.map(b=>b.name==='AUTH_SERVER'?{...b,entrypoint:'Admin'}:b),accepted:false},
+        {name:'wrong issuer',bindings:approved.map(b=>b.name==='OAUTH_ISSUER'?{...b,text:'https://foreign.example'}:b),accepted:false},
+        {name:'wrong resource',bindings:approved.map(b=>b.name==='OAUTH_RESOURCE'?{...b,text:'https://foreign.example/mcp'}:b),accepted:false},
+        {name:'missing issuer',bindings:approved.filter(b=>b.name!=='OAUTH_ISSUER'),accepted:false},
+        {name:'duplicate binding',bindings:[...approved,approved[1]],accepted:false},
+        {name:'mixed legacy introspection',bindings:[...approved,{name:'OAUTH_INTROSPECTION_URL',type:'plain_text',text:'https://foreign.example/introspect'}],accepted:false}
+    ];
+    for(const scenario of scenarios){
+        const targets:string[]=[];
+        const request=async(input:RequestInfo|URL,init?:RequestInit)=>{
+            const url=String(input);
+            targets.push(url);
+            assert.equal(init?.method,'GET',scenario.name);
+            assert.equal(init?.redirect,'error',scenario.name);
+            assert.equal((init?.headers as Record<string,string>).Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
+            if(url.endsWith('/workers/subdomain'))
+                return Response.json({success:true,result:{subdomain:'weave-389'}});
+            if(url.endsWith('/workers/scripts/demo/settings'))
+                return Response.json({success:true,result:{bindings:scenario.bindings}});
+            if(url.endsWith('/storage/kv/namespaces/'+env.WEAVE_AUTH_KV_NAMESPACE_ID))
+                return Response.json({success:true,result:{id:env.WEAVE_AUTH_KV_NAMESPACE_ID}});
+            if(url.endsWith('/workers/scripts/weave-auth-demo/settings'))
+                return new Response('{}',{status:404});
+            throw Error('unexpected GET '+url);
+        };
+        if(scenario.accepted){
+            const manifest=await preflightIssuerDeployment(env,request as typeof fetch);
+            assert.equal(manifest.name,'weave-auth-demo');
+            assert.equal(targets.length,4);
+        }else{
+            await assert.rejects(()=>preflightIssuerDeployment(env,request as typeof fetch),undefined,scenario.name);
+        }
+        assert.ok(targets.length>=2,scenario.name);
+    }
+});
