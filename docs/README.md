@@ -1,4 +1,4 @@
-# Weave Documentation Index
+# Weave documentation index
 
 > Entry point to the documentation: where current rules live, and which older guides are historical.
 
@@ -12,6 +12,10 @@
 | What each change delivered and how it was verified | [Implementation records](implementation/README.md) |
 | The mailbox and publishing Workers (demo) | [typescript/mailbox-worker](../typescript/mailbox-worker/README.md), [typescript/auth-worker](../typescript/auth-worker/README.md) |
 | Repository rules with examples | [best-practices.md](best-practices.md) |
+| Use Codex with local documents through the published CLI | [local-codex.md](local-codex.md) |
+| Write a workspace manifest | [manifest-reference.md](manifest-reference.md) |
+| The runtime-neutral contract both implementations target (target design) | [runtime-contract.md](runtime-contract.md) |
+| Product positioning and current validation limits (Chinese) | [product-positioning.md](product-positioning.md) |
 | Releases, coverage and browser tests | [releasing.md](releasing.md), [coverage.md](coverage.md), [browser-testing.md](browser-testing.md) |
 
 ## Current source layout

@@ -258,6 +258,30 @@ jobs:
         working-directory: typescript/agent-key
         run: npm run build && node dist/cli.js init "$RUNNER_TEMP/agent-key-smoke.jwk"
 
+  docs-check:
+    name: Documentation links and paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: scripts/docs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install locked checker dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Test the checker
+        run: npm test
+      - name: Check links, anchors, the docs index and named paths
+        run: npm run check
+
   python-agent-key-helper:
     name: Python agent key helper
     runs-on: ubuntu-latest

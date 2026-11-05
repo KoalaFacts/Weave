@@ -3,7 +3,7 @@
 > **Historical guide.** Written for the earlier layer-first layout; source paths here may no longer exist. Current layout and rules: [AGENTS.md](../AGENTS.md#ownership-and-composition); delivered behaviour: [implementation records](implementation/README.md).
 >
 > **Source**: `csharp/src/Assistants/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Tools](tools.md), [Security](security.md) | **Depended on by**: [Runtime](runtime.md), [UX](ux.md)
-> **See also**: [index](index.md)
+> **See also**: [index](README.md)
 
 The Assistants subsystem implements the AI agent framework — agent actors, supervisor, heartbeat scheduling, chat pipeline, task management, and proof-of-work verification.
 

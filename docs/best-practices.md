@@ -12,7 +12,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **CQRS handlers are `Scoped`; dispatchers are `Scoped`.** The source-generated `AddGeneratedCqrsHandlers()` registers dispatchers and handlers as Scoped so the lifetime matches the caller's (HTTP request scope in endpoints, actor scope in Orleans). Don't override to `Singleton` — that's the bug we just retired.
 
-**Actors receive dependencies through constructor injection only.** Do not pull services inline from `provider runtime context` or a static accessor — it breaks the "tests may instantiate actors directly" rule in `CLAUDE.md`. Follow `csharp/extensions/Weave.AgentRuntime/Actors/` for the shape.
+**Actors receive dependencies through constructor injection only.** Do not pull services inline from `provider runtime context` or a static accessor — it breaks the "tests may instantiate actors directly" rule in `CLAUDE.md`. Follow `csharp/extensions/Weave.AgentRuntime/Agents/` for the shape.
 
 **Every service crossing a module boundary is programmed against an interface.** Concrete classes wrap third-party libraries; consumers never import them directly. Applies to `IToolConnector`, `ISecretProvider`, `IPublisher`. Tests substitute with `NSubstitute` without touching the real stack.
 
@@ -24,7 +24,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### Error handling
 
-**Never call `EnsureSuccessStatusCode()` on an `HttpResponseMessage` whose body may contain `ProblemDetails`.** It throws with only the status code, discarding the server's reason. Use the `EnsureSuccessOrThrowAsync` + `FormatHttpError` helper in `csharp/hosts/Weave.Cli/Commands/WorkspaceApiClient.cs` so the user sees the actual 409 conflict reason, not "409 Conflict" alone.
+**Never call `EnsureSuccessStatusCode()` on an `HttpResponseMessage` whose body may contain `ProblemDetails`.** It throws with only the status code, discarding the server's reason. Read the body before throwing, as the `EnsureSuccessOrThrowAsync` helper in `csharp/hosts/Weave.Dashboard/Api/WeaveApiClient.cs` does, so the user sees the actual 409 conflict reason, not "409 Conflict" alone.
 
 **HTTP clients read ProblemDetails on failure and surface the `title`, `detail`, and `errors` fields.** The Silo emits RFC 7807 problem responses from `csharp/hosts/Weave.Host/Api/ResultExtensions.cs`; the CLI must parse them. If you add a new API client, copy the helper shape — do not reimplement.
 
@@ -40,9 +40,9 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Background tasks observe their own faults.** `_ = Task.Run(async () => { ... })` with no error handler is forbidden — a detached exception is unlogged and never surfaces. Use `await`, `task.ContinueWith(t => log, TaskContinuationOptions.OnlyOnFaulted)`, or a named helper `FireAndForgetAsync(task, logger, operationName)`.
 
-**Fire-and-forget actor calls are forbidden outright.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. Always `await`, or capture the task and observe completion elsewhere. Reentrancy concerns (an actor calling back into itself) are not a license to fire-and-forget — use `[AlwaysInterleave]` on the inner method, restructure so the callback target is a different grain, or hand the work to a hosted background service. The current offender is `csharp/extensions/Weave.AgentRuntime/Actors/AgentActor.cs` (search `_ = Task.Run`); fix it, do not codify it.
+**Fire-and-forget actor calls are forbidden outright.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. Always `await`, or capture the task and observe completion elsewhere. Reentrancy concerns (an actor calling back into itself) are not a license to fire-and-forget — use `[AlwaysInterleave]` on the inner method, restructure so the callback target is a different grain, or hand the work to a hosted background service.
 
-**Catch the simplest form that expresses intent.** `catch (IOException)` beats `catch (Exception ex) when (ex is IOException)` for a single type — same behavior, less ceremony. The `Exception ex when (...)` form is reserved for genuine multi-type filters where listing each `catch` block would duplicate the body. Today's worst offender: `csharp/hosts/Weave.Cli/Tui/ChatComposer.cs` lines 122/125/131 use the verbose form for single-type swallows; same file lines 147/153 already use the simpler form for the same intent.
+**Catch the simplest form that expresses intent.** `catch (IOException)` beats `catch (Exception ex) when (ex is IOException)` for a single type — same behavior, less ceremony. The `Exception ex when (...)` form is reserved for genuine multi-type filters where listing each `catch` block would duplicate the body.
 
 **Drop the bind variable when you don't use it.** `catch (IOException) { /* platform quirk */ }` is the form when there's nothing to log — naming `ex` and then ignoring it (`catch (IOException ex) { /* ignore */ }`) is dead code that compilers used to warn about. If you have a reason to keep the binding (future logging, debugger inspection), add a one-line `LogDebug` and lose the `/* ignore */`. Don't keep the binding "just in case."
 
@@ -72,7 +72,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### AOT, trimming, and platform guards
 
-**Do not read `Console.CursorVisible`.** The getter is Windows-only and CA1416 fails the build on Linux/macOS. Only set it. See the console handling in `csharp/hosts/Weave.Cli/Tui/TuiApp.cs`.
+**Do not read `Console.CursorVisible`.** The getter is Windows-only and CA1416 fails the build on Linux/macOS. Only set it. See the console handling in `csharp/extensions/Weave.Cli.Tui/Tui/ChatComposer.cs`.
 
 **Guard any P/Invoke or OS-specific API with `OperatingSystem.IsWindows()` / `IsLinux()` / `IsMacOS()`.** CA1416 is a warning-as-error in this repo. Pair platform-specific code with an `[SupportedOSPlatform]` attribute when appropriate.
 
@@ -197,7 +197,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### File and class size
 
-**Production files: one public/internal type per file, classes ≤ 200 lines.** The 200-line threshold is a design check trigger, not a hard cap — but every file above it should have a paragraph in its PR description explaining why it didn't split. Today's only production violator is `csharp/hosts/Weave.Cli/Tui/TuiSlashCommandDispatcher.cs` (422 lines) — slated for extraction into per-command handlers.
+**Production files: one public/internal type per file, classes ≤ 200 lines.** The 200-line threshold is a design check trigger, not a hard cap — but every file above it should have a paragraph in its PR description explaining why it didn't split.
 
 **Tightly-coupled type pairs may share a file when neither is meaningful alone.** The codified pattern is the CQRS shape: a `*Query` record plus its `*Handler` class in the same file (`GetRecentCapabilityAuditQuery.cs`). The handler is private to the query in practice, even though both are `public`. Two unrelated types that just happen to live in the same namespace do not qualify.
 
