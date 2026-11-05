@@ -107,3 +107,28 @@ Newest first within each area. Every record in this directory is listed once.
 - 2026-09-25: [Dapr tool plugin path](2026-09-25-dapr-tool-plugin-path.md)
 - 2026-09-22: [Single-Host retained-storage recovery](2026-09-22-single-host-storage-recovery.md)
 - 2026-09-22: [Single-Host lifetime and process recovery](2026-09-22-single-host-lifetime-recovery.md)
+
+## Weave scheduled-task ledger
+
+The scheduled Weave task (publishing router and governed actions, `typescript/mailbox-worker` and
+`typescript/auth-worker`) keeps its shared plan, requests and current state on
+[issue #365](https://github.com/KoalaFacts/Weave/issues/365), the channel with Envoylet. This section holds its run
+log. Records above stay the evidence for what each change delivered.
+
+Last docs housekeeping: 2026-11-06, `weave/docs-housekeeping-2026-11-06` (adds the `check-docs` checker).
+
+### Items
+
+| Item | Status |
+| --- | --- |
+| `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | blocked (#366; owner decision `schema-366` on #365: approve or reject the additive `external_action_keys` table. No further schema work until then) |
+| Status-change notification for apps (shared plan step 4) | todo |
+| Native X adapter, then native LinkedIn (shared plan step 4) | todo |
+
+### Run log
+
+- 2026-11-06 04:17 (Sydney): merged #367 (records index, historical banners). Housekeeping: added
+  `scripts/docs/check-docs.ts` with tests and a CI job; renamed the docs index to `docs/README.md`; fixed stale paths
+  and claims in `docs/best-practices.md`.
+- 2026-11-05: merged #363 and #364 (`approvalUrl` on pending actions). Opened #366 (`propose-idempotency`), which now
+  waits on the owner's schema decision, and #367 (docs tidy).

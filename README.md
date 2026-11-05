@@ -148,6 +148,7 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 | Build or install a tool plugin | [Plugin examples](examples/plugins/echo/README.md), [MCP installation guide](docs/implementation/2026-09-26-mcp-echo-installation.md) |
 | Inspect command capacity or unconfirmed process cleanup | [Process runtime diagnostics](docs/implementation/2026-10-03-process-runtime-observation.md) |
 | Review product direction and contribution rules | [Architecture](ARCHITECTURE.md), [contributor instructions](AGENTS.md) |
+| Find any other document | [Documentation index](docs/README.md) |
 | Find code in the repository | [`csharp/`](csharp/) holds the C#/.NET implementation, [`typescript/`](typescript/) the Workers and npm packages, and [`protocol/`](protocol/) the language-neutral [runtime contract](docs/runtime-contract.md) both follow |
 
 Weave is licensed under the [Apache License 2.0](LICENSE). Commercial support and commercial licensing are available from the maintainers; open a [GitHub issue](https://github.com/KoalaFacts/Weave/issues) to get in touch.

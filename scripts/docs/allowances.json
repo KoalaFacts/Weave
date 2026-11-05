@@ -1,0 +1,44 @@
+{
+  "allowances": [
+    {
+      "file": "docs/implementation/2026-10-12-demo-security.md",
+      "target": "../../examples/mailbox-demo-mcp/README.md",
+      "reason": "Historical record: links the demo example as it existed when written; the example was later removed and records are not rewritten."
+    },
+    {
+      "file": "docs/implementation/2026-10-12-worker-d1-demo.md",
+      "target": "../../hosts/Weave.Mailbox.Worker/README.md",
+      "reason": "Historical record: links the Worker's path before it moved to typescript/mailbox-worker; records are not rewritten."
+    },
+    {
+      "file": "docs/implementation/2026-10-22-model-driven-pair.md",
+      "target": "../../examples/mailbox-demo-pair/README.md",
+      "reason": "Historical record: links the pair example as it existed when written; the example was later removed and records are not rewritten."
+    },
+    {
+      "file": "AGENTS.md",
+      "target": "csharp/src/Weave/",
+      "reason": "Named only to forbid recreating it."
+    },
+    {
+      "file": "AGENTS.md",
+      "target": "csharp/src/Features/",
+      "reason": "Named only to forbid recreating it."
+    },
+    {
+      "file": "docs/README.md",
+      "target": "csharp/src/Foundation/",
+      "reason": "Names the replaced layer-first layout to explain why the subsystem guides are historical."
+    },
+    {
+      "file": "docs/README.md",
+      "target": "csharp/src/Tools/",
+      "reason": "Names the replaced layer-first layout to explain why the subsystem guides are historical."
+    },
+    {
+      "file": "examples/plugins/echo/README.md",
+      "target": "examples/plugins/echo/rust/target/debug/weave-echo-plugin-example",
+      "reason": "Build output that exists only after the documented cargo build."
+    }
+  ]
+}
