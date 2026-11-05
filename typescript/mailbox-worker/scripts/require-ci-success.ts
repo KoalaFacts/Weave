@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 /** The workflows a release can require. OAuth verification skips commits outside its paths, so a manual run on main counts. */
 export const verifications = {
+    'ci.yml': {label: 'Complete CI and coverage', events: ['push'], missing: 'run full CI on main before releasing'},
     'worker-browser.yml': {label: 'Worker verification', events: ['push'], missing: 'deploy a commit whose main CI has run'},
     'oauth-auth-worker.yml': {label: 'OAuth verification', events: ['push', 'workflow_dispatch'],
         missing: 'it skips commits outside its paths, so run it manually on main first'}
