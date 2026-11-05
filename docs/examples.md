@@ -1,5 +1,7 @@
 # Code Examples
 
+> **Historical guide.** Written for the earlier layer-first layout; source paths here may no longer exist. Current layout and rules: [AGENTS.md](../AGENTS.md#ownership-and-composition); delivered behaviour: [implementation records](implementation/README.md).
+>
 > Practical examples drawn from the actual Weave codebase. Each example shows real patterns you can follow.
 > **See also**: [index](index.md)
 

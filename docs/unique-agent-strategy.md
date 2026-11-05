@@ -101,8 +101,8 @@ The grant strings in `CapabilityToken.Grants` are the runtime's user interface f
 | `tool:<name>` | Connector invoke and connect | Today |
 | `tool:*` | Any tool | Today |
 | `secret:<path>` | Secret proxy resolve | Today (see [security.md:155-171](security.md)) |
-| `channel:send:<channel>` / `channel:receive:<channel>` | Channel routing (inbound + reply) | Today (enforced at [ChannelGatewayActor.cs](../csharp/extensions/Weave.AgentRuntime/Actors/ChannelGatewayActor.cs)) |
-| `skill:write` / `skill:read` | Skill-memory persistence | Today (enforced at [SkillMemoryActor.cs](../csharp/extensions/Weave.AgentRuntime/Actors/SkillMemoryActor.cs)) |
+| `channel:send:<channel>` / `channel:receive:<channel>` | Channel routing (inbound + reply) | Today (enforced at [ChannelGatewayActor.cs](../csharp/extensions/Weave.AgentRuntime/Channels/ChannelGatewayActor.cs)) |
+| `skill:write` / `skill:read` | Skill-memory persistence | Today (enforced at [SkillMemoryActor.cs](../csharp/extensions/Weave.AgentRuntime/Skills/SkillMemoryActor.cs)) |
 | `user:read:<userId>` / `user:write:<userId>` | User-profile access | Today |
 | `plugin:invoke:<plugin>` | Hot-swap plugin connect/disconnect (Dapr, Vault, webhook) | Today (enforced at [PluginRegistry.cs](../csharp/hosts/Weave.Host/Plugins/PluginRegistry.cs)) |
 | `marketplace:install` | Installing a marketplace item | Direction |

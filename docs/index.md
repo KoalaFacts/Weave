@@ -1,57 +1,46 @@
 # Weave Documentation Index
 
-> AI-optimized documentation for the Weave AI assistant orchestration platform.
+> Entry point to the documentation: where current rules live, and which older guides are historical.
 
-## System Overview
+## Where to start
 
-Weave is a distributed AI agent orchestration platform built on .NET, Microsoft Orleans (actor model), and .NET Aspire. It manages workspaces containing AI agents that use tools, with security, lifecycle, and deployment capabilities.
+| You want | Read |
+|----------|------|
+| What Weave is and how to try it | [README.md](../README.md) |
+| Shared development rules, current project layout and verification | [AGENTS.md](../AGENTS.md) |
+| Target semantics (agent network, Governed Tools) | [ARCHITECTURE.md](../ARCHITECTURE.md) |
+| What each change delivered and how it was verified | [Implementation records](implementation/README.md) |
+| The mailbox and publishing Workers (demo) | [typescript/mailbox-worker](../typescript/mailbox-worker/README.md), [typescript/auth-worker](../typescript/auth-worker/README.md) |
+| Repository rules with examples | [best-practices.md](best-practices.md) |
+| Releases, coverage and browser tests | [releasing.md](releasing.md), [coverage.md](coverage.md), [browser-testing.md](browser-testing.md) |
 
-## Dependency Graph
+## Current source layout
 
-```
-Weave.Shared (Foundation)
-    ↓
-Weave.SourceGen (Foundation, compile-time)
-    ↓
-Weave.Workspaces
-    ↓
-┌───────────────┬───────────────┬───────────────┐
-│ Weave.Agents  │ Weave.Tools   │ Weave.Security│
-│ (Assistants)  │               │               │
-└───────┬───────┴───────┬───────┴───────┬───────┘
-        │               │               │
-        └───────┬───────┘               │
-                ↓                       │
-        Weave.Deploy                    │
-                ↓                       │
-┌───────────────────────────────────────┘
-↓
-Weave.Silo (Runtime — composes everything)
-    ↓
-Weave.Actions (UX — frontend-agnostic action layer)
-    ↓
-┌───────────────┬───────────────┐
-│ Weave.Cli     │ Weave.Dashboard│
-│ (UX)          │ (UX)           │
-└───────────────┴───────────────┘
-    ↓
-Weave.AppHost (Aspire orchestrator)
-```
+The C#/.NET code is flat by feature: product features are direct children of `csharp/src/` (for example `Agents`,
+`Authority`, `Contacts`, `Invocations`, `Mailboxes`, `Plugins`, `Resources`, `Workspaces`), hosts compose them in
+`csharp/hosts/`, and opt-in provider and runtime dependencies live in `csharp/extensions/`. The project table and the
+rules for adding code are in [AGENTS.md](../AGENTS.md#ownership-and-composition). TypeScript packages, including the demo
+Workers, are under `typescript/`.
 
-## Subsystem Documentation
+## Historical subsystem guides
 
-| Document | Subsystem | Source Path | Key Concepts |
-|----------|-----------|-------------|--------------|
-| [foundation.md](foundation.md) | Shared + SourceGen | `csharp/src/Foundation/` | Branded IDs, CQRS dispatch, domain events, lifecycle hooks, SecretValue, source generators |
-| [workspaces.md](workspaces.md) | Workspaces | `csharp/src/Workspaces/` | Workspace manifest (JSONC), manifest parser/validator, runtime abstraction (InProcess/Podman), workspace actor, plugin registry |
-| [assistants.md](assistants.md) | Agents | `csharp/src/Assistants/` | Agent actor, supervisor, heartbeat scheduling, chat pipeline (rate limiting, cost tracking), task management, proof-of-work verification |
-| [tools.md](tools.md) | Tools | `csharp/src/Tools/` | Tool connectors (MCP, CLI, OpenAPI, Dapr, DirectHTTP), tool actor with security scanning, tool discovery service |
-| [security.md](security.md) | Security | `csharp/src/Security/` | Capability tokens (HMAC-SHA256), leak scanner (15 patterns + entropy), secret proxy, Vault/InMemory secret providers |
-| [deployment.md](deployment.md) | Deployment | `csharp/src/Deployment/` | Publishers: Docker Compose, Kubernetes, Nomad, Fly.io, GitHub Actions |
-| [runtime.md](runtime.md) | Runtime | `csharp/src/Runtime/` | Orleans Silo host, Aspire AppHost, plugin wiring (Dapr/Vault), REST API, CQRS handler registration |
-| [ux.md](ux.md) | CLI + Dashboard | `csharp/src/UX/` | CLI commands (System.CommandLine + Spectre.Console), Blazor dashboard (FluentUI), workspace presets |
-| [handoff.md](handoff.md) | Action Layer (Shape C) | `csharp/extensions/Weave.Actions/` | Frontend-agnostic actions, `IActionPrompter`/`IActionReporter`, `ActionResult<T>`, typed `HttpClient` per action via `AddSiloActions(...)` |
-| [examples.md](examples.md) | Code Examples | (cross-cutting) | Manifest authoring, CLI usage, actors, CQRS handlers, tokens, events, lifecycle hooks, testing patterns |
+These guides were written for the earlier layer-first layout (`Weave.Shared`, `csharp/src/Foundation/`,
+`csharp/src/Tools/` and similar), which the flat layout replaced, and many of their source paths no longer exist. They
+still explain concepts and security rules that apply; for current behaviour use the code, AGENTS.md and the
+implementation records. The sections after the strategy table in this file date from the same period.
+
+| Document | Subsystem | Key concepts |
+|----------|-----------|--------------|
+| [foundation.md](foundation.md) | Shared + SourceGen | Branded IDs, CQRS dispatch, domain events, lifecycle hooks, SecretValue, source generators |
+| [workspaces.md](workspaces.md) | Workspaces | Workspace manifest (JSONC), parser/validator, runtime abstraction, workspace actor, plugin registry |
+| [assistants.md](assistants.md) | Agents | Agent actor, supervisor, heartbeat, chat pipeline, task management, proof-of-work verification |
+| [tools.md](tools.md) | Tools | Tool connectors (MCP, CLI, OpenAPI, Dapr, DirectHTTP), tool actor with security scanning |
+| [security.md](security.md) | Security | Capability tokens, leak scanner, secret proxy, secret providers |
+| [deployment.md](deployment.md) | Deployment | Publishers: Docker Compose, Kubernetes, Nomad, Fly.io, GitHub Actions |
+| [runtime.md](runtime.md) | Runtime | Orleans silo host, Aspire AppHost, plugin wiring, REST API |
+| [ux.md](ux.md) | CLI + Dashboard | CLI commands, Blazor dashboard, workspace presets |
+| [handoff.md](handoff.md) | Action layer and session log | Frontend-agnostic actions, capability vocabulary, audit trail |
+| [examples.md](examples.md) | Code examples | Manifest authoring, CLI usage, actors, CQRS handlers, tokens, events, testing patterns |
 
 ## Strategy & Direction
 
@@ -60,7 +49,7 @@ Weave.AppHost (Aspire orchestrator)
 | [unique-agent-strategy.md](unique-agent-strategy.md) | Capability-first positioning, what we compete on, what we do not, and roadmap implications |
 | [competitive-analysis.md](competitive-analysis.md) | Market context: Hermes Agent, OpenClaw, Evlover. Recommendations sections superseded by `unique-agent-strategy.md` |
 
-## Cross-Subsystem Interactions
+## Cross-Subsystem Interactions (historical)
 
 ### Workspace Startup Flow
 `CLI/Dashboard` → `POST /api/workspaces` → `Silo (CQRS)` → `WorkspaceActor.StartAsync()` → `Runtime.ProvisionAsync()` → `ToolRegistryActor.ConnectToolsAsync()` → `AgentSupervisorActor.ActivateAllAsync()` → `HeartbeatActor.StartAsync()`
