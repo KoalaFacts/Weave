@@ -6,6 +6,8 @@ import { rejectKeyRequest } from './key-requests.ts';
 import { revokeGrantIn } from './client-grants.ts';
 import { confirmExternalAction, pendingForOwner, rejectExternalAction, type OwnerExternalAction } from './external-actions.ts';
 import { ownedCredentials, revokeExternalCredential, type OwnerCredential } from './external-credentials.ts';
+import { publishingAdapter, publishingAdapters } from './external-providers.ts';
+import { ownerConnector, type OwnerConnector } from './publishing.ts';
 import { issueRecoveryCode } from './recovery-codes.ts';
 import { apiTime, nowUtc } from './time.ts';
 
@@ -24,8 +26,12 @@ export type OwnerAddress = {addressId: string; label: string | null; isPublic: b
 /** `revokedGrantIds` are grants revoked in the last 30 days, for the authorization server's token clean-up retry; never rendered. */
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[];
     grants: OwnerGrant[]; addresses: OwnerAddress[]; credentials: OwnerCredential[]; revokedGrantIds: string[]};
-/** `externalActions` are the pending governed actions of the human's agents, each confirmed by its `planDigest`. */
-export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]; externalActions: OwnerExternalAction[]};
+/**
+ * `externalActions` are the pending governed actions of the human's agents, each confirmed by its `planDigest`.
+ * `connectors` are the publishing platforms an owner can connect an agent to, with the fields each asks for.
+ */
+export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]; externalActions: OwnerExternalAction[];
+    connectors: OwnerConnector[]};
 
 export type OwnerAction = {humanId: string; authAt: number} & (
     | {kind: 'confirm-binding'; requestId: string; keysDigest: string}
@@ -60,7 +66,7 @@ const placeholders = (values: unknown[]) => values.map(() => '?').join(',');
 /** Pending requests and the keys of the human's agents. An unknown human sees nothing; a frozen one sees only that. */
 export async function ownerOverview(env: Env, humanId: string, clock: () => bigint = nowUtc): Promise<OwnerOverview> {
     requireReadable(env);
-    const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: [], externalActions: []};
+    const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: [], externalActions: [], connectors: []};
     if (typeof humanId !== 'string' || !uuidPattern.test(humanId)) return empty;
     return atomic(env.db, async tx => {
         const nowTicks = clock(), now = nowTicks.toString();
@@ -107,6 +113,7 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
             frozen: false as const,
             bindingRequests,
             externalActions,
+            connectors: publishingAdapters.filter(adapter => publishingAdapter(env, adapter.name)).map(ownerConnector),
             agents: owned.map(agent => ({agentId: agent.account_id, displayName: agent.display_name,
                 keys: keys.filter(key => key.account_id === agent.account_id).map(ownerKey),
                 keyRequests: requests.filter(row => row.account_id === agent.account_id).map(row => ({requestId: row.request_id, kid: row.kid, label: row.label,

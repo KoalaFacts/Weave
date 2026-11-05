@@ -4,8 +4,9 @@
  */
 import type { Env, Transaction } from './database.ts';
 import { youtubeUpload } from './youtube-provider.ts';
-import { postizPublish } from './postiz-provider.ts';
-import { blueskyPublish } from './bluesky-provider.ts';
+import { postiz } from './postiz-provider.ts';
+import { bluesky } from './bluesky-provider.ts';
+import { publishingProvider, type PublishingAdapter } from './publishing.ts';
 
 /** `secret` is the opened credential secret, null for a provider that needs none. It never leaves the provider. */
 export type ProviderCall = {accountId: string; operation: string; content: string; targetAccount: string; actionId: string; secret: string | null};
@@ -63,7 +64,14 @@ const testHttp: ExternalProvider = {
 export function provider(env: Env, name: string): ExternalProvider | null {
     if (name === testHttp.name && env.EXTERNAL_ACTION_TEST_ENDPOINT) return testHttp;
     if (name === youtubeUpload.name && youtubeUpload.available(env)) return youtubeUpload;
-    if (name === postizPublish.name && postizPublish.available(env)) return postizPublish;
-    if (name === blueskyPublish.name && env.EXTERNAL_CREDENTIAL_KEY) return blueskyPublish;
+    const adapter = publishingAdapter(env, name);
+    if (adapter) return publishingProvider(adapter);
     return null;
+}
+
+/** Every publishing platform the router can reach. Adding one is adding its adapter here. */
+export const publishingAdapters: readonly PublishingAdapter[] = [postiz, bluesky];
+/** The adapter for a provider name, when this deployment can seal its secrets. */
+export function publishingAdapter(env: Env, name: string): PublishingAdapter | null {
+    return env.EXTERNAL_CREDENTIAL_KEY ? publishingAdapters.find(adapter => adapter.name === name) ?? null : null;
 }

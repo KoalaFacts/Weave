@@ -21,7 +21,7 @@ import { recoverAgentKey } from './recovery-codes.ts';
 import { executeExternalAction, getExternalAction, keyCaller, ownerActionMedia, proposeExternalAction } from './external-actions.ts';
 import { sweepPublications } from './external-publications.ts';
 import { getMedia, importMedia, receiveSignedUpload, sweepMedia, serveSignedMedia, uploadMedia } from './external-media.ts';
-import { connectBluesky, connectExternalCredential, connectPostiz, listAgentCredentials, type ConnectBlueskyInput, type ConnectBlueskyResult, type ConnectCredentialInput, type ConnectCredentialResult, type ConnectPostizInput, type ConnectPostizResult } from './external-credentials.ts';
+import { connectAccount, connectExternalCredential, listAgentCredentials, type ConnectAccountInput, type ConnectAccountResult, type ConnectCredentialInput, type ConnectCredentialResult } from './external-credentials.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
 import { recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
 import { putCard } from './cards';
@@ -44,8 +44,7 @@ export class HumanDirectory extends WorkerEntrypoint<Env> {
     ownerOverview(humanId: string): Promise<OwnerOverview> { return ownerOverview(scopedEnv(this.env), humanId); }
     ownerAction(input: OwnerAction): Promise<OwnerActionResult> { return ownerAction(scopedEnv(this.env), input); }
     connectCredential(input: ConnectCredentialInput): Promise<ConnectCredentialResult> { return connectExternalCredential(scopedEnv(this.env), input); }
-    connectPostiz(input: ConnectPostizInput): Promise<ConnectPostizResult> { return connectPostiz(scopedEnv(this.env), input); }
-    connectBluesky(input: ConnectBlueskyInput): Promise<ConnectBlueskyResult> { return connectBluesky(scopedEnv(this.env), input); }
+    connectAccount(input: ConnectAccountInput): Promise<ConnectAccountResult> { return connectAccount(scopedEnv(this.env), input); }
     ownerActionMedia(humanId: string, actionId: string, mediaId: string): Promise<{contentType: string; body: ReadableStream} | null> { return ownerActionMedia(scopedEnv(this.env), humanId, actionId, mediaId); }
     recordGrant(input: RecordGrantInput): Promise<RecordGrantResult> { return recordGrant(scopedEnv(this.env), input); }
     revokeGrant(input: RevokeGrantInput): Promise<RevokeGrantResult> { return revokeGrant(scopedEnv(this.env), input); }

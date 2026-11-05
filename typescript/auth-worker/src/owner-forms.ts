@@ -10,12 +10,11 @@ export type OwnerFormAction=
   |{kind:"issue-recovery-code";agentId:string}
   |{kind:"revoke-grant";grantId:string}
   |{kind:"connect-youtube";agentId:string}
-  |{kind:"connect-postiz";agentId:string}
-  |{kind:"connect-bluesky";agentId:string}
+  |{kind:"connect-account";agentId:string;provider:string}
   |{kind:"revoke-credential";agentId:string;credentialRef:string};
 /** Kinds that need a fresh GitHub authentication before they are offered or applied. Revoking a client's grant is protective and does not. */
 export const destructiveKinds:ReadonlySet<OwnerFormAction["kind"]>=
-  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action","connect-youtube","connect-postiz","connect-bluesky"]);
+  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action","connect-youtube","connect-account"]);
 
 const tokenSeconds=600;
 const maxBodyBytes=4096;
@@ -23,7 +22,7 @@ const memberSets:Record<OwnerFormAction["kind"],readonly string[]>={
   "confirm-binding":["requestId","keysDigest"],"reject-binding":["requestId"],"confirm-key":["requestId"],"reject-key":["requestId"],
   "confirm-action":["requestId","planDigest"],"reject-action":["requestId"],
   "revoke-key":["agentId","kid"],"issue-recovery-code":["agentId"],"revoke-grant":["grantId"],
-  "connect-youtube":["agentId"],"connect-postiz":["agentId"],"connect-bluesky":["agentId"],"revoke-credential":["agentId","credentialRef"]};
+  "connect-youtube":["agentId"],"connect-account":["agentId","provider"],"revoke-credential":["agentId","credentialRef"]};
 
 /** A token bound to one human and one exact action; it lives as long as the re-authentication window. */
 export const ownerActionToken=(key:string,humanId:string,action:OwnerFormAction,now:number):Promise<string>=>
@@ -40,30 +39,25 @@ export async function readOwnerAction(key:string,request:Request,session:HumanSe
   return verifiedAction(key,fields[0][1],session,now);
 }
 
+const fieldName=/^[A-Za-z][A-Za-z0-9]{0,31}$/,maxConnectFields=4,maxFieldValue=512;
 /**
- * The Connect Postiz form: its signed connect-postiz token plus the API key the owner typed. The key is only passed on to the
- * mailbox, never stored, logged or echoed by this worker.
+ * A Connect form for any publishing platform: its signed connect-account token, then the fields the owner typed. The values,
+ * secrets among them, are only passed on to the mailbox, which accepts exactly the platform's fields; this worker never
+ * stores, logs or echoes them.
  */
-export async function readPostizConnect(key:string,request:Request,session:HumanSession,now:number):Promise<{agentId:string;apiKey:string}|"expired"|null>{
+export async function readConnectForm(key:string,request:Request,session:HumanSession,now:number):
+    Promise<{agentId:string;provider:string;fields:Record<string,string>}|"expired"|null>{
   const form=await readBoundedForm(request,maxBodyBytes);
-  const fields=form?[...form]:[];
-  if(fields.length!==2||fields[0][0]!=="action"||fields[1][0]!=="apiKey")return null;
-  const action=await verifiedAction(key,fields[0][1],session,now);
+  const entries=form?[...form]:[];
+  if(entries.length<2||entries.length>maxConnectFields+1||entries[0][0]!=="action")return null;
+  const fields:Record<string,string>={};
+  for(const [name,value] of entries.slice(1)){
+    if(!fieldName.test(name)||Object.hasOwn(fields,name)||value.length===0||value.length>maxFieldValue)return null;
+    fields[name]=value;
+  }
+  const action=await verifiedAction(key,entries[0][1],session,now);
   if(action==="expired")return action;
-  return action?.kind==="connect-postiz"&&fields[1][1].length>0?{agentId:action.agentId,apiKey:fields[1][1]}:null;
-}
-
-/**
- * The Connect Bluesky form: its signed connect-bluesky token plus the handle and app password the owner typed. The password
- * is only passed on to the mailbox, never stored, logged or echoed by this worker.
- */
-export async function readBlueskyConnect(key:string,request:Request,session:HumanSession,now:number):Promise<{agentId:string;handle:string;appPassword:string}|"expired"|null>{
-  const form=await readBoundedForm(request,maxBodyBytes);
-  const fields=form?[...form]:[];
-  if(fields.length!==3||fields[0][0]!=="action"||fields[1][0]!=="handle"||fields[2][0]!=="appPassword")return null;
-  const action=await verifiedAction(key,fields[0][1],session,now);
-  if(action==="expired")return action;
-  return action?.kind==="connect-bluesky"&&fields[1][1].length>0&&fields[2][1].length>0?{agentId:action.agentId,handle:fields[1][1],appPassword:fields[2][1]}:null;
+  return action?.kind==="connect-account"?{agentId:action.agentId,provider:action.provider,fields}:null;
 }
 
 async function verifiedAction(key:string,token:string,session:HumanSession,now:number):Promise<OwnerFormAction|"expired"|null>{

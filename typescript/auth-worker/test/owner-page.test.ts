@@ -4,12 +4,16 @@ import {test} from "node:test";
 import type {OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import type {HumanSession} from "../src/human-session.ts";
 import {ownerFormTokens,ownerPage,ownerResultText,recoveryCodePage} from "../src/owner-page.ts";
+import {publishingAdapters} from "../../mailbox-worker/src/external-providers.ts";
+import {ownerConnector,type OwnerConnector} from "../../mailbox-worker/src/publishing.ts";
+/** The platforms the mailbox offers, as its own adapters describe them. */
+const connectors=publishingAdapters.map(ownerConnector);
 
 const now=1_800_000_000_000;
 const kid=()=>randomBytes(32).toString("base64url");
 const human:HumanSession={humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now};
 const iso=(ms:number)=>new Date(ms).toISOString();
-const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],externalActions:[],...over});
+const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],externalActions:[],connectors:[],...over});
 const html=(response:Response)=>response.text();
 
 test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
@@ -83,7 +87,7 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,26);
+  assert.equal(Object.keys(ownerResultText).length,25);
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-pending",now))).includes("Access is revoked; token clean-up will be retried on your next visit."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-complete",now))).includes("Access is revoked and token clean-up is complete."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"form-expired",now))).includes("This page expired. Reload it and try again."));
@@ -100,9 +104,9 @@ test("ownerFormTokens_CoversEveryFormTheOverviewRenders",async()=>{
   const overview=base({bindingRequests:[{requestId,agentId:randomUUID(),displayName:null,requestingKid:kid(),liveKeys:[],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1)}],
     agents:[{agentId,displayName:"a",keys:[{kid:keyId,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],
       keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}],
-      grants:[{grantId,clientId:"https://client.example/cimd.json",clientName:"c",createdAt:iso(now)}],addresses:[],credentials:[],revokedGrantIds:[randomUUID()]}]});
+      grants:[{grantId,clientId:"https://client.example/cimd.json",clientName:"c",createdAt:iso(now)}],addresses:[],credentials:[],revokedGrantIds:[randomUUID()]}],connectors});
   const tokens=await ownerFormTokens(signingKey,human.humanId,overview,now,false);
-  assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,"connect-bluesky:"+agentId,"connect-postiz:"+agentId,"issue-recovery-code:"+agentId,
+  assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,...connectors.map(c=>"connect-account:"+agentId+":"+c.provider),"issue-recovery-code:"+agentId,
     "reject-binding:"+requestId,"reject-key:"+keyRequestId,"revoke-grant:"+grantId,"revoke-key:"+agentId+":"+keyId].sort());
   const body=await html(ownerPage(overview,human,tokens,null,now));
   assert.equal(body.match(/<form /g)!.length,tokens.size);
@@ -152,7 +156,7 @@ test("ownerPage_ConnectedAccounts_ShowVerifiedChannelDisconnectAndConnectOnlyWhe
 
 test("ownerPage_ActionWithMedia_PreviewsOnlyItsFilesAndOffersPostizConnect",async()=>{
   const actionId=randomUUID(),agentId=randomUUID(),image=randomUUID(),video=randomUUID();
-  const overview=base({agents:[agent({agentId})],externalActions:[{actionId,agentId,provider:"postiz",operation:"publish_post",
+  const overview=base({agents:[agent({agentId})],connectors,externalActions:[{actionId,agentId,provider:"postiz",operation:"publish_post",
     content:JSON.stringify({text:"New beat",media:[{mediaId:image},{mediaId:video}]}),credentialRef:"postiz:abc",credentialRevision:"r",targetAccount:"tiktok/abc",
     targetDisplay:"tiktok · HSC Beats",planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1),media:[{mediaId:image,contentType:"image/png"},{mediaId:video,contentType:"video/mp4"}]}]});
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
@@ -161,7 +165,20 @@ test("ownerPage_ActionWithMedia_PreviewsOnlyItsFilesAndOffersPostizConnect",asyn
   const body=await html(response);
   assert.ok(body.includes('<img alt="Attached file '+image+'" width="360" src="/account/media/'+actionId+'/'+image+'">'));
   assert.ok(body.includes('<video controls preload="metadata" width="360" src="/account/media/'+actionId+'/'+video+'"></video>'));
-  assert.ok(body.includes('action="/account/postiz"')&&body.includes('type="password" name="apiKey"'));
-  assert.ok(body.includes('value="'+tokens.get("connect-postiz:"+agentId)+'"'));
-  assert.ok(body.includes('<form method="post" action="/account/bluesky"><input type="hidden" name="action" value="'+tokens.get("connect-bluesky:"+agentId)+'"'));
+  for(const connector of connectors)
+    assert.ok(body.includes('<form method="post" action="/account/connect"><input type="hidden" name="action" value="'+tokens.get("connect-account:"+agentId+":"+connector.provider)+'">'),connector.provider);
+  assert.ok(body.includes('<input type="password" name="apiKey" autocomplete="off" required>'));
+  assert.ok(body.includes('<input type="password" name="appPassword" autocomplete="off" required pattern="[a-z0-9]{4}(-[a-z0-9]{4}){3}">'));
+});
+
+test("ownerPage_ConnectForm_BuiltFromThePlatformsFieldsAndEscaped",async()=>{
+  const agentId=randomUUID();
+  const hostile:OwnerConnector={provider:"demo",label:'<b>Demo</b>',help:'Use "x" & <y>',
+    fields:[{name:"user",label:"User <i>",secret:false,placeholder:'a"b'},{name:"key",label:"Key",secret:true,pattern:'[a-z]+"'}]};
+  const overview=base({agents:[agent({agentId})],connectors:[hostile]});
+  const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
+  const body=await html(ownerPage(overview,human,tokens,null,now));
+  assert.ok(body.includes('<label>User &#60;i&#62; <input type="text" name="user" autocomplete="off" required placeholder="a&#34;b"></label>'));
+  assert.ok(body.includes('<input type="password" name="key" autocomplete="off" required pattern="[a-z]+&#34;">'),"a secret field is a password input");
+  assert.ok(body.includes("Connect &#60;b&#62;Demo&#60;/b&#62;</button>")&&body.includes("<p>Use &#34;x&#34; &#38; &#60;y&#62;</p>"));
 });

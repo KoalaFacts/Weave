@@ -11,11 +11,12 @@ third-party subscription. Nothing was deployed and no real Bluesky account was u
 
 ## Connect
 
-On `/account`, **Connect Bluesky** (per agent) posts to `/account/bluesky`. The form
-carries a signed `connect-bluesky` token, the handle and an app password, and it
+On `/account`, **Connect Bluesky** (per agent) is the [publishing router](2026-11-05-publishing-router.md)'s
+generic connect form, built from this adapter's two fields and posted to `/account/connect`. The form
+carries a signed `connect-account` token, the handle and an app password, and it
 requires a GitHub sign-in within the last 10 minutes. A stale session is sent to
 GitHub and the password is dropped. The auth worker passes both values to the
-mailbox's `connectBluesky` RPC and never stores, logs or renders them.
+mailbox's `connectAccount` RPC and never stores, logs or renders them.
 
 The mailbox then:
 

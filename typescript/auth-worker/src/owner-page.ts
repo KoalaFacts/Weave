@@ -1,6 +1,7 @@
 import type {OwnerAddress,OwnerBindingRequest,OwnerGrant,OwnerKey,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import type {OwnerExternalAction} from "../../mailbox-worker/src/external-actions.ts";
 import type {OwnerCredential} from "../../mailbox-worker/src/external-credentials.ts";
+import type {OwnerConnector} from "../../mailbox-worker/src/publishing.ts";
 import {freshAuthentication,type HumanSession} from "./human-session.ts";
 import {ownerActionToken} from "./owner-forms.ts";
 
@@ -37,8 +38,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "provider-unavailable":"Connecting this provider is not available on this server.",
   "missing-scope":"Grant every permission the provider asks for, or the agent cannot post; nothing was stored.",
   "no-channel":"No channel was found to connect; nothing was stored. For YouTube, pick the account or brand channel to post as; for Postiz, connect a channel in Postiz first.",
-  "postiz-connected":"Postiz connected. Each of its channels is listed below; actions your agent proposes through them still need your approval.",
-  "bluesky-connected":"Bluesky connected. Posts your agent proposes through it still need your approval.",
+  "account-connected":"Connected. Each connected account is listed below; posts your agent proposes through them still need your approval.",
   "form-expired":"This page expired. Reload it and try again.",
   "cleanup-pending":"Access is revoked; token clean-up will be retried on your next visit.",
   "cleanup-complete":"Access is revoked and token clean-up is complete.",
@@ -101,22 +101,22 @@ function grantsSection(grants:OwnerGrant[],tokens:ReadonlyMap<string,string>):st
     esc(grant.createdAt)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
 }
 
-/** The account each credential acts as is what the provider verified at connect time. */
-function credentialsSection(agentId:string,credentials:OwnerCredential[],tokens:ReadonlyMap<string,string>):string{
+/** The account each credential acts as is what the provider verified at connect time. Connect forms come from the platforms' own field lists. */
+function credentialsSection(agentId:string,credentials:OwnerCredential[],connectors:OwnerConnector[],tokens:ReadonlyMap<string,string>):string{
   const connect=form("Connect YouTube","connect-youtube:"+agentId,tokens);
   const list=credentials.length===0?"<p>No connected accounts.</p>":"<ul>"+credentials.map(credential=>"<li>"+esc(credential.provider)+" as "+
     esc(credential.targetDisplay)+" (<code>"+esc(credential.targetAccount)+"</code>); credential <code>"+esc(credential.credentialRef)+"@"+
     esc(credential.revision)+"</code>; connected "+esc(credential.connectedAt)+
     form("Disconnect","revoke-credential:"+agentId+":"+credential.credentialRef,tokens)+"</li>").join("")+"</ul>";
-  const postiz=tokens.get("connect-postiz:"+agentId);
-  const postizForm=postiz===undefined?"":'<form method="post" action="/account/postiz"><input type="hidden" name="action" value="'+esc(postiz)+
-    '"><label>Postiz API key <input type="password" name="apiKey" autocomplete="off" required></label><button type="submit">Connect Postiz</button></form>';
-  const bluesky=tokens.get("connect-bluesky:"+agentId);
-  const blueskyForm=bluesky===undefined?"":'<form method="post" action="/account/bluesky"><input type="hidden" name="action" value="'+esc(bluesky)+
-    '"><label>Bluesky handle <input type="text" name="handle" autocomplete="off" required placeholder="name.bsky.social"></label>'+
-    '<label>App password <input type="password" name="appPassword" autocomplete="off" required pattern="[a-z0-9]{4}(-[a-z0-9]{4}){3}" title="An app password from Bluesky settings, like xxxx-xxxx-xxxx-xxxx"></label>'+
-    '<button type="submit">Connect Bluesky</button></form><p>Create an app password in Bluesky under Settings, Privacy and security, App passwords. Never enter your account password.</p>';
-  return "<h4>Connected accounts</h4>"+list+connect+postizForm+blueskyForm;
+  const forms=connectors.map(connector=>{
+    const token=tokens.get("connect-account:"+agentId+":"+connector.provider);
+    if(token===undefined)return "";
+    const inputs=connector.fields.map(field=>"<label>"+esc(field.label)+' <input type="'+(field.secret?"password":"text")+'" name="'+esc(field.name)+
+      '" autocomplete="off" required'+(field.pattern?' pattern="'+esc(field.pattern)+'"':"")+(field.placeholder?' placeholder="'+esc(field.placeholder)+'"':"")+"></label>").join("");
+    return '<form method="post" action="/account/connect"><input type="hidden" name="action" value="'+esc(token)+'">'+inputs+
+      '<button type="submit">Connect '+esc(connector.label)+"</button></form>"+(connector.help?"<p>"+esc(connector.help)+"</p>":"");
+  }).join("");
+  return "<h4>Connected accounts</h4>"+list+connect+forms;
 }
 
 function addressesSection(addresses:OwnerAddress[]):string{
@@ -139,7 +139,7 @@ function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:Read
       "endorsed by "+fingerprint(request.endorsedBy)+
       "; expires "+esc(request.expiresAt)+form("Confirm","confirm-key:"+request.requestId,tokens)+
       form("Reject","reject-key:"+request.requestId,tokens)+"</li>").join("")+"</ul>"),
-    grantsSection(agent.grants,tokens),addressesSection(agent.addresses),credentialsSection(agent.agentId,agent.credentials,tokens),
+    grantsSection(agent.grants,tokens),addressesSection(agent.addresses),credentialsSection(agent.agentId,agent.credentials,overview.connectors,tokens),
     "<h4>Lost every key?</h4><p>A recovery code lets the agent add a new key without any existing key. It replaces any earlier code.</p>",
     form("Issue recovery code","issue-recovery-code:"+agent.agentId,tokens),"</section>"
   ].join("")).join("");
@@ -198,8 +198,8 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
     for(const c of agent.credentials)
       await add("revoke-credential:"+agent.agentId+":"+c.credentialRef,{kind:"revoke-credential",agentId:agent.agentId,credentialRef:c.credentialRef});
     if(youtube)await add("connect-youtube:"+agent.agentId,{kind:"connect-youtube",agentId:agent.agentId});
-    await add("connect-postiz:"+agent.agentId,{kind:"connect-postiz",agentId:agent.agentId});
-    await add("connect-bluesky:"+agent.agentId,{kind:"connect-bluesky",agentId:agent.agentId});
+    for(const connector of overview.connectors)
+      await add("connect-account:"+agent.agentId+":"+connector.provider,{kind:"connect-account",agentId:agent.agentId,provider:connector.provider});
   }
   return tokens;
 }
