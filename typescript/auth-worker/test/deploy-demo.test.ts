@@ -89,7 +89,7 @@ test('existing script, incorrect account binding and KV permission denials abort
     }
 });
 
-test('post-deploy verification requires exact issuer, consent DO, mailbox owner RPC and both authentication secrets',()=>{
+test('post-deploy verification requires exact issuer, consent DO, mailbox owner RPC and all three selected trial secrets',()=>{
     assert.doesNotThrow(()=>validateIssuerReadback(binding,env));
     assert.throws(()=>validateIssuerReadback(binding.filter(x=>x.name!=='WEAVE_TRIAL_GITHUB_SUBJECTS'),env),/mismatch/,
         'the public issuer must have the selected cohort secret before release');
