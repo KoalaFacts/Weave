@@ -69,7 +69,7 @@ test('never accepts manually dispatched CI, Worker or Security results instead o
 
 test('protected production issuer builds the exact auth bundle before workerd tests',()=>{
     const workflow=readFileSync(new URL('../../../.github/workflows/deploy-first-party-oauth-issuer.yml',import.meta.url),'utf8');
-    const verify=workflow.split('- name: Verify the exact issuer source without credentials')[1]?.split('\\n  publish:')[0];
+    const verify=workflow.split('- name: Verify the exact issuer source without credentials')[1]?.split('\n  publish:')[0];
     assert.ok(verify,'protected verification stage must exist');
     const build=verify.indexOf('npm run build');
     const workerd=verify.indexOf('npm run test:workerd');
