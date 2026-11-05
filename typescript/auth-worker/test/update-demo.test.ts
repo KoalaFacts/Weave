@@ -46,7 +46,7 @@ test('preflightUpdate_NotPublishedMissingBindingOrSecret_RefusesWithoutChange',a
     const otherIssuer=running.map(b=>b.name==='OAUTH_ISSUER'?{...b,text:'https://evil.example'}:b);
     await assert.rejects(()=>preflightUpdate(env,cloudflare(settings(otherIssuer))),/lacks or differs in OAUTH_ISSUER;/);
     await assert.rejects(()=>preflightUpdate(env,cloudflare(settings(running.filter(b=>b.type!=='secret_text')))),
-        /lacks or differs in GITHUB_CLIENT_SECRET, HUMAN_SESSION_KEY;/,'every missing name at once');
+        /lacks or differs in GITHUB_CLIENT_SECRET, HUMAN_SESSION_KEY, WEAVE_TRIAL_GITHUB_SUBJECTS;/,'every missing name at once');
 });
 
 test('preflightUpdate_NoAccountOrToken_RefusesBeforeAnyRequest',async()=>{
