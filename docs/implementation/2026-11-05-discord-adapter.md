@@ -22,7 +22,8 @@ which the form's help text states.
 - Mentions never ping anyone. Every post is sent with `allowed_mentions: {parse: []}`, so `@everyone`, `@here`,
   roles and users stay plain text.
 - Media: up to 10 files (JPEG, PNG, GIF, WebP, MP4), 10 MiB in all, which is Discord's limit for a server without
-  boosts. Alt text becomes each attachment's description.
+  boosts. Alt text becomes each attachment's description, up to Discord's 1024 characters. A longer description is
+  refused before approval (the router's per-platform `maxAlt`), so the approved text is sent unshortened.
 - No `publishAt` and no settings.
 
 ## Dispatch
@@ -50,7 +51,8 @@ which the form's help text states.
 - the legacy host is accepted;
 - the post rules;
 - text is posted once, with mentions that never ping;
-- files are uploaded as the exact stored bytes, with alt text;
+- files are uploaded as the exact stored bytes; a 1024-character alt text is sent whole, and 1025 is refused at
+  proposal;
 - unsupported or unpinned media is refused at proposal;
 - a webhook moved to another channel or deleted after approval fails with nothing posted;
 - 400, 404 and 429 fail; 502, or a reply for another channel, is unknown, and neither is sent again.
@@ -60,7 +62,8 @@ Mutation checks: each of these breaks a test:
 - dropping `allowed_mentions`;
 - accepting non-incoming webhooks;
 - accepting a reply for another channel;
-- skipping the channel check before dispatch.
+- skipping the channel check before dispatch;
+- skipping the alt limit.
 
 ## Limits
 

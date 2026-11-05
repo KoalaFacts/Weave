@@ -120,8 +120,10 @@ test('discordRules_Limits_TextFilesSizeAndNoSchedule', async () => {
     const cases: [unknown, RegExp][] = [[{text: 'x'.repeat(2001), media: []}, /at most 2000 characters/], [{text: '', media: []}, /text or media is required/],
         [{text: 'x', media: Array.from({length: 11}, () => file())}, /at most 10 media/], [{text: 'x', media: [file(6_000_000), file(6_000_000)]}, /10485760 bytes in all/],
         [{text: 'x', media: [], publishAt: new Date(Date.now() + 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z')}, /publishAt is not supported/],
-        [{text: 'x', media: [], settings: {tts: true}}, /settings are not taken/]];
+        [{text: 'x', media: [], settings: {tts: true}}, /settings are not taken/],
+        [{text: 'x', media: [{...file(), alt: 'a'.repeat(1024) + 'Z'}]}, /alt must be at most 1024 characters/]];
     for (const [post, reason] of cases) assert.match((await check(post)) ?? '', reason, JSON.stringify(post).slice(0, 70));
+    assert.ok(publishingProvider(discord).describeContent(channelId).includes('at most 1024 characters'), 'agents are told the alt limit');
 });
 
 test('executeDiscordPost_Text_PostedOnceWithNoPings', () => scenario(async ({h, fake, env}) => {
@@ -139,11 +141,12 @@ test('executeDiscordPost_Files_UploadExactBytesWithAltText', () => scenario(asyn
     const png = randomBytes(4000), mp4 = randomBytes(6000);
     const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) => {
         const [a, b] = [await upload(h, agent, png, 'image/png'), await upload(h, agent, mp4, 'video/mp4')];
-        return {text: 'Cover and teaser', media: [{...a, alt: 'Album cover'}, b]};
+        return {text: 'Cover and teaser', media: [{...a, alt: 'A'.repeat(1023) + 'Z'}, b]};
     });
     assert.equal((await execute(h, agent, actionId)).status, 'completed');
     const sent = posts(fake)[0];
-    assert.deepEqual(sent.payload.attachments, [{id: 0, filename: 'media0.png', description: 'Album cover'}, {id: 1, filename: 'media1.mp4'}]);
+    assert.deepEqual(sent.payload.attachments, [{id: 0, filename: 'media0.png', description: 'A'.repeat(1023) + 'Z'}, {id: 1, filename: 'media1.mp4'}],
+        'a 1024-character description is sent whole');
     assert.ok(sent.files!.get('files[0]')!.bytes.equals(png) && sent.files!.get('files[0]')!.type === 'image/png');
     assert.ok(sent.files!.get('files[1]')!.bytes.equals(mp4) && sent.files!.get('files[1]')!.type === 'video/mp4');
 }));

@@ -40,8 +40,9 @@ An adapter's `rules` declare:
 
 - a text limit in characters or graphemes, with an optional byte limit and an
   optional lower limit when media is attached (a caption);
-- the media count, the accepted types each with its largest size, and an optional
-  total;
+- the media count, the accepted types each with its largest size, an optional total,
+  and an optional alt text limit, refused before approval so that alt text is never
+  shortened at dispatch;
 - the scheduling horizon, or none;
 - for each account, the settings it requires: fixed values (Postiz's `__type`) and
   required names.

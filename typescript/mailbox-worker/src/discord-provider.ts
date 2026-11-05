@@ -64,7 +64,7 @@ export const discord: PublishingAdapter = {
     rules: {
         text: {max: 2000, unit: 'characters'},
         media: {max: 10, types: {'image/jpeg': maxUploadBytes, 'image/png': maxUploadBytes, 'image/gif': maxUploadBytes,
-            'image/webp': maxUploadBytes, 'video/mp4': maxUploadBytes}, maxTotalBytes: maxUploadBytes},
+            'image/webp': maxUploadBytes, 'video/mp4': maxUploadBytes}, maxTotalBytes: maxUploadBytes, maxAlt: 1024},
         schedule: null,
         note: 'Text is Discord markdown; mentions such as @everyone never ping anyone.'
     },
@@ -92,7 +92,7 @@ export const discord: PublishingAdapter = {
         }
         const payload = {content: post.text, allowed_mentions: noPings,
             ...(files.length ? {attachments: post.media.map((file, id) => ({id, filename: 'media' + id + extension(file.contentType),
-                ...(file.alt ? {description: file.alt.slice(0, 1024)} : {})}))} : {})};
+                ...(file.alt ? {description: file.alt} : {})}))} : {})};
         const form = new FormData();
         form.set('payload_json', JSON.stringify(payload));
         files.forEach((blob, id) => form.set(`files[${id}]`, blob, 'media' + id + extension(blob.type)));

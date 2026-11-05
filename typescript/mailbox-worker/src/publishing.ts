@@ -16,8 +16,8 @@ export type Post = {text: string; media: PostFile[]; settings: Record<string, un
 /** What one platform accepts. The router refuses anything else before the owner is asked. */
 export type PostRules = {
     text: {max: number; unit: 'characters' | 'graphemes'; maxBytes?: number; maxWithMedia?: number};
-    /** Accepted media types and the largest file of each, in bytes. */
-    media: {max: number; types: Readonly<Record<string, number>>; maxTotalBytes?: number};
+    /** Accepted media types and the largest file of each, in bytes; `maxAlt` when the platform takes less alt text than the post format. */
+    media: {max: number; types: Readonly<Record<string, number>>; maxTotalBytes?: number; maxAlt?: number};
     /** How far ahead publishAt may be, in ms; null when the platform posts immediately only. */
     schedule: number | null;
     /** Settings this account's posts must carry: fixed values and required names. Absent: the post takes no settings. */
@@ -91,6 +91,9 @@ function ruleBreak(post: Parsed, rules: PostRules, targetAccount: string, now: n
     if (text.maxBytes !== undefined && new TextEncoder().encode(post.text).byteLength > text.maxBytes) return `text must be at most ${text.maxBytes} bytes`;
     if (post.text.trim() === '' && post.media.length === 0) return 'text or media is required';
     if (post.media.length > media.max) return `at most ${media.max} media`;
+    // An approved description is sent as it is, never shortened, so a longer one is refused before approval.
+    if (media.maxAlt !== undefined && post.media.some(file => file.alt !== null && file.alt.length > media.maxAlt!))
+        return `alt must be at most ${media.maxAlt} characters here`;
     if (media.maxTotalBytes !== undefined && post.media.reduce((total, file) => total + file.bytes, 0) > media.maxTotalBytes)
         return `media must be at most ${media.maxTotalBytes} bytes in all`;
     if (post.publishAt !== null) {
@@ -115,7 +118,8 @@ export function describePost(rules: PostRules, targetAccount: string): string {
     const schedule = rules.schedule === null ? '' : `"publishAt": optional future UTC time such as 2026-01-31T09:00:00Z, at most ${Math.round(rules.schedule / 86_400_000)} days ahead, `;
     const caption = rules.text.maxWithMedia === undefined ? '' : ` (${rules.text.maxWithMedia} with media)`;
     return `JSON {"text": at most ${rules.text.max} ${rules.text.unit}${caption}, "media": up to ${rules.media.max} of your uploaded files as {"mediaId", "bytes", "sha256", "alt"?} `
-        + `(${typeNames(rules.media.types)}${rules.media.maxTotalBytes === undefined ? '' : `, ${rules.media.maxTotalBytes} bytes in all`}; alt describes an image for people who cannot see it), `
+        + `(${typeNames(rules.media.types)}${rules.media.maxTotalBytes === undefined ? '' : `, ${rules.media.maxTotalBytes} bytes in all`}; alt describes an image for people who cannot see it`
+        + `${rules.media.maxAlt === undefined ? '' : `, at most ${rules.media.maxAlt} characters`}), `
         + settings + schedule + '}. Text or media is required.' + (rules.note ? ' ' + rules.note : '');
 }
 
