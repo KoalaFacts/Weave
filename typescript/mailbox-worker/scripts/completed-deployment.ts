@@ -35,21 +35,21 @@ export async function prepareCompletedDeployment(db:StorageDatabase,planSchema=p
         console.log('Completed-only validation: '+JSON.stringify({stage,...conversion,schemaStatements:0}));
         return {conversion,schemaPlan};
     }
-    await verify('before-maintenance');
+    await verify('preflight');
     const ddl=(await latestSchemaStatements()).filter(sql=>/^CREATE TABLE `data_migrations` /.test(sql)).map(sql=>sql.trim());
     if(ddl.length!==1||!/^CREATE TABLE `data_migrations` \([^;]+\);$/.test(ddl[0]))
         throw Error('Restricted deployment requires exactly one generated migration ledger statement.');
     const ledgerCheck=ddl[0].replace('CREATE TABLE','CREATE TABLE IF NOT EXISTS');
     return {
         async confirm(){
-            await verify('maintenance');
+            await verify('before-ledger-check');
             // This is the only write-capable operation in completed-only mode.
             // It never calls the historical converter or the schema applier.
             await yieldToIo();
             const result=await db.batch([db.prepare(ledgerCheck)]);
             const item=Array.isArray(result)&&result.length===1?result[0]:null;
             if(item?.success!==true||item.meta?.rows_written!==0||item.meta?.changes!==0||item.meta?.changed_db!==false)
-                throw Error('Ledger IF NOT EXISTS did not confirm zero changes; maintenance retained.');
+                throw Error('Ledger IF NOT EXISTS did not confirm zero changes; release stopped before activation.');
             console.log('Completed-only ledger check: '+JSON.stringify({statements:1,rows_written:0,changes:0,changed_db:false}));
             return verify('after-ledger-check');
         },
