@@ -135,8 +135,8 @@ export async function proposeExternalAction(env: Env, caller: ActionCaller, inpu
             if (used) {
                 if (used.request_hash !== requestHash) conflict('idempotency-conflict');
                 const row = await readRow(tx, used.action_id);
-                // The key row references the action, which is never deleted.
-                if (!row) fail(503, 'storage');
+                // The key and the action are separate references; a key that names another agent's action is corrupt and never discloses it.
+                if (!row || row.account_id !== caller.accountId) fail(503, 'storage');
                 return view(env, row, at, await readPublication(tx, row.action_id));
             }
         }
