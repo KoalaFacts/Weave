@@ -145,7 +145,7 @@ test('slug_MatchesGitHubAnchors', () => {
     assert.equal(slug('`npm run build` (local)'), 'npm-run-build-local');
     assert.equal(slug('Weave ⇄ Envoylet'), 'weave--envoylet');
     assert.equal(slug('The <code>check</code> step'), 'the-check-step');
-    assert.equal(slug('a <scr<script>ipt> b < c'), 'a-ipt-b--c');
+    assert.equal(slug('a <scr<script>ipt> b'), 'a-ipt-b');
 });
 
 test('anchors_DuplicateHeadingsNumbered', () => {
@@ -182,9 +182,40 @@ test('check_NamedPathWithLineSuffixOrTrailingPunctuation_ResolvesFile', () => {
     assert.deepEqual(messages(docs, { extra: ['scripts/x.ts'] }), []);
 });
 
-test('check_LongPathologicalLines_FinishQuickly', () => {
-    const line = '#'.repeat(6) + ' ' + ' '.repeat(20000) + 'x' + ' #'.repeat(5000) + '<a ' + 'b="'.repeat(5000) + '](' + ' '.repeat(20000);
-    const started = performance.now();
-    messages({ ...base, 'docs/guide.md': `# Guide\n\n${line}\n\`${'`'.repeat(5000)}\n` });
-    assert.ok(performance.now() - started < 2000);
+for (const [name, line] of [
+    ['RepeatedLinkOpeners', '](' .repeat(50000)],
+    ['RepeatedAnchorTags', '<a '.repeat(50000)],
+    ['AnchorTagWithoutAttributeValue', '<a ' + 'b'.repeat(50000) + '>'],
+    ['RepeatedBrackets', '# ' + '['.repeat(50000)],
+    ['RepeatedLinkTextOpeners', '# ' + '[a]('.repeat(50000)],
+    ['RepeatedBacktickRuns', Array.from({ length: 300 }, (_, i) => '`'.repeat(i + 1)).join(' x ')],
+    ['ClosingHashes', '###### ' + ' '.repeat(20000) + 'x' + ' #'.repeat(20000)],
+] as const) {
+    test(`check_Pathological${name}_FinishesQuickly`, () => {
+        const started = performance.now();
+        const result = messages({ ...base, 'docs/guide.md': `# Guide\n\n${line}\n` });
+        assert.ok(performance.now() - started < 1000, `${name} took ${performance.now() - started} ms`);
+        assert.ok(Array.isArray(result));
+    });
+}
+
+test('links_CodeSpanClosesOnlyAtRunOfSameLength', () => {
+    assert.deepEqual(links('`` a ````` b `` [x](real.md) `` c\n').map((link) => link.target), ['real.md']);
+    assert.deepEqual(links('`` [x](hidden.md) `` [y](shown.md)\n').map((link) => link.target), ['shown.md']);
+});
+
+test('slug_LessThanWithoutTagStaysText', () => {
+    assert.equal(slug('x < y > z'), 'x--y--z');
+    assert.equal(slug('![logo](a.png) Weave'), 'logo-weave');
+});
+
+test('check_MalformedPercentEscape_ReportedNotThrown', () => {
+    const result = messages({ ...base, 'docs/guide.md': '# Guide\n\n[a](bad%zz.md) [b](guide.md#%zz)\n' });
+    assert.equal(result.length, 2);
+    assert.match(result[0], /broken link: bad%zz\.md/);
+    assert.match(result[1], /broken anchor: guide\.md#%zz/);
+});
+
+test('anchors_IdInsideInlineCode_NotAnAnchor', () => {
+    assert.deepEqual([...anchors('# T\n\nUse `<a id="fake"></a>` for anchors.\n')], ['t']);
 });

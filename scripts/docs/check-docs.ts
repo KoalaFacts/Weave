@@ -28,25 +28,46 @@ export function isHistorical(file: string, content: string): boolean {
     return /^docs\/implementation\/\d{4}-\d{2}-\d{2}-/.test(file) || /^> \*\*Historical guide\b/m.test(content);
 }
 
-/** Heading text without inline HTML tags (`<code>x</code>` → `x`); an unclosed `<` stays and the slug filter drops it. */
+const isTagStart = (text: string, at: number) => text[at] === '<' && /[A-Za-z/]/.test(text[at + 1] ?? '');
+
+/**
+ * Heading text without inline HTML tags (`<code>x</code>` → `x`). As on GitHub, `<` starts a tag only before a letter or
+ * `/`, so `x < y > z` keeps its text; the slug filter then drops the punctuation.
+ */
 function withoutTags(text: string): string {
     let out = '';
     let i = 0;
     while (i < text.length) {
-        const open = text.indexOf('<', i);
-        if (open === -1) return out + text.slice(i);
-        const close = text.indexOf('>', open + 1);
+        if (!isTagStart(text, i)) { out += text[i++]; continue; }
+        const close = text.indexOf('>', i + 1);
         if (close === -1) return out + text.slice(i);
-        out += text.slice(i, open);
         i = close + 1;
+    }
+    return out;
+}
+
+/** Inline links and images reduced to their text: `[a](b)` → `a`. Single forward scan. */
+function linkTexts(text: string): string {
+    let out = '';
+    let i = 0;
+    while (i < text.length) {
+        const open = text.indexOf('[', i);
+        if (open === -1) return out + text.slice(i);
+        const close = text.indexOf(']', open + 1);
+        if (close === -1) return out + text.slice(i);
+        const inner = text.slice(open + 1, close);
+        if (inner.includes('[') || text[close + 1] !== '(') { out += text.slice(i, close + 1); i = close + 1; continue; }
+        const end = text.indexOf(')', close + 2);
+        if (end === -1) return out + text.slice(i);
+        out += text.slice(i, open > 0 && text[open - 1] === '!' ? open - 1 : open) + inner;
+        i = end + 1;
     }
     return out;
 }
 
 /** GitHub's heading anchor: lower case, punctuation other than '-' and '_' removed, spaces become '-'. */
 export function slug(heading: string): string {
-    const text = withoutTags(heading)
-        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    const text = linkTexts(withoutTags(heading))
         .replace(/[`*]/g, '')
         .trim()
         .toLowerCase();
@@ -71,27 +92,57 @@ function proseLines(content: string): Line[] {
     return lines;
 }
 
-/** Blanks inline code spans (a run of backticks up to the next run of the same length), keeping column positions. */
+/**
+ * Blanks inline code spans on one line, keeping column positions: a backtick run opens a span closed by the next run of
+ * exactly the same length. Runs are measured once, so the scan is linear in the line plus its runs.
+ */
 function stripInlineCode(text: string): string {
-    let out = '';
-    let i = 0;
-    while (i < text.length) {
-        if (text[i] !== '`') { out += text[i++]; continue; }
-        let run = 0;
-        while (text[i + run] === '`') run++;
-        const fence = '`'.repeat(run);
-        let close = text.indexOf(fence, i + run);
-        while (close !== -1 && text[close + run] === '`') close = text.indexOf(fence, close + run + 1);
-        if (close === -1) { out += fence; i += run; continue; }
-        out += ' '.repeat(close + run - i);
-        i = close + run;
+    const runs: { start: number; length: number }[] = [];
+    for (let i = 0; i < text.length;) {
+        if (text[i] !== '`') { i++; continue; }
+        const start = i;
+        while (text[i] === '`') i++;
+        runs.push({ start, length: i - start });
     }
-    return out;
+    // For each run, the index of the next run of the same length.
+    const next = new Array<number>(runs.length).fill(-1);
+    const latest = new Map<number, number>();
+    for (let r = runs.length - 1; r >= 0; r--) {
+        next[r] = latest.get(runs[r].length) ?? -1;
+        latest.set(runs[r].length, r);
+    }
+    const chars = text.split('');
+    for (let r = 0; r < runs.length;) {
+        const close = next[r];
+        if (close === -1) { r++; continue; }
+        const end = runs[close].start + runs[close].length;
+        for (let c = runs[r].start; c < end; c++) chars[c] = ' ';
+        r = close + 1;
+    }
+    return chars.join('');
 }
 
-/** The value of one attribute in an HTML tag's attribute text, or null. */
+/** Attribute text of each `<a …>` tag on a line. */
+function anchorTags(text: string): string[] {
+    const tags: string[] = [];
+    for (let i = text.indexOf('<a'); i !== -1; i = text.indexOf('<a', i + 2)) {
+        if (text[i + 2] !== ' ' && text[i + 2] !== '\t') continue;
+        const close = text.indexOf('>', i + 3);
+        if (close === -1) break;
+        tags.push(text.slice(i + 3, close));
+        i = close - 1;
+    }
+    return tags;
+}
+
+/** The double-quoted value of one attribute in a tag's attribute text, or null. */
 function attribute(attributes: string, name: string): string | null {
-    for (const match of attributes.matchAll(/([A-Za-z-]+)="([^"]*)"/g)) if (match[1] === name) return match[2];
+    const key = name + '="';
+    for (let at = attributes.indexOf(key); at !== -1; at = attributes.indexOf(key, at + 1)) {
+        if (at > 0 && attributes[at - 1] !== ' ' && attributes[at - 1] !== '\t') continue;
+        const end = attributes.indexOf('"', at + key.length);
+        return end === -1 ? null : attributes.slice(at + key.length, end);
+    }
     return null;
 }
 
@@ -121,8 +172,8 @@ export function anchors(content: string): Set<string> {
     const found = new Set<string>();
     const counts = new Map<string, number>();
     for (const { text } of proseLines(content)) {
-        for (const match of text.matchAll(/<a[ \t]([^>]*)>/g)) {
-            const id = attribute(match[1], 'id') ?? attribute(match[1], 'name');
+        for (const tag of anchorTags(stripInlineCode(text))) {
+            const id = attribute(tag, 'id') ?? attribute(tag, 'name');
             if (id) found.add(id);
         }
         const heading = headingText(text);
@@ -139,15 +190,18 @@ export function links(content: string): { target: string; line: number }[] {
     const found: { target: string; line: number }[] = [];
     for (const { text, line } of proseLines(content)) {
         const prose = stripInlineCode(text);
-        for (const match of prose.matchAll(/\]\(([^)]*)\)/g)) {
-            const target = destination(match[1]);
+        for (let at = prose.indexOf(']('); at !== -1; at = prose.indexOf('](', at + 2)) {
+            const end = prose.indexOf(')', at + 2);
+            if (end === -1) break;
+            const target = destination(prose.slice(at + 2, end));
             if (target) found.push({ target, line });
+            at = end - 1;
         }
         const definition = /^ {0,3}\[[^\]]+\]:([^\n]*)$/.exec(prose);
         const defined = definition && destination(definition[1]);
         if (defined) found.push({ target: defined, line });
-        for (const match of prose.matchAll(/<a[ \t]([^>]*)>/g)) {
-            const href = attribute(match[1], 'href');
+        for (const tag of anchorTags(prose)) {
+            const href = attribute(tag, 'href');
             if (href) found.push({ target: href, line });
         }
     }
@@ -162,11 +216,14 @@ function withoutLineSuffix(path: string): string {
 
 const isExternal = (target: string) => /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('//');
 
+const decode = (text: string) => { try { return decodeURIComponent(text); } catch { return null; } };
+
 function resolveTarget(file: string, target: string): { path: string; anchor: string | null } {
     const hash = target.indexOf('#');
     const rawPath = hash === -1 ? target : target.slice(0, hash);
-    const anchor = hash === -1 ? null : decodeURIComponent(target.slice(hash + 1));
-    const decoded = decodeURIComponent(rawPath.split('?')[0]);
+    // A malformed escape resolves to a path no repository holds, so it is reported as a broken link.
+    const anchor = hash === -1 ? null : decode(target.slice(hash + 1)) ?? '\0';
+    const decoded = decode(rawPath.split('?')[0]) ?? '\0malformed';
     if (decoded === '') return { path: file, anchor };
     const joined = decoded.startsWith('/') ? decoded.slice(1) : posix.join(posix.dirname(file), decoded);
     return { path: posix.normalize(joined).replace(/\/$/, ''), anchor };
