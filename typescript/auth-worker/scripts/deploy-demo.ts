@@ -8,9 +8,9 @@ import {validSigningKey} from '../src/human-session.ts';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const issuer='https://weave-auth-demo.weave-389.workers.dev';
 const resource='https://demo.weave-389.workers.dev/mcp';
-/** All three secrets are required for a public trial; only their metadata is inspected during code updates. */
-export const requiredSecrets=['GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','WEAVE_TRIAL_GITHUB_SUBJECTS'] as const;
-export const secretNames=requiredSecrets;
+/** The secrets every release requires, and the optional sign-in allowlist a release keeps when it is set. */
+export const requiredSecrets=['GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY'] as const;
+export const secretNames=[...requiredSecrets,'WEAVE_TRIAL_GITHUB_SUBJECTS'] as const;
 export type Binding={name:string;type:string;database_id?:string;id?:string;namespace_id?:string;class_name?:string;
     service?:string;entrypoint?:string;environment?:string;text?:unknown;simple?:{limit?:unknown;period?:unknown}};
 type Settings={bindings:Binding[]};
@@ -96,7 +96,7 @@ async function cloudReadback(env:NodeJS.ProcessEnv,request:typeof fetch){
     validateIssuerReadback(json.result.bindings,env);
 }
 
-// Wrangler gets only the Cloudflare token. The authentication secrets and selected trial identities
+// Wrangler gets only the Cloudflare token. The authentication secrets and any sign-in allowlist
 // are uploaded together through "secret bulk" stdin, never command arguments, config, stdout or stderr.
 export async function wrangler(args:string[],env:NodeJS.ProcessEnv,secret?:string){
     const childEnv:NodeJS.ProcessEnv={...env,CI:'true',NO_COLOR:'1',WRANGLER_SEND_METRICS:'false'};
