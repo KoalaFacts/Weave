@@ -17,7 +17,7 @@ import { checkMessage, inboxMessage, messagePayload } from './a2a-message.ts';
 import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyClaim } from './mcp-idempotency.ts';
 import { grantCaller, liveOwnedGrant } from './client-grants.ts';
 import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
-import { executeExternalAction, getExternalAction, proposeExternalAction } from './external-actions.ts';
+import { executeExternalAction, getExternalAction, proposalKey, proposeExternalAction } from './external-actions.ts';
 import { listAgentCredentials } from './external-credentials.ts';
 import { createMediaUpload, getMedia, importMedia } from './external-media.ts';
 import type { PrivateAccess } from './remote-mcp.ts';
@@ -234,8 +234,9 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             return json(await getMedia(env,caller,args.mediaId as string));
         }
         if(name==='propose_external_action'){
-            parameters(args,['credentialRef','operation','content'],['credentialRef','operation','content']);
-            return json(await proposeExternalAction(env,caller,args));
+            parameters(args,['credentialRef','operation','content','idempotencyKey'],['credentialRef','operation','content']);
+            const {idempotencyKey,...proposal}=args;
+            return json(await proposeExternalAction(env,caller,proposal,proposalKey(idempotencyKey,'idempotencyKey')));
         }
         if(name==='get_external_action'||name==='execute_external_action'){
             parameters(args,['actionId'],['actionId']);

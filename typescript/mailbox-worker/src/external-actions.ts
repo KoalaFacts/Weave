@@ -15,7 +15,7 @@ import type { OwnerDecision, OwnerHuman } from './owner-actions.ts';
 import { provider as findProvider } from './external-providers.ts';
 import { openSecret } from './credential-vault.ts';
 import { openMedia, readMediaRecord } from './external-media.ts';
-import { Problem, fail, invalidField, object } from './wire.ts';
+import { Problem, fail, hash, invalidField, object } from './wire.ts';
 import { readPublication, trackPublication, type PublicationView } from './external-publications.ts';
 
 export const actionLifetimeTicks = 36_000_000_000n; // 1 h to approve and execute
@@ -44,6 +44,14 @@ type Credential = {provider: string; revision: string; target_account: string; t
 
 const statuses = new Set<string>(['pending', 'approved', 'rejected', 'dispatching', 'completed', 'failed', 'unknown']);
 const credentialRefPattern = /^[A-Za-z0-9._:-]{1,64}$/;
+const proposalKeyPattern = /^[A-Za-z0-9._:-]{1,128}$/;
+
+/** An agent's optional proposal key, from the Idempotency-Key header or the MCP idempotencyKey argument; null when absent. */
+export function proposalKey(value: unknown, field: string): string | null {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== 'string' || !proposalKeyPattern.test(value)) invalidField(field, 'must be 1 to 128 characters of letters, digits, ".", "_", ":" or "-"');
+    return value;
+}
 const columns = `action_id,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,target_account,plan_digest,status,
     CAST(created_at AS TEXT) created_at,CAST(expires_at AS TEXT) expires_at,CAST(decided_at AS TEXT) decided_at,decided_by,
     CAST(dispatched_at AS TEXT) dispatched_at,CAST(completed_at AS TEXT) completed_at,receipt,failure`;
@@ -106,17 +114,32 @@ async function ownAction(tx: Transaction, caller: ActionCaller, actionId: string
     return row;
 }
 
-/** POST /v1/external-actions: records a pending plan. Nothing is sent to the provider. */
-export async function proposeExternalAction(env: Env, caller: ActionCaller, input: unknown, clock: () => bigint = nowUtc): Promise<ExternalActionView> {
+/**
+ * POST /v1/external-actions: records a pending plan. Nothing is sent to the provider. With a key, a repeat of the same
+ * request returns the action that key first created, in its current state; the same key with another request conflicts.
+ */
+export async function proposeExternalAction(env: Env, caller: ActionCaller, input: unknown, key: string | null = null): Promise<ExternalActionView> {
     if (writesRefused(env)) fail(503, 'maintenance', 30);
     object(input, ['credentialRef', 'operation', 'content']);
     const {credentialRef, operation, content} = input as Record<string, unknown>;
     if (typeof credentialRef !== 'string' || !credentialRefPattern.test(credentialRef)) invalidField('credentialRef', 'must be 1 to 64 characters of letters, digits, ".", "_", ":" or "-"');
     if (typeof operation !== 'string') invalidField('operation', 'must be a supported operation');
     if (typeof content !== 'string' || content.trim() === '' || content.length > maxContentLength) invalidField('content', `must be non-blank text of at most ${maxContentLength} characters`);
+    const requestHash = key === null ? null : await hash(JSON.stringify(['weave-external-proposal-v1', credentialRef, operation, content]));
     return atomic(env.db, async tx => {
         const at = tx.store.now;
         await caller.check(tx);
+        if (key !== null) {
+            const used = await tx.db.prepare('SELECT request_hash,action_id FROM external_action_keys WHERE account_id=? AND idempotency_key=?')
+                .bind(caller.accountId, key).first<{request_hash: string; action_id: string}>();
+            if (used) {
+                if (used.request_hash !== requestHash) conflict('idempotency-conflict');
+                const row = await readRow(tx, used.action_id);
+                // The key row references the action, which is never deleted.
+                if (!row) fail(503, 'storage');
+                return view(env, row, at, await readPublication(tx, row.action_id));
+            }
+        }
         const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(caller.accountId).first<{human_id: string | null}>();
         if (!owner) fail(401, 'unauthenticated');
         // Only an owned agent has someone who can approve.
@@ -138,6 +161,8 @@ export async function proposeExternalAction(env: Env, caller: ActionCaller, inpu
         const digest = await planDigest(plan);
         tx.store.stage(tx.store.orm.insert(schema.externalActions).values({...plan, plan_digest: digest, status: 'pending',
             created_at: at, expires_at: at + actionLifetimeTicks, updated_at: at}));
+        if (key !== null) tx.store.stage(tx.store.orm.insert(schema.externalActionKeys).values({account_id: caller.accountId, idempotency_key: key,
+            request_hash: requestHash!, action_id: plan.action_id, created_at: at}));
         return view(env, {...plan, plan_digest: digest, status: 'pending', created_at: at.toString(), decided_at: null, decided_by: null,
             dispatched_at: null, completed_at: null, receipt: null, failure: null}, at);
     });
