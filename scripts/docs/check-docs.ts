@@ -28,11 +28,25 @@ export function isHistorical(file: string, content: string): boolean {
     return /^docs\/implementation\/\d{4}-\d{2}-\d{2}-/.test(file) || /^> \*\*Historical guide\b/m.test(content);
 }
 
+/** Heading text without inline HTML tags (`<code>x</code>` → `x`); an unclosed `<` stays and the slug filter drops it. */
+function withoutTags(text: string): string {
+    let out = '';
+    let i = 0;
+    while (i < text.length) {
+        const open = text.indexOf('<', i);
+        if (open === -1) return out + text.slice(i);
+        const close = text.indexOf('>', open + 1);
+        if (close === -1) return out + text.slice(i);
+        out += text.slice(i, open);
+        i = close + 1;
+    }
+    return out;
+}
+
 /** GitHub's heading anchor: lower case, punctuation other than '-' and '_' removed, spaces become '-'. */
 export function slug(heading: string): string {
-    const text = heading
+    const text = withoutTags(heading)
         .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-        .replace(/<[^>]+>/g, '')
         .replace(/[`*]/g, '')
         .trim()
         .toLowerCase();

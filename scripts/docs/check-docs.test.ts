@@ -144,6 +144,8 @@ test('slug_MatchesGitHubAnchors', () => {
     assert.equal(slug('Build & verification'), 'build--verification');
     assert.equal(slug('`npm run build` (local)'), 'npm-run-build-local');
     assert.equal(slug('Weave ⇄ Envoylet'), 'weave--envoylet');
+    assert.equal(slug('The <code>check</code> step'), 'the-check-step');
+    assert.equal(slug('a <scr<script>ipt> b < c'), 'a-ipt-b--c');
 });
 
 test('anchors_DuplicateHeadingsNumbered', () => {
