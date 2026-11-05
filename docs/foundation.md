@@ -1,5 +1,7 @@
 # Foundation — Weave.Shared & Weave.SourceGen
 
+> **Historical guide.** Written for the earlier layer-first layout; source paths here may no longer exist. Current layout and rules: [AGENTS.md](../AGENTS.md#ownership-and-composition); delivered behaviour: [implementation records](implementation/README.md).
+>
 > **Source**: `csharp/src/Foundation/` | **Depends on**: (none — root dependency) | **Depended on by**: all other subsystems
 > **See also**: [index](index.md) · [workspaces](workspaces.md) · [assistants](assistants.md) · [tools](tools.md) · [security](security.md) · [deployment](deployment.md) · [runtime](runtime.md) · [ux](ux.md)
 

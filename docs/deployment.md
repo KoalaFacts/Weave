@@ -1,5 +1,7 @@
 # Deployment
 
+> **Historical guide.** Written for the earlier layer-first layout; source paths here may no longer exist. Current layout and rules: [AGENTS.md](../AGENTS.md#ownership-and-composition); delivered behaviour: [implementation records](implementation/README.md).
+>
 > **Source**: `csharp/src/Deployment/` | **Depends on**: [Workspaces](workspaces.md) | **Depended on by**: [UX](ux.md)
 > **See also**: [index](index.md)
 

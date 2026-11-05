@@ -1,5 +1,7 @@
 # Workspaces
 
+> **Historical guide.** Written for the earlier layer-first layout; source paths here may no longer exist. Current layout and rules: [AGENTS.md](../AGENTS.md#ownership-and-composition); delivered behaviour: [implementation records](implementation/README.md).
+>
 > **Source**: `csharp/src/Workspaces/` | **Depends on**: [Foundation](foundation.md) | **Depended on by**: [Assistants](assistants.md), [Tools](tools.md), [Security](security.md), [Deployment](deployment.md), [Runtime](runtime.md), [UX](ux.md)
 > **See also**: [index](index.md)
 
