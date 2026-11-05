@@ -96,6 +96,12 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
           WEAVE_RELEASE_DATABASE_MODE: completed-only
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
+      # Full product CI includes the .NET tests and mandatory 90% owner coverage gate.
+      # Worker/OAuth suites alone cannot authorize a production release while this CI is pending or red.
+      - name: Require passed full CI and coverage on main for this commit
+        run: node typescript/mailbox-worker/scripts/require-ci-success.ts ci.yml
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       # The Worker verification workflow already ran typecheck, the full Worker suite, audit and browser checks on
       # this commit on main; the release requires that exact run to have passed instead of repeating it here.
       - name: Require passed Worker verification on main for this commit
