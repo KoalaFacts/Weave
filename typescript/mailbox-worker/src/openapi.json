@@ -5927,7 +5927,7 @@
                 "type": "null"
               }
             ],
-            "description": "credential-changed, owner-changed, owner-frozen or plan-changed: the plan no longer held and nothing was sent. provider-rejected: the provider confirmed nothing happened. outcome-unknown: see status unknown."
+            "description": "credential-changed, credential-unreadable, owner-changed, owner-frozen or plan-changed: the plan no longer held and nothing was sent. provider-rejected: the provider confirmed nothing happened. outcome-unknown: see status unknown."
           },
           "publication": {
             "description": "What the provider later reported about a completed effect it finishes after dispatch (a queued or scheduled Postiz post); null when not tracked. queued is re-checked with backoff for up to 7 days after the post was due. error is the platform's own message, untrusted and at most 300 characters.",
