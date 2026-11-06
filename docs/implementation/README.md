@@ -5,7 +5,7 @@ they describe the code when they were written and are not rewritten later, so a 
 wins where they differ. A record superseded by a later one says so in its first lines.
 
 Current rules live in [AGENTS.md](../../AGENTS.md) and target semantics in [ARCHITECTURE.md](../../ARCHITECTURE.md).
-Newest first within each area. Every record in this directory is listed once.
+Newest first within each area. Every record (or dated record section) in this directory is listed once.
 
 ## Publishing router and governed external actions (TypeScript Workers)
 

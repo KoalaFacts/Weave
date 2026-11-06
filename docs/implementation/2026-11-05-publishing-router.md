@@ -105,14 +105,14 @@ Neither the authorization server, the owner page nor the RPC surface changes.
 
 - Settings are checked for presence and fixed values, not for each platform's value
   rules; the platform still refuses invalid values at dispatch.
-- A platform that needs an OAuth redirect (YouTube) keeps its own flow. (Connectors may have several secret
-  fields since the X adapter; see [Native X adapter](#native-x-adapter-2026-11-06).)
+- One secret field per connector. A platform that needs an OAuth redirect (YouTube)
+  keeps its own flow.
 - A post goes to one credential. Sending the same post to several channels is one
   proposal per channel, each approved on its own.
 
 ## Native X adapter (2026-11-06)
 
-### Scope
+### X scope
 
 X is a publishing router adapter (`typescript/mailbox-worker/src/x-provider.ts`,
 one entry in `publishingAdapters`). It is shared plan step 4's native X adapter on
@@ -131,20 +131,20 @@ than relabelled. The credential is `x:<user id>`, with that id as its target acc
 Values that are not shaped like X keys are refused without being sent anywhere. Most passwords fail that shape check;
 a long alphanumeric one does not, and X then refuses it.
 
-### Router changes
+### X router changes
 
 - **Several secret fields.** The router used to seal exactly one secret field. An adapter may now declare several. One
   secret field is still sealed as its value, so stored Postiz, Bluesky, Telegram and Discord credentials are unchanged.
-  Several fields are sealed together as one JSON object of their values by field name. This lifted the router's original "one secret
-  field per connector" limit. The authorization server already rendered each secret field as a
-  password input and passed every field on, so it does not change. Its connect form takes at most 4 fields
+  Several fields are sealed together as one JSON object of their values by field name. This supersedes the "one
+  secret field per connector" limit and the "exactly one field is the secret to seal" rule above. The authorization
+  server already rendered each secret field as a password input and passed every field on, so it does not change. Its connect form takes at most 4 fields
   (`maxConnectFields` in `typescript/auth-worker/src/owner-forms.ts`), and X uses all 4.
 - **Weighted text.** A text rule may use the unit `weighted characters` with a `weigh` function. The adapter supplies
   the function; the router applies it before approval and names the unit in the description agents read.
 - **No alt text.** `maxAlt: 0` refuses any alt text with "alt is not supported here; omit it". The description tells
   agents the platform takes none.
 
-### Post rules
+### X post rules
 
 - **Text:** up to 280 weighted characters, counted as X does:
   - text is NFC-normalized first;
@@ -171,7 +171,7 @@ a long alphanumeric one does not, and X then refuses it.
   text rather than dropping approved text silently.
 - **Not taken:** `publishAt`, settings, replies, quotes, polls and threads.
 
-### Dispatch
+### X dispatch
 
 - Every request is signed with OAuth 1.0a HMAC-SHA1 over the method, the URL and the oauth parameters. JSON and
   multipart bodies are not signed, as OAuth 1.0a specifies.
@@ -186,7 +186,7 @@ a long alphanumeric one does not, and X then refuses it.
     again.
   - The receipt is the post id.
 
-### Verification
+### X verification
 
 `typescript/mailbox-worker/test/x.test.ts` runs against an X API fake. The fake checks every OAuth 1.0a signature with
 its own HMAC-SHA1 and RFC 3986 encoding, sorts by name and then value, and answers 401 to an unsigned or wrongly
@@ -237,7 +237,7 @@ vault already binds the secret to its credential row. It was removed rather than
 
 A local gate passes. No request is made to the real X API: tests use the fake, and no post is created.
 
-### Limits
+### X limits
 
 - The X API endpoints and shapes come from X's v2 documentation, read on 2026-11-06, and are tested against a fake. No
   live X post has been made. Demo acceptance needs an owner with an X developer app.
