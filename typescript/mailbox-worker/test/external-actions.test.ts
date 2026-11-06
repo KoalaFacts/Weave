@@ -188,6 +188,29 @@ test('executeExternalAction_ApprovalExpired_DoesNotSend', () => scenario(async (
     assert.equal(provider.calls.length, 0);
 }));
 
+// Each stored field the digest binds, changed after the owner confirmed it. Only the dispatch re-check can catch these.
+const planEdits = {
+    content: `content='Episode 13 is live.'`,
+    operation: `operation='publish_other'`,
+    contractRevision: `contract_revision='test-http-v0'`,
+    expiryExtended: `expires_at=expires_at+10000`,
+} as const;
+
+for (const [field, assignment] of Object.entries(planEdits))
+    test(`executeExternalAction_PlanEditedAfterApproval_${field}_FailsPlanChangedWithoutSending`, () => scenario(async ({h, provider}) => {
+        const {agent, actionId} = await approved(h);
+        await h.db.prepare(`UPDATE external_actions SET ${assignment} WHERE action_id=?`).bind(actionId).run();
+
+        const result = await execute(h, agent, actionId);
+        const again = await execute(h, agent, actionId);
+
+        assert.equal(result.status, 'failed');
+        assert.equal(result.failure, 'plan-changed');
+        assert.equal(result.dispatchedAt, null);
+        assert.equal(again.status, 'failed');
+        assert.equal(provider.calls.length, 0);
+    }));
+
 test('executeExternalAction_Rejected_NeverSends', () => scenario(async ({h, provider}) => {
     const {agent, humanId} = await ownedAgent(h);
     const action = await (await propose(h, agent)).json() as {actionId: string};
