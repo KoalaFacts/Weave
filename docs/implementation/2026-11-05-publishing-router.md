@@ -111,6 +111,15 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   - a hostile descriptor is escaped.
 - workerd tests connect Postiz and Bluesky through `/account/connect` and refuse an
   extra field.
+- Platform text that Weave stores (a Postiz `ERROR` message as `publication.error`, a
+  test provider's refusal reason after `provider-rejected: `) goes through
+  `visibleExcerpt` in `src/visible-text.ts`: invisible and control characters become
+  spaces, whitespace collapses, lone surrogates become U+FFFD, and the cut never splits a
+  surrogate pair. `postiz` `publication_PlatformErrorCutInsideSurrogatePair_ErrorStaysWellFormed`
+  and `external-actions`
+  `executeExternalAction_RejectionReasonWithControlsAndSplitPair_StoredVisibleAndWellFormed`
+  pin it; dropping the pair check, the invisible-character replacement or the
+  well-formed step each fails at least one of them (2026-11-06).
 
 ## Limits
 
