@@ -89,35 +89,60 @@ async function verify(values: Readonly<Record<string, string>>) {
     } catch { return null; }
 }
 
+const light = (c: number) => c <= 0x10ff || (c >= 0x2000 && c <= 0x200d) || (c >= 0x2010 && c <= 0x201f) || (c >= 0x2032 && c <= 0x2037);
+const segmenter = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+/** An emoji counts 2; marks stacked on it, other than its own variation selector and keycap, are weighed on their own. */
+function weigh(part: string): number {
+    let total = 0;
+    for (const {segment} of segmenter.segment(part)) {
+        if (/\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(segment)) {
+            total += 2;
+            for (const char of segment) if (/\p{M}/u.test(char) && !/[\ufe0e\ufe0f\u20e3]/u.test(char)) total += light(char.codePointAt(0)!) ? 1 : 2;
+            continue;
+        }
+        for (const char of segment) total += light(char.codePointAt(0)!) ? 1 : 2;
+    }
+    return total;
+}
+/** True for `label.label.tld`, labels of ASCII letters, digits and hyphens, the last of letters only. */
+function isDomain(host: string): boolean {
+    const labels = host.split('.');
+    return labels.length >= 2 && labels.every(label => /^[a-z0-9-]+$/i.test(label)) && /^[a-z]{2,}$/i.test(labels[labels.length - 1]);
+}
+const opening = '("\'<[{', closing = ')"\'>]}.,!?;:';
+
+/** The weight of one run of ASCII URL characters: a link counts 23, anything else its own weight. */
+function weighRun(run: string): number {
+    let from = 0, to = run.length;
+    while (from < to && opening.includes(run[from])) from++;
+    while (to > from && closing.includes(run[to - 1])) to--;
+    const core = run.slice(from, to), scheme = /^https?:\/\//i.exec(core);
+    const host = core.slice(scheme ? scheme[0].length : 0).split(/[/?#:]/)[0];
+    // A scheme link counts 23 whatever its length; a bare domain counts 23 or its own length, whichever is more, in case X does not link it.
+    const linked = !isDomain(host) ? null : scheme ? 23 : Math.max(23, weigh(core));
+    return linked === null ? weigh(run) : weigh(run.slice(0, from)) + linked + weigh(run.slice(to));
+}
+
 /**
  * The length X counts for a post: text is NFC-normalized; code points in X's light ranges (Latin, most European
- * scripts, common punctuation) count 1 and others 2; an emoji, however many code points, counts 2; a link counts 23.
- * Links are found word by word, after brackets, quotes and trailing punctuation are set aside. The count can overshoot
- * X's for unusual text; it can undershoot only for a short link joined to other text, which X then refuses with nothing posted.
+ * scripts, common punctuation) count 1 and others 2; an emoji counts 2; a link counts 23. A link ends at the first
+ * character that is not an ASCII URL character. A domain joined to other letters (an international name such as
+ * 例え.jp) counts at least 23, and so does its word. The count can overshoot X's for unusual text; it can undershoot
+ * for an emoji sequence X does not know, which X then refuses with nothing posted. Linear in the text's length.
  */
 export function xLength(text: string): number {
-    const light = (c: number) => c <= 0x10ff || (c >= 0x2000 && c <= 0x200d) || (c >= 0x2010 && c <= 0x201f) || (c >= 0x2032 && c <= 0x2037);
-    const segmenter = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
-    const weigh = (part: string) => {
-        let total = 0;
-        for (const {segment} of segmenter.segment(part)) {
-            if (/\p{Extended_Pictographic}/u.test(segment)) { total += 2; continue; }
-            for (const char of segment) total += light(char.codePointAt(0)!) ? 1 : 2;
-        }
-        return total;
-    };
-    // Each word is checked on its own, without backtracking patterns, so counting stays linear in the text's length.
     let total = 0;
     for (const word of text.normalize('NFC').split(/(\s+)/)) {
-        let from = 0, to = word.length;
-        while (from < to && '("\'<[{'.includes(word[from])) from++;
-        while (to > from && ')"\'>]}.,!?;:'.includes(word[to - 1])) to--;
-        const open = word.slice(0, from), core = word.slice(from, to), close = word.slice(to);
-        const host = core.split(/[/?#]/)[0].split('.');
-        const scheme = /^https?:\/\/[^\s]+$/i.test(core);
-        const domain = host.length >= 2 && host.every(label => /^[a-z0-9-]+$/i.test(label)) && /^[a-z]{2,}$/i.test(host[host.length - 1]);
-        // A scheme link always counts 23; a bare domain counts 23 or its own length, whichever is more, in case X does not link it.
-        total += !core ? weigh(word) : weigh(open) + (scheme ? 23 : domain ? Math.max(23, weigh(core)) : weigh(core)) + weigh(close);
+        let weight = 0, last = 0, international = false;
+        // A keycap's digit, # or * stays with its emoji.
+        for (const match of word.matchAll(/(?:[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%](?![\ufe0e\ufe0f\u20e3]))+/g)) {
+            // A scheme inside a run starts a link there, as in see:https://example.com.
+            weight += weigh(word.slice(last, match.index)) + match[0].split(/(?=https?:\/\/)/i).reduce((sum, run) => sum + weighRun(run), 0);
+            if (match.index > 0 && /^\.[a-z]{2,}(?:[/?#:]|$)/i.test(match[0]) && /\p{L}/u.test(word[match.index - 1])) international = true;
+            last = match.index + match[0].length;
+        }
+        weight += weigh(word.slice(last));
+        total += international ? Math.max(23, weight) : weight;
     }
     return total;
 }
@@ -156,7 +181,7 @@ export const x: PublishingAdapter = {
             let id: unknown = null;
             try {
                 const response = await call(keys, 'POST', 'media/upload', {form, timeout: uploadTimeoutMs});
-                id = data(response.status === 200 ? await boundedJson(response) : (void response.body?.cancel().catch(() => {}), null))?.id;
+                id = data(response.ok ? await boundedJson(response) : (void response.body?.cancel().catch(() => {}), null))?.id;
             } catch { /* no post exists yet */ }
             if (typeof id !== 'string' || !idPattern.test(id)) return {status: 'rejected', reason: 'media-upload-refused'};
             mediaIds.push(id);

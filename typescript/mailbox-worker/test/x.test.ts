@@ -18,7 +18,9 @@ const environment = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', RE
 const connectX = (env: Env, {fields = keys, ...owner}: {humanId: string; authAt: number; agentId: string; fields?: Record<string, string>}) =>
     connectAccount(env, {...owner, provider: 'x', fields});
 
-const encode = (value: string) => encodeURIComponent(value).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+/** RFC 3986 percent-encoding of UTF-8 bytes, written independently of the adapter's. */
+const encode = (value: string) => [...new TextEncoder().encode(value)]
+    .map(byte => /[A-Za-z0-9\-._~]/.test(String.fromCharCode(byte)) ? String.fromCharCode(byte) : '%' + byte.toString(16).toUpperCase().padStart(2, '0')).join('');
 /** An independent OAuth 1.0a HMAC-SHA1 check of one request, against the configured keys. */
 function signedByKeys(request: Request, url: URL): boolean {
     const header = request.headers.get('Authorization') ?? '';
@@ -27,7 +29,8 @@ function signedByKeys(request: Request, url: URL): boolean {
     if (params.oauth_consumer_key !== keys.apiKey || params.oauth_token !== keys.accessToken || params.oauth_signature_method !== 'HMAC-SHA1'
         || params.oauth_version !== '1.0' || !/^[0-9a-f]{32}$/.test(params.oauth_nonce) || Math.abs(Number(params.oauth_timestamp) - Date.now() / 1000) > 300) return false;
     const {oauth_signature: signature, ...signed} = params;
-    const pairs = [...url.searchParams, ...Object.entries(signed)].map(([n, v]) => encode(n) + '=' + encode(v)).sort();
+    const pairs = [...url.searchParams, ...Object.entries(signed)].map(([n, v]) => [encode(n), encode(v)])
+        .sort(([a, x], [b, y]) => a === b ? (x < y ? -1 : x > y ? 1 : 0) : a < b ? -1 : 1).map(([n, v]) => n + '=' + v);
     const base = request.method + '&' + encode(url.origin + url.pathname) + '&' + encode(pairs.join('&'));
     return createHmac('sha1', encode(keys.apiKeySecret) + '&' + encode(keys.accessTokenSecret)).update(base).digest('base64') === signature;
 }
@@ -142,7 +145,16 @@ test('xLength_WeightsLikeX_CjkEmojiAndLinks', () => {
     assert.equal(xLength('x.co'), 23, 'a bare domain counts at least 23');
     assert.equal(xLength('(see http://x.co).'), 1 + 4 + 23 + 2, 'brackets and trailing punctuation around a link count on their own');
     assert.equal(xLength('node.js 3.5'), 23 + 1 + 3, 'a word that may be a domain counts as one; a number does not');
+    assert.equal(xLength('https://x.com/a' + 'あ'.repeat(200)), 23 + 400, 'a link ends at the first character that is not a URL character');
+    assert.equal(xLength('詳細はhttps://example.comをご覧ください'), 6 + 23 + 14, 'a link inside CJK text counts 23');
+    assert.equal(xLength('「https://example.com」'), 2 + 23 + 2, 'CJK brackets count on their own');
+    assert.equal(xLength('例え.jp'), 23, 'an international domain counts at least 23');
+    assert.equal(xLength('see:https://x.co'), 4 + 23, 'a scheme joined to a word starts a link');
+    assert.equal(xLength('https://' + 'a'.repeat(300)), 308, 'a scheme without a domain is not a link');
+    assert.equal(xLength('🇦🇺 1️⃣'), 2 + 1 + 2, 'a flag and a keycap count 2 each');
+    assert.equal(xLength('😀' + '\u0301'.repeat(300)), 2 + 300, 'marks stacked on an emoji are counted');
     const started = performance.now();
+    assert.equal(xLength('http://'.repeat(50_000)), 50_000 * 7, 'many schemes in one word are counted without recursion');
     assert.equal(xLength('ab.'.repeat(30_000) + 'com'), 90_003, 'a long word is counted at its own length when longer than a link');
     assert.ok(performance.now() - started < 1000, 'counting stays fast for long input');
     assert.equal(xLength('é'), 1, 'text is NFC-normalized first');
@@ -184,12 +196,18 @@ test('executeXPost_Images_UploadExactBytesThenAttach', () => scenario(async ({h,
     assert.deepEqual(tweets(fake)[0].json, {media: {media_ids: ['1710000000000000001', '1710000000000000002']}}, 'an empty text is omitted');
 }));
 
-test('executeXPost_UploadRefused_FailedWithNothingPosted', () => scenario(async ({h, fake, env}) => {
-    fake.upload = () => Response.json({title: 'Invalid media'}, {status: 400});
-    const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) => ({text: 'cover', media: [await upload(h, agent, randomBytes(100), 'image/webp')]}));
-    const result = await execute(h, agent, actionId);
-    assert.deepEqual([result.status, result.failure], ['failed', 'provider-rejected: media-upload-refused']);
-    assert.equal(tweets(fake).length, 0, 'no post is created when a file is refused');
+test('executeXPost_UploadRefusedOrUnanswered_FailedWithNothingPosted', () => scenario(async ({h, fake, env}) => {
+    let uploads = 0;
+    for (const [name, answer] of [['refused', () => Response.json({title: 'Invalid media'}, {status: 400})], ['server error', () => new Response('oops', {status: 503})],
+        ['no media id', () => Response.json({data: {media_key: '3_1'}})], ['network failure', () => { throw Error('connection reset'); }],
+        ['the second image', () => ++uploads % 2 === 0 ? Response.json({title: 'Invalid media'}, {status: 400}) : Response.json({data: {id: '1710000000000000009'}})]] as const) {
+        fake.upload = answer;
+        const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) =>
+            ({text: 'cover', media: [await upload(h, agent, randomBytes(100), 'image/webp'), await upload(h, agent, randomBytes(200), 'image/png')]}));
+        const result = await execute(h, agent, actionId);
+        assert.deepEqual([result.status, result.failure], ['failed', 'provider-rejected: media-upload-refused'], name);
+        assert.equal(tweets(fake).length, 0, 'no post is created when a file is not uploaded: ' + name);
+    }
 }));
 
 test('executeXPost_RefusedOrUncertain_FailedOrUnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
@@ -204,10 +222,15 @@ test('executeXPost_RefusedOrUncertain_FailedOrUnknownAndNeverResent', () => scen
         assert.equal(tweets(fake).length, 1, 'never sent again: ' + status);
         fake.calls.length = 0;
     }
-    // A 201 without a post id, or a 200, is not a confirmation that this post was published.
-    for (const answer of [() => Response.json({data: {text: 'x'}}, {status: 201}), () => Response.json({data: {id: '1860000000000000001'}})]) {
+    // A 201 without a post id, a 200 or a lost connection is not a confirmation that this post was published.
+    for (const answer of [() => Response.json({data: {text: 'x'}}, {status: 201}), () => Response.json({data: {id: '1860000000000000001'}}),
+        () => { throw Error('connection reset'); }]) {
         fake.answer = answer;
         const {agent, actionId} = await approvedPost(h, env, fake, {text: 'unconfirmed', media: []});
         assert.equal((await execute(h, agent, actionId)).status, 'unknown');
+        fake.answer = undefined;
+        await execute(h, agent, actionId);
+        assert.equal(tweets(fake).length, 1, 'an unconfirmed post is never sent again');
+        fake.calls.length = 0;
     }
 }));
