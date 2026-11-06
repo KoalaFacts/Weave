@@ -93,3 +93,26 @@ test('externalActionTools_InvalidArguments_RejectedBeforeAnyWrite', () => scenar
         assert.equal((await call(env, agent.accountId, grantId, name, args)).status, 400, name + ' ' + JSON.stringify(args));
     assert.equal(await h.db.prepare('SELECT count(*) n FROM external_actions').first<number>('n'), 0);
 }));
+
+test('externalActionTools_ProposeWithIdempotencyKey_OnePlanSharedWithTheHttpHeader', () => scenario(async ({h, env}) => {
+    const {agent, humanId, grantId} = await ownedWithCredential(h);
+    const args = {credentialRef: 'linkedin-main', operation: 'publish_text', content: 'Live now.', idempotencyKey: 'envoylet:post-7'};
+    const first = await call(env, agent.accountId, grantId, 'propose_external_action', args);
+    const again = await call(env, agent.accountId, grantId, 'propose_external_action', args);
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.deepEqual(again.body, first.body);
+    // The key is the agent's, whichever ingress sent it.
+    const viaHttp = await h.fetchAs(agent, 'http://localhost/v1/external-actions', {method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Idempotency-Key': 'envoylet:post-7'},
+        body: JSON.stringify({credentialRef: 'linkedin-main', operation: 'publish_text', content: 'Live now.'})});
+    assert.equal(viaHttp.status, 200, await viaHttp.clone().text());
+    assert.equal((await viaHttp.json() as {actionId: string}).actionId, first.body.actionId);
+    const overview = await ownerOverview(env, humanId) as Extract<Awaited<ReturnType<typeof ownerOverview>>, {frozen: false}>;
+    assert.equal(overview.externalActions.length, 1);
+
+    const changed = await call(env, agent.accountId, grantId, 'propose_external_action', {...args, content: 'Live now!'});
+    assert.equal(changed.status, 409);
+    assert.equal(changed.body.reason, 'idempotency-conflict');
+    assert.equal((await call(env, agent.accountId, grantId, 'propose_external_action', {...args, idempotencyKey: 'not valid'})).status, 400);
+    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_actions').first<number>('n'), 1);
+}));

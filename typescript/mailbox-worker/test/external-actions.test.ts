@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
-import { approvalOrigin } from '../src/external-actions.ts';
+import { approvalOrigin, proposalKey } from '../src/external-actions.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -235,4 +235,97 @@ test('getExternalAction_AnotherAgent_Unavailable', () => scenario(async ({h, pro
     assert.equal((await h.request(`/v1/external-actions/${actionId}`, stranger)).status, 404);
     assert.equal((await h.request(`/v1/external-actions/${actionId}/execute`, stranger, 'POST', {})).status, 404);
     assert.equal(provider.calls.length, 0);
+}));
+
+const proposeKeyed = (h: Harness, as: AgentCredential, key: string, body: Record<string, unknown> = {credentialRef: 'linkedin-main', operation: 'publish_text', content: 'Episode 12 is live.'}) =>
+    h.fetchAs(as, 'http://localhost/v1/external-actions', {method: 'POST', headers: {'Content-Type': 'application/json', 'Idempotency-Key': key}, body: JSON.stringify(body)});
+const actionCount = (h: Harness) => h.db.prepare('SELECT count(*) n FROM external_actions').first<number>('n');
+
+test('proposeExternalAction_SameKeySameBody_ReturnsTheOriginalActionInItsCurrentState', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const first = await proposeKeyed(h, agent, 'envoylet:post-1');
+    assert.equal(first.status, 200, await first.clone().text());
+    const original = await first.json() as {actionId: string; status: string; approvalUrl: string | null};
+    const repeated = await (await proposeKeyed(h, agent, 'envoylet:post-1')).json() as typeof original;
+    assert.deepEqual(repeated, original);
+    assert.equal((await pendingFor(h, humanId)).length, 1);
+
+    const [shown] = await pendingFor(h, humanId);
+    assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: original.actionId, planDigest: shown.planDigest}), {ok: true});
+    // The replay reads the action; it re-checks neither the credential nor capacity, so a later revocation still returns it.
+    await h.db.prepare('UPDATE external_credentials SET revoked_at=CAST(? AS INTEGER) WHERE account_id=?').bind(ticks(), agent.accountId).run();
+    const later = await proposeKeyed(h, agent, 'envoylet:post-1');
+    assert.equal(later.status, 200, await later.clone().text());
+    const current = await later.json() as typeof original;
+    assert.equal(current.actionId, original.actionId);
+    assert.equal(current.status, 'approved');
+    assert.equal(current.approvalUrl, null);
+    assert.equal(await actionCount(h), 1);
+}));
+
+test('proposeExternalAction_SameKeyDifferentBody_IdempotencyConflictWithNothingWritten', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    await setCredential(h, agent.accountId);
+    await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
+        VALUES(?,'linkedin-other','test-http','rev-1','urn:li:person:alpha','Desk Alpha',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(agent.accountId, ticks(), ticks()).run();
+    assert.equal((await proposeKeyed(h, agent, 'k1')).status, 200);
+    for (const body of [{credentialRef: 'linkedin-main', operation: 'publish_text', content: 'Episode 13 is live.'},
+        {credentialRef: 'linkedin-other', operation: 'publish_text', content: 'Episode 12 is live.'}]) {
+        const refused = await proposeKeyed(h, agent, 'k1', body);
+        assert.equal(refused.status, 409);
+        assert.deepEqual(await refused.json(), {status: 409, title: 'State conflict', code: 'conflict', field: 'action', reason: 'idempotency-conflict'});
+    }
+    assert.equal(await actionCount(h), 1);
+}));
+
+test('proposeExternalAction_KeysArePerAgentAndAbsentKeysDoNotDeduplicate', () => scenario(async ({h}) => {
+    const one = await ownedAgent(h), two = await ownedAgent(h);
+    const a = await (await proposeKeyed(h, one.agent, 'shared')).json() as {actionId: string};
+    const b = await (await proposeKeyed(h, two.agent, 'shared')).json() as {actionId: string};
+    assert.notEqual(a.actionId, b.actionId);
+    // Another agent cannot read the first agent's action through its key: it got its own.
+    assert.equal((await h.request(`/v1/external-actions/${a.actionId}`, two.agent)).status, 404);
+    const c = await (await propose(h, one.agent)).json() as {actionId: string};
+    const d = await (await propose(h, one.agent)).json() as {actionId: string};
+    assert.notEqual(c.actionId, d.actionId);
+    assert.equal(await actionCount(h), 4);
+}));
+
+test('proposeExternalAction_InvalidIdempotencyKey_RejectedBeforeAnyWrite', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    // An empty header does not reach the Worker; the parser refuses it all the same.
+    assert.throws(() => proposalKey('', 'Idempotency-Key'), {status: 400});
+    for (const key of ['has space', 'a'.repeat(129), 'k1, k2', 'key/slash']) {
+        const refused = await proposeKeyed(h, agent, key);
+        assert.equal(refused.status, 400, JSON.stringify(key));
+        assert.equal((await refused.json() as {field: string}).field, 'Idempotency-Key');
+    }
+    assert.equal((await proposeKeyed(h, agent, 'a'.repeat(128))).status, 200);
+    assert.equal(await actionCount(h), 1);
+}));
+
+test('proposeExternalAction_ConcurrentSameKey_OnePlan', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const responses = await Promise.all([1, 2, 3].map(() => proposeKeyed(h, agent, 'race')));
+    const ids = new Set<string>();
+    for (const response of responses) {
+        assert.equal(response.status, 200, await response.clone().text());
+        ids.add((await response.json() as {actionId: string}).actionId);
+    }
+    assert.equal(ids.size, 1);
+    assert.equal((await pendingFor(h, humanId)).length, 1);
+}));
+
+test('proposeExternalAction_CrossAccountKeyLink_FailsClosed', () => scenario(async ({h}) => {
+    const {agent: first} = await ownedAgent(h);
+    const {agent: second} = await ownedAgent(h);
+    const initial = await proposeKeyed(h, second, 'mislinked');
+    assert.equal(initial.status, 200);
+    const {actionId} = await initial.json() as {actionId: string};
+    // The separate account and action FKs permit a structurally valid cross-account link.
+    // A corrupt/mislinked key must never return another agent's private proposal.
+    await h.db.prepare('UPDATE external_action_keys SET account_id=? WHERE action_id=?').bind(first.accountId, actionId).run();
+    const replay = await proposeKeyed(h, first, 'mislinked');
+    assert.equal(replay.status, 503, 'a mislinked key must fail closed rather than expose another agent\'s action');
+    assert.equal((await replay.json() as {code: string}).code, 'storage');
 }));

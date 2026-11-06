@@ -444,7 +444,12 @@
       "post": {
         "operationId": "proposeExternalAction",
         "summary": "Propose a governed external action",
-        "description": "Records a pending plan for the agent's human owner to approve on the account page. Nothing is sent to the provider. The owner confirms the exact plan: provider and contract revision, operation, full content, credential reference and revision, and the verified target account. The plan expires 1 hour after creation, for approval and execution together. At most 20 pending or approved actions per agent (429 capacity). Retrying creates another pending plan, which still needs its own approval.",
+        "description": "Records a pending plan for the agent's human owner to approve on the account page. Nothing is sent to the provider. The owner confirms the exact plan: provider and contract revision, operation, full content, credential reference and revision, and the verified target account. The plan expires 1 hour after creation, for approval and execution together. At most 20 pending or approved actions per agent (429 capacity). Send an Idempotency-Key to retry an unknown outcome safely: the same key with the same body returns the action that key first created, in its current state, with no second plan; without a key a retry creates another pending plan, which still needs its own approval.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/idempotencyKeyHeader"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -3009,6 +3014,18 @@
           "type": "string",
           "format": "uuid",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      },
+      "idempotencyKeyHeader": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Optional key chosen by this agent, unique per proposal, kept as long as the action. The same key with the same credentialRef, operation and content returns the original action in its current state (it may since be approved, rejected or expired); the same key with a different body is 409 with reason idempotency-conflict. Keys are scoped to the agent and shared with the MCP idempotencyKey argument of propose_external_action.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
         }
       }
     },
@@ -6022,11 +6039,12 @@
           "reason": {
             "enum": [
               "unowned-agent",
-              "provider-unavailable"
+              "provider-unavailable",
+              "idempotency-conflict"
             ]
           }
         },
-        "description": "unowned-agent: only an agent with a human owner can propose an action, because the owner approves it. provider-unavailable: the credential's provider is not available on this server."
+        "description": "unowned-agent: only an agent with a human owner can propose an action, because the owner approves it. provider-unavailable: the credential's provider is not available on this server. idempotency-conflict: this Idempotency-Key was already used for a proposal with a different body; nothing was written."
       },
       "MediaView": {
         "type": "object",
