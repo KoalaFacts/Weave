@@ -326,25 +326,28 @@ id. The credential is `linkedin:<sub>`, its target account `urn:li:person:<sub>`
   LinkedIn refuse the post, which is a rejection.
 - Then one `POST /rest/posts` with the member as author, `visibility: PUBLIC`, main-feed distribution and
   `lifecycleState: PUBLISHED`; one image as `content.media`, two or more as `content.multiImage`.
-- **Outcomes:** 400, 401, 403, 422 (including a duplicate post) and 429 are definite refusals
+- **Outcomes:** 400, 401, 403, 422 (including a duplicate post), 426 (a sunset API version) and 429 are definite refusals
   (`linkedin-refused-<status>`). Anything else, a network failure, or a 201 whose `x-restli-id` is not an
   `urn:li:share:` or `urn:li:ugcPost:` id is unknown and never sent again. The receipt is that id.
 
 ### LinkedIn verification
 
-`typescript/mailbox-worker/test/linkedin.test.ts` (9 tests) runs against a LinkedIn fake that answers 401 without the
+`typescript/mailbox-worker/test/linkedin.test.ts` (10 tests) runs against a LinkedIn fake that answers 401 without the
 member's Bearer token and 426 without the version headers. It covers connecting and sealing, refused and malformed
 tokens with nothing stored or sent, escaping and counting, the post rules, a text post sent once, images uploaded
 byte-for-byte and attached with alt text, one image as `media`, every upload failure with nothing posted and the token
-never sent off LinkedIn's HTTPS hosts, and each post outcome. Mutation checks, each failing at least one test: no
+never sent off LinkedIn's HTTPS hosts (redirects and dropped connections included), and each post outcome, including a
+redirect and a dropped connection after the post call, which stay unknown and are not sent again. Mutation checks, each failing at least one test: no
 escaping; plain length instead of the weighted count; accepting any upload host; accepting plain HTTP; not refusing
-422; sending empty alt text; dropping the version header; accepting any `x-restli-id`; accepting any image id; always
+422 or 426; sending empty alt text; dropping the version header; accepting any `x-restli-id`; accepting any image id; always
 using `multiImage`.
 
 ### LinkedIn limits
 
 - Checked against LinkedIn's Posts, Images, MultiImage and little-text pages on 2026-11-06; not run against LinkedIn.
 - LinkedIn sunsets each API version about a year after release, so `linkedinVersion` must be moved forward before
-  then; once sunset, every post is refused with nothing posted.
+  then; once sunset, LinkedIn answers 426 and every post is refused with nothing posted.
 - Member tokens expire after about 60 days and are not refreshed; a refused post is the sign to connect again.
+- A token longer than 500 characters is refused at connect: the router takes field values of at most 512 printable
+  ASCII characters. LinkedIn documents its tokens as about 500 characters but may lengthen them.
 - Needs an owner deploy (no schema change) once merged.

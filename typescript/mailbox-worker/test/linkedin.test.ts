@@ -183,7 +183,9 @@ test('executeLinkedInPost_UploadFailures_RejectedWithNothingPosted', () => scena
         ['a look-alike host', {init: () => Response.json({value: {uploadUrl: 'https://www.linkedin.com.evil.example/dms-uploads/x', image: 'urn:li:image:C1'}})}],
         ['an answer without an image', {init: () => Response.json({value: {uploadUrl: 'https://www.linkedin.com/dms-uploads/x'}})}],
         ['an answer naming something other than an image', {init: () => Response.json({value: {uploadUrl: 'https://www.linkedin.com/dms-uploads/x', image: 'urn:li:share:1'}})}],
-        ['a refused upload', {put: () => new Response('no', {status: 400})}]];
+        ['a refused upload', {put: () => new Response('no', {status: 400})}],
+        ['a redirected upload, which is not followed', {put: () => new Response(null, {status: 307, headers: {location: 'https://evil.example/dms-uploads/x'}})}],
+        ['a dropped upload connection', {put: () => { throw new TypeError('network connection lost'); }}]];
     for (const [name, override] of cases) {
         fake.init = override.init; fake.put = override.put;
         const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) => ({text: 'x', media: [await upload(h, agent, randomBytes(500), 'image/png')]}));
@@ -195,15 +197,20 @@ test('executeLinkedInPost_UploadFailures_RejectedWithNothingPosted', () => scena
     }
 }));
 
-test('executeLinkedInPost_PostOutcomes_RefusalRejectedOtherwiseUnknown', () => scenario(async ({h, fake, env}) => {
-    for (const status of [400, 401, 403, 422, 429]) {
+test('executeLinkedInPost_DefinitePostRefusals_Rejected', () => scenario(async ({h, fake, env}) => {
+    for (const status of [400, 401, 403, 422, 426, 429]) {
         fake.answer = () => Response.json({status}, {status});
         const {agent, actionId} = await approvedPost(h, env, fake, {text: 'refused ' + status, media: []});
         const outcome = await execute(h, agent, actionId);
         assert.deepEqual([outcome.status, outcome.failure], ['failed', 'provider-rejected: linkedin-refused-' + status]);
     }
+}));
+
+test('executeLinkedInPost_UncertainPostOutcomes_UnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
     for (const [name, answer] of [['a server error', () => new Response('oops', {status: 500})],
         ['a 201 without an id', () => new Response(null, {status: 201})],
+        ['a redirect, which is not followed', () => new Response(null, {status: 302, headers: {location: 'https://www.linkedin.com/feed/'}})],
+        ['a dropped connection', () => { throw new TypeError('network connection lost'); }],
         ['a 201 with another kind of id', () => new Response(null, {status: 201, headers: {'x-restli-id': 'urn:li:image:C1'}})]] as const) {
         fake.answer = answer;
         const {agent, actionId} = await approvedPost(h, env, fake, {text: name, media: []});

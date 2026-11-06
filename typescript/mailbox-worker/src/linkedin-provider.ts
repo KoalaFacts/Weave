@@ -15,6 +15,7 @@ const timeoutMs = 15_000, uploadTimeoutMs = 120_000, maxJsonBytes = 64 * 1024;
 const maxImageBytes = 8_000_000;
 /** LinkedIn's limit for a post's commentary, counted after reserved characters are escaped. */
 const maxText = 3000;
+/** LinkedIn's tokens are about 500 characters; the router takes field values of at most 512. */
 const tokenPattern = /^[A-Za-z0-9\-._~+/]{20,500}={0,2}$/, memberPattern = /^[A-Za-z0-9_-]{1,64}$/;
 const postPattern = /^urn:li:(?:share|ugcPost):[0-9]{1,30}$/, imagePattern = /^urn:li:image:[A-Za-z0-9_-]{1,100}$/;
 
@@ -67,7 +68,10 @@ async function verify(values: Readonly<Record<string, string>>) {
     } catch { return null; }
 }
 
-/** True only for an upload address on LinkedIn's own HTTPS hosts, so the token is never sent anywhere else. */
+/**
+ * True only for an upload address on LinkedIn's own HTTPS hosts (the docs show www.linkedin.com), so the token is never
+ * sent anywhere else. An address on any other host is refused, even one LinkedIn might start using.
+ */
 function linkedinUpload(value: unknown): URL | null {
     if (typeof value !== 'string') return null;
     try {
@@ -125,7 +129,8 @@ export const linkedin: PublishingAdapter = {
         // From here a post may exist. Only a definite refusal is a rejection; anything else is unknown and never re-sent.
         const response = await call(accessToken, 'POST', 'rest/posts', body);
         drop(response);
-        if ([400, 401, 403, 422, 429].includes(response.status)) return {status: 'rejected', reason: 'linkedin-refused-' + response.status};
+        // 426 is LinkedIn refusing a sunset API version before it reads the post.
+        if ([400, 401, 403, 422, 426, 429].includes(response.status)) return {status: 'rejected', reason: 'linkedin-refused-' + response.status};
         const id = response.status === 201 ? response.headers.get('x-restli-id') : null;
         if (!id || !postPattern.test(id)) throw Error('Unconfirmed LinkedIn response.');
         return {status: 'completed', receipt: id};
