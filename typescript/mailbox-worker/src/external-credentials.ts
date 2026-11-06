@@ -122,7 +122,7 @@ const fieldValue = /^[\x20-\x7e]{1,512}$/;
 /**
  * Owner RPC for any publishing adapter: the owner's values for exactly the adapter's connect fields. The platform verifies
  * them and names the accounts they act as; each becomes the credential `<provider>:<ref>` with a fresh revision and the
- * secret field sealed to its row. For an adapter whose one secret covers all of the agent's accounts, accounts it no
+ * secret fields sealed to its row. For an adapter whose one secret covers all of the agent's accounts, accounts it no
  * longer lists are revoked.
  */
 export async function connectAccount(env: Env, input: ConnectAccountInput, clock: () => bigint = nowUtc): Promise<ConnectAccountResult> {
@@ -139,14 +139,16 @@ export async function connectAccount(env: Env, input: ConnectAccountInput, clock
     const nowMs = Number(clock() / 10000n);
     if (nowMs - input.authAt > reauthWindowMs || input.authAt > nowMs + reauthFutureSkewMs) return {ok: false, reason: 'stale-authentication'};
     if (!adapter) return {ok: false, reason: 'provider-unavailable'};
-    const secretField = fields.find(field => field.secret)!, provider = adapter.name;
+    const secretFields = fields.filter(field => field.secret), provider = adapter.name;
     try {
         const before = await atomic(env.db, tx => ownership(tx, input.humanId, input.agentId), clock);
         if (before !== 'ok') return {ok: false, reason: before};
         const accounts = await adapter.connector.verify(input.fields);
         if (accounts === null) return {ok: false, reason: 'provider-refused'};
         if (accounts.length === 0) return {ok: false, reason: 'no-channel'};
-        const secret = input.fields[secretField.name];
+        // One secret field is sealed as its value; several are sealed together as one JSON object of their values.
+        const secret = secretFields.length === 1 ? input.fields[secretFields[0].name]
+            : JSON.stringify(Object.fromEntries(secretFields.map(field => [field.name, input.fields[field.name]])));
         const rows = await Promise.all(accounts.map(async account => {
             const credentialRef = provider + ':' + account.ref, revision = crypto.randomUUID();
             const sealed = await sealSecret(env.EXTERNAL_CREDENTIAL_KEY, {accountId: input.agentId, credentialRef, provider, revision}, secret);
