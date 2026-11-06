@@ -9,7 +9,7 @@ Newest first within each area. Every record in this directory is listed once.
 
 ## Publishing router and governed external actions (TypeScript Workers)
 
-- 2026-11-06: [X publishing adapter](2026-11-06-x-adapter.md)
+- 2026-11-06: [X publishing adapter](2026-11-05-publishing-router.md#native-x-adapter-2026-11-06)
 - 2026-11-06: [External-action status notices on the inbox](2026-11-06-external-action-notices.md)
 - 2026-11-05: [Telegram publishing adapter](2026-11-05-telegram-adapter.md)
 - 2026-11-05: [Publishing router: one post format, one connect flow, platforms as adapters](2026-11-05-publishing-router.md)
