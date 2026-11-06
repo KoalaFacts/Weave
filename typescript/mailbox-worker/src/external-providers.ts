@@ -15,13 +15,13 @@ import { publishingProvider, type PublishingAdapter } from './publishing.ts';
 export type ProviderCall = {accountId: string; operation: string; content: string; targetAccount: string; actionId: string; secret: string | null};
 /** What a provider checks when a plan is proposed; `targetAccount` is the credential's provider-verified account. */
 export type ProposedPlan = {accountId: string; operation: string; content: string; targetAccount: string};
+/** A post's text limits: `unit` is how `max` counts; `maxWithMedia` replaces `max` when media is attached; `maxBytes` caps the UTF-8 size. */
+export type TextRules = {max: number; unit: 'characters' | 'graphemes' | 'weighted characters'; maxWithMedia: number | null; maxBytes: number | null};
 /**
  * `rejected` only when the provider confirmed nothing happened. Throw when the outcome is uncertain. `trackFrom` (epoch
  * ms) marks a completed effect that the provider finishes later, such as a queued or scheduled post: its publication
  * state is asked for from that time on.
  */
-/** A post's text limits: `unit` is how `max` counts; `maxWithMedia` replaces `max` when media is attached; `maxBytes` caps the UTF-8 size. */
-export type TextRules = {max: number; unit: 'characters' | 'graphemes' | 'weighted characters'; maxWithMedia: number | null; maxBytes: number | null};
 export type ProviderResult = {status: 'completed'; receipt: string; trackFrom?: number} | {status: 'rejected'; reason: string};
 /** A later state of a tracked effect. `error` is the platform's own text: untrusted, bounded and shown as data. */
 export type PublicationState = {state: 'queued' | 'published' | 'failed'; url: string | null; error: string | null};

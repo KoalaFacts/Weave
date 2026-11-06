@@ -57,9 +57,10 @@ so what agents read and what is enforced cannot drift apart. Since 2026-11-06
 is not a post, or whose provider is unavailable): the same text limits as data, so an
 app can count before proposing without parsing the description. `unit` is
 `characters` (UTF-16 code units), `graphemes` or `weighted characters` (X); clients
-should treat an unknown unit as no limit. The router still decides at proposal. At dispatch the router
-re-reads the files, and a file gone or changed since approval sends nothing. The
-adapter receives the parsed post with each file's stored type.
+should treat an unknown unit as no limit. The router still decides at proposal.
+
+At dispatch the router re-reads the files, and a file gone or changed since approval
+sends nothing. The adapter receives the parsed post with each file's stored type.
 
 ## Connecting
 
@@ -97,7 +98,8 @@ Neither the authorization server, the owner page nor the RPC surface changes.
     not called when a file disappeared after approval.
 - `textRules` on `GET /v1/external-credentials` and `list_my_credentials`:
   `agent-credentials-media` (Postiz, and null for an unavailable YouTube credential),
-  `bluesky` (with its 3000-byte cap), `telegram` (1024 with media) and `x` (weighted).
+  `bluesky` (with its 3000-byte cap), `discord`, `telegram` (1024 with media) and `x`
+  (weighted).
 - `test/postiz.test.ts` and `test/bluesky.test.ts` run their connect, plan and
   dispatch tests through the router. Bluesky's limits are checked through the router,
   and so is the exact-field rule.
