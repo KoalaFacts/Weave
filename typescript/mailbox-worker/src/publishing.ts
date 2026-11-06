@@ -15,8 +15,9 @@ export type Post = {text: string; media: PostFile[]; settings: Record<string, un
 
 /** What one platform accepts. The router refuses anything else before the owner is asked. */
 export type PostRules = {
-    text: {max: number; unit: 'characters' | 'graphemes'; maxBytes?: number; maxWithMedia?: number};
-    /** Accepted media types and the largest file of each, in bytes; `maxAlt` when the platform takes less alt text than the post format. */
+    /** `weigh` counts the text when the platform weighs characters unequally; its unit is then 'weighted characters'. */
+    text: {max: number; maxBytes?: number; maxWithMedia?: number} & ({unit: 'characters' | 'graphemes'; weigh?: never} | {unit: 'weighted characters'; weigh: (text: string) => number});
+    /** Accepted media types and the largest file of each, in bytes; `maxAlt` when the platform takes less alt text than the post format (0: none). */
     media: {max: number; types: Readonly<Record<string, number>>; maxTotalBytes?: number; maxAlt?: number};
     /** How far ahead publishAt may be, in ms; null when the platform posts immediately only. */
     schedule: number | null;
@@ -26,7 +27,7 @@ export type PostRules = {
     note?: string;
 };
 
-/** A field an owner fills to connect: exactly one is the secret the adapter keeps. */
+/** A field an owner fills to connect: at least one is secret, and the adapter keeps only the secret ones. */
 export type ConnectField = {name: string; label: string; secret: boolean; pattern?: string; placeholder?: string};
 /** An account the secret acts as: `ref` completes the credential reference `<provider>:<ref>`. */
 export type ConnectedAccount = {ref: string; targetAccount: string; targetDisplay: string};
@@ -41,7 +42,10 @@ export type Connector = {
     verify(values: Readonly<Record<string, string>>): Promise<ConnectedAccount[] | null>;
 };
 
-/** What an adapter receives to send one approved post. `secret` never leaves it. */
+/**
+ * What an adapter receives to send one approved post. `secret` is its one secret field's value, or a JSON object of the
+ * values by field name when it has several; it never leaves the adapter.
+ */
 export type PublishCall = {env: Env; accountId: string; actionId: string; targetAccount: string; secret: string; post: Post};
 export type PublishingAdapter = {
     name: string;
@@ -85,7 +89,7 @@ const graphemes = (text: string) => [...new Intl.Segmenter(undefined, {granulari
 /** Why `post` breaks the rules, or null. With `now`, a publishAt must also be ahead within the platform's horizon. */
 function ruleBreak(post: Parsed, rules: PostRules, targetAccount: string, now: number | null): string | null {
     const {text, media} = rules;
-    const length = text.unit === 'graphemes' ? graphemes(post.text) : post.text.length;
+    const length = text.weigh ? text.weigh(post.text) : text.unit === 'graphemes' ? graphemes(post.text) : post.text.length;
     const maxText = post.media.length && text.maxWithMedia !== undefined ? text.maxWithMedia : text.max;
     if (length > maxText) return `text must be at most ${maxText} ${text.unit}${post.media.length && text.maxWithMedia !== undefined ? ' with media' : ''}`;
     if (text.maxBytes !== undefined && new TextEncoder().encode(post.text).byteLength > text.maxBytes) return `text must be at most ${text.maxBytes} bytes`;
@@ -93,7 +97,7 @@ function ruleBreak(post: Parsed, rules: PostRules, targetAccount: string, now: n
     if (post.media.length > media.max) return `at most ${media.max} media`;
     // An approved description is sent as it is, never shortened, so a longer one is refused before approval.
     if (media.maxAlt !== undefined && post.media.some(file => file.alt !== null && file.alt.length > media.maxAlt!))
-        return `alt must be at most ${media.maxAlt} characters here`;
+        return media.maxAlt === 0 ? 'alt is not supported here; omit it' : `alt must be at most ${media.maxAlt} characters here`;
     if (media.maxTotalBytes !== undefined && post.media.reduce((total, file) => total + file.bytes, 0) > media.maxTotalBytes)
         return `media must be at most ${media.maxTotalBytes} bytes in all`;
     if (post.publishAt !== null) {
@@ -119,7 +123,7 @@ export function describePost(rules: PostRules, targetAccount: string): string {
     const caption = rules.text.maxWithMedia === undefined ? '' : ` (${rules.text.maxWithMedia} with media)`;
     return `JSON {"text": at most ${rules.text.max} ${rules.text.unit}${caption}, "media": up to ${rules.media.max} of your uploaded files as {"mediaId", "bytes", "sha256", "alt"?} `
         + `(${typeNames(rules.media.types)}${rules.media.maxTotalBytes === undefined ? '' : `, ${rules.media.maxTotalBytes} bytes in all`}; alt describes an image for people who cannot see it`
-        + `${rules.media.maxAlt === undefined ? '' : `, at most ${rules.media.maxAlt} characters`}), `
+        + `${rules.media.maxAlt === undefined ? '' : rules.media.maxAlt === 0 ? ', but this platform takes none' : `, at most ${rules.media.maxAlt} characters`}), `
         + settings + schedule + '}. Text or media is required.' + (rules.note ? ' ' + rules.note : '');
 }
 
