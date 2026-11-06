@@ -36,8 +36,9 @@ lost.
   the same value `GET /v1/external-actions/{actionId}` returns: `null` unless the action is `failed` (a pre-dispatch
   code such as `credential-changed`, or `provider-rejected: <reason>`) or `unknown` (`outcome-unknown`). The first
   version left it out with the receipt; Envoylet's `/#publish` shows a hint for each failure code, so without it an
-  app needed one extra read per failed action to say why. The code is bounded (an adapter reason is at most 256
-  characters) and already readable by the same credential, so the page stays bounded and no new data is exposed.
+  app needed one extra read per failed action to say why. The code is bounded (at most 275 characters: a 256-character
+  adapter reason after the `provider-rejected: ` prefix; text after that prefix can come from the provider and is
+  untrusted data) and already readable by the same credential, so the page stays bounded and no new data is exposed.
 - **Own actions only.** Only rows with the caller's `account_id` are read. Another agent's actions never appear.
 - **Lost proposals.** A proposal whose HTTP response was lost (the case behind Envoylet's `propose-idempotency`
   request) shows up as a `pending` notice with its `actionId`. The app can then show the owner the plan, or let it
@@ -84,7 +85,7 @@ Mutation checks. Each mutation made at least one test fail, and each was then re
 
 The failure code (2026-11-06) added `inbox_PlanNoLongerHeld_NoticeCarriesPreDispatchFailure` and
 `inbox_RejectedOrExpired_NoticeHasNoFailure`, and checks `failure` in the pending, completed, unknown and
-provider-rejected tests (fifteen tests in all). Before the change six failed, each because the notice had no
+provider-rejected tests (fourteen tests in all). Before the change six failed, each because the notice had no
 `failure`. Mutations:
 
 | Mutation | Tests failing |
