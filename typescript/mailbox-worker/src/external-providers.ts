@@ -9,6 +9,7 @@ import { bluesky } from './bluesky-provider.ts';
 import { telegram } from './telegram-provider.ts';
 import { discord } from './discord-provider.ts';
 import { x } from './x-provider.ts';
+import { linkedin } from './linkedin-provider.ts';
 import { publishingProvider, type PublishingAdapter } from './publishing.ts';
 
 /** `secret` is the opened credential secret, null for a provider that needs none. It never leaves the provider. */
@@ -73,7 +74,7 @@ export function provider(env: Env, name: string): ExternalProvider | null {
 }
 
 /** Every publishing platform the router can reach. Adding one is adding its adapter here. */
-export const publishingAdapters: readonly PublishingAdapter[] = [postiz, bluesky, telegram, discord, x];
+export const publishingAdapters: readonly PublishingAdapter[] = [postiz, bluesky, telegram, discord, x, linkedin];
 /** The adapter for a provider name, when this deployment can seal its secrets. */
 export function publishingAdapter(env: Env, name: string): PublishingAdapter | null {
     return env.EXTERNAL_CREDENTIAL_KEY ? publishingAdapters.find(adapter => adapter.name === name) ?? null : null;

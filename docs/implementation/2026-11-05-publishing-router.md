@@ -284,3 +284,70 @@ limits above.
   call; any 2xx accepted; the limit raised to the router's 2000; the text trimmed before sending.
 - **Limit:** the fake follows X's documented shape. No live X call has been made. X documents only a generic error
   response for this call (read on 2026-11-06), so every non-200 answer is treated as a refusal.
+
+## Native LinkedIn adapter (2026-11-06)
+
+### LinkedIn scope
+
+LinkedIn is a publishing router adapter (`typescript/mailbox-worker/src/linkedin-provider.ts`, one entry in
+`publishingAdapters`). It is shared plan step 4's native LinkedIn adapter on
+[issue #365](https://github.com/KoalaFacts/Weave/issues/365). It posts on the owner's own member feed; company pages
+are not offered.
+
+The owner creates their own app in the LinkedIn developer portal with the "Sign In with LinkedIn using OpenID Connect"
+and "Share on LinkedIn" products, generates a member access token with the `openid`, `profile` and `w_member_social`
+scopes, and pastes it. It is the one secret field and is sealed as its value. Weave registers no LinkedIn app, keeps
+no client secret and runs no OAuth redirect, so connecting needs no deployment configuration. A value not shaped like
+a token is refused without being sent anywhere.
+
+Connecting calls `GET https://api.linkedin.com/v2/userinfo` and accepts only an answer whose `sub` is a plain member
+id. The credential is `linkedin:<sub>`, its target account `urn:li:person:<sub>`, shown by the member's name.
+
+### LinkedIn post rules
+
+- **Text:** up to 3000 characters as sent. LinkedIn reads commentary as its "little text" format, where
+  `| { } @ [ ] ( ) < > # \ * _ ~` are markup. Every one of them is escaped with a backslash, so approved text appears
+  exactly as written and never turns into a mention or hashtag the owner did not see; each therefore counts 2
+  (unit `weighted characters`). The 3000 limit is not stated on the Posts API page; if LinkedIn counts differently it
+  refuses the post (422) with nothing posted.
+- **Media:** up to 9 images (JPEG, PNG or GIF), each at most 8,000,000 bytes. Files are read into memory one at a time.
+  Alt text is taken; the post format's own limit (2000) is below LinkedIn's 4086. An empty alt text is not sent.
+- **Not taken:** `publishAt`, settings, visibility other than public, documents, video and polls.
+
+### LinkedIn dispatch
+
+- Every call to `api.linkedin.com/rest/` names `LinkedIn-Version: 202610` (`linkedinVersion`) and
+  `X-Restli-Protocol-Version: 2.0.0`, with the member token as a Bearer token.
+- Each image: `POST /rest/images?action=initializeUpload` with the member as owner, then a `PUT` of the exact stored
+  bytes to the returned `uploadUrl` with the token, expecting 200 or 201. The token is sent only to an `https://`
+  address on `linkedin.com` or one of its subdomains, on the default port; any other upload address, an answer that
+  is not an `urn:li:image:` id, or a refused upload is `media-upload-refused` with nothing posted. Image status is not
+  polled: LinkedIn does not let a `w_member_social` token read `GET /rest/images`, so an image still processing makes
+  LinkedIn refuse the post, which is a rejection.
+- Then one `POST /rest/posts` with the member as author, `visibility: PUBLIC`, main-feed distribution and
+  `lifecycleState: PUBLISHED`; one image as `content.media`, two or more as `content.multiImage`.
+- **Outcomes:** 400, 401, 403, 422 (including a duplicate post), 426 (a sunset API version) and 429 are definite refusals
+  (`linkedin-refused-<status>`). Anything else, a network failure, or a 201 whose `x-restli-id` is not an
+  `urn:li:share:` or `urn:li:ugcPost:` id is unknown and never sent again. The receipt is that id.
+
+### LinkedIn verification
+
+`typescript/mailbox-worker/test/linkedin.test.ts` (10 tests) runs against a LinkedIn fake that answers 401 without the
+member's Bearer token and 426 without the version headers. It covers connecting and sealing, refused and malformed
+tokens with nothing stored or sent, escaping and counting, the post rules, a text post sent once, images uploaded
+byte-for-byte and attached with alt text, one image as `media`, every upload failure with nothing posted and the token
+never sent off LinkedIn's HTTPS hosts (redirects and dropped connections included), and each post outcome, including a
+redirect and a dropped connection after the post call, which stay unknown and are not sent again. Mutation checks, each failing at least one test: no
+escaping; plain length instead of the weighted count; accepting any upload host; accepting plain HTTP; not refusing
+422 or 426; sending empty alt text; dropping the version header; accepting any `x-restli-id`; accepting any image id; always
+using `multiImage`.
+
+### LinkedIn limits
+
+- Checked against LinkedIn's Posts, Images, MultiImage and little-text pages on 2026-11-06; not run against LinkedIn.
+- LinkedIn sunsets each API version about a year after release, so `linkedinVersion` must be moved forward before
+  then; once sunset, LinkedIn answers 426 and every post is refused with nothing posted.
+- Member tokens expire after about 60 days and are not refreshed; a refused post is the sign to connect again.
+- A token longer than 500 characters is refused at connect: the router takes field values of at most 512 printable
+  ASCII characters. LinkedIn documents its tokens as about 500 characters but may lengthen them.
+- Needs an owner deploy (no schema change) once merged.
