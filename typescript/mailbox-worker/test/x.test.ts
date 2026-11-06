@@ -110,7 +110,8 @@ test('connectX_SignedKeys_StoresUserAndSealsAllFourValues', () => scenario(async
     const sealed = row.secret instanceof ArrayBuffer ? new Uint8Array(row.secret) : Uint8Array.from(row.secret);
     for (const value of Object.values(keys)) assert.ok(!Buffer.from(sealed).toString('latin1').includes(value.slice(-20)), 'no key is stored in clear');
     assert.deepEqual(JSON.parse(await openSecret(key, {accountId: agent.accountId, credentialRef: ref, provider: 'x', revision: row.revision}, sealed)), keys);
-    assert.deepEqual((await h.ok('/v1/external-credentials', agent)).items.map((item: any) => [item.credentialRef, item.operations]), [[ref, ['publish_post']]]);
+    assert.deepEqual((await h.ok('/v1/external-credentials', agent)).items.map((item: any) => [item.credentialRef, item.operations, item.textRules]),
+        [[ref, ['publish_post'], {max: 280, unit: 'weighted characters', maxWithMedia: null, maxBytes: null}]]);
     const overview = await ownerOverview(env, humanId) as Extract<Awaited<ReturnType<typeof ownerOverview>>, {frozen: false}>;
     const form = overview.connectors.find(connector => connector.provider === 'x')!;
     assert.deepEqual(form.fields.map(field => [field.name, field.secret]), [['apiKey', true], ['apiKeySecret', true], ['accessToken', true], ['accessTokenSecret', true]],

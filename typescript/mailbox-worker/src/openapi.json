@@ -6094,7 +6094,8 @@
           "targetAccount",
           "targetDisplay",
           "operations",
-          "content"
+          "content",
+          "textRules"
         ],
         "properties": {
           "credentialRef": {
@@ -6129,6 +6130,56 @@
               "null"
             ],
             "description": "The content format those operations take; null when no operation is available."
+          },
+          "textRules": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "max",
+                  "unit",
+                  "maxWithMedia",
+                  "maxBytes"
+                ],
+                "properties": {
+                  "max": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The most text a post may carry, counted in unit."
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "characters",
+                      "graphemes",
+                      "weighted characters"
+                    ],
+                    "description": "characters: UTF-16 code units; graphemes: user-perceived characters; weighted characters: the platform's own weighting (X counts CJK and emoji as 2, any link as 23). Treat an unknown unit as no limit."
+                  },
+                  "maxWithMedia": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "description": "Replaces max when the post has media (a caption limit); null when max applies either way."
+                  },
+                  "maxBytes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "description": "The most UTF-8 bytes the text may take as well; null when there is no byte limit."
+                  }
+                }
+              }
+            ],
+            "description": "The text limits the router enforces when a post is proposed, as data; the same limits content describes. null when no operation is available or the content is not a post."
           }
         }
       }

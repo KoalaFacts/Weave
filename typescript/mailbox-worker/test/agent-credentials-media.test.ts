@@ -55,7 +55,8 @@ test('listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider', 
     assert.deepEqual(listed.body.items.map((item: any) => item.credentialRef), ['postiz:cm4tiktok', 'youtube'], 'revoked and other agents\' credentials are not listed');
     assert.deepEqual([postiz.provider, postiz.targetAccount, postiz.targetDisplay, postiz.operations], ['postiz', 'tiktok/cm4tiktok', 'Display postiz:cm4tiktok', ['publish_post']]);
     for (const setting of Object.keys(tiktok)) assert.ok(postiz.content.includes(`"${setting}"`), setting + ' is named in the content format');
-    assert.deepEqual([youtube.operations, youtube.content], [[], null]);
+    assert.deepEqual(postiz.textRules, {max: 7000, unit: 'characters', maxWithMedia: null, maxBytes: null}, 'the limits ruleBreak enforces, as data');
+    assert.deepEqual([youtube.operations, youtube.content, youtube.textRules], [[], null, null]);
     // The HTTP API returns the same listing for a key-authenticated agent.
     assert.deepEqual(await h.ok('/v1/external-credentials', agent), listed.body);
     assert.equal((await mcp(env, agent.accountId, grantId, 'list_my_credentials', {extra: 1})).status, 400);

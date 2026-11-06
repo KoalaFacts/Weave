@@ -175,8 +175,11 @@ export const privateMcpTools = [
         'weave:actions.read', {}, [], out({items:{type:'array', items:out({
             credentialRef:str(64, 'Pass as credentialRef.'), provider:str(64), targetAccount:str(256, 'The provider-verified account the credential acts as.'),
             targetDisplay:str(400, 'A readable name for the account.'), operations:{type:'array', items:str(64), description:'Operations you can propose now.'},
-            content:nullable({type:'string', description:'The content format those operations take.'})
-        }, ['credentialRef','provider','targetAccount','targetDisplay','operations','content'])}}, ['items']), {readOnly:true}),
+            content:nullable({type:'string', description:'The content format those operations take.'}),
+            textRules:nullable({...out({max:{type:'integer', minimum:1}, unit:{type:'string', enum:['characters','graphemes','weighted characters']},
+                maxWithMedia:nullable({type:'integer', minimum:1}), maxBytes:nullable({type:'integer', minimum:1})}, ['max','unit','maxWithMedia','maxBytes']),
+                description:'The text limits content describes, as data: max counted in unit, maxWithMedia replacing max when media is attached, maxBytes the UTF-8 cap. null when content is not a post.'})
+        }, ['credentialRef','provider','targetAccount','targetDisplay','operations','content','textRules'])}}, ['items']), {readOnly:true}),
     tool('create_media_upload', 'Get a one-use URL for uploading an image or video for a post: send one HTTP PUT of the file to uploadUrl with exactly this Content-Type and Content-Length within 15 minutes. '
         + 'The PUT response is the media record {mediaId, contentType, bytes, sha256}; reference it in content as {mediaId, bytes, sha256}. get_my_media reads it again.',
         'weave:actions.write', {contentType:{type:'string', enum:['video/mp4','video/quicktime','video/webm','image/jpeg','image/png','image/gif','image/webp']},
