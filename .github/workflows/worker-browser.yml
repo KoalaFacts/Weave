@@ -18,7 +18,9 @@ jobs:
   worker:
     name: Worker API, compatibility and browser
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # The full Worker suite alone takes 9–13 minutes, leaving the apt-backed Playwright dependency
+    # install too little room when the runner's mirror is slow. 25 matches the deploy gate's wait.
+    timeout-minutes: 25
     defaults:
       run:
         shell: bash
