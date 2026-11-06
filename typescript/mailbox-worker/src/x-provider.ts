@@ -200,8 +200,8 @@ export const x: PublishingAdapter = {
             } catch { /* no post exists yet */ }
             if (typeof id !== 'string' || !idPattern.test(id)) return {status: 'rejected', reason: 'media-upload-refused'};
             // Approved alt text is set before anything is posted; if X does not confirm it, nothing is posted rather than
-            // a post without the alt text the owner approved.
-            if (file.alt !== null) {
+            // a post without the alt text the owner approved. An empty alt text describes nothing, so it is not sent.
+            if (file.alt) {
                 let confirmed: unknown = null;
                 try {
                     const response = await call(keys, 'POST', 'media/metadata', {json: {id, metadata: {alt_text: {text: file.alt}}}});

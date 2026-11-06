@@ -226,6 +226,25 @@ test('executeXPost_AltRefusedOrUnanswered_FailedWithNothingPosted', () => scenar
     }
 }));
 
+test('executeXPost_SecondImageAltRefused_FailedWithNothingPosted', () => scenario(async ({h, fake, env}) => {
+    let metadataCalls = 0;
+    fake.metadata = (call: Call) => ++metadataCalls === 1 ? Response.json({data: {id: call.json.id}}) : new Response('oops', {status: 503});
+    const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) => ({text: 'two', media: [
+        {...await upload(h, agent, randomBytes(100), 'image/png'), alt: 'first'}, {...await upload(h, agent, randomBytes(100), 'image/png'), alt: 'second'}]}));
+    const result = await execute(h, agent, actionId);
+    assert.deepEqual([result.status, result.failure], ['failed', 'provider-rejected: media-alt-refused']);
+    assert.equal(metadataCalls, 2, 'the first alt text was set and the second refused');
+    assert.equal(tweets(fake).length, 0, 'nothing is posted when a later image loses its alt text');
+}));
+
+test('executeXPost_EmptyAlt_NoMetadataCall', () => scenario(async ({h, fake, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) =>
+        ({text: 'plain', media: [{...await upload(h, agent, randomBytes(100), 'image/png'), alt: ''}]}));
+    assert.equal((await execute(h, agent, actionId)).status, 'completed');
+    assert.equal(fake.calls.filter(call => call.path === '/2/media/metadata').length, 0, 'an empty alt text is not sent');
+    assert.equal(tweets(fake).length, 1);
+}));
+
 test('executeXPost_UploadRefusedOrUnanswered_FailedWithNothingPosted', () => scenario(async ({h, fake, env}) => {
     let uploads = 0;
     for (const [name, answer] of [['refused', () => Response.json({title: 'Invalid media'}, {status: 400})], ['server error', () => new Response('oops', {status: 503})],
