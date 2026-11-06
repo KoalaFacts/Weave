@@ -61,7 +61,7 @@ test('inbox_ProposedAction_PendingNoticeWithoutContent', () => scenario(async ({
     const action = await propose(h, agent);
     const notices = await actionNotices(h, agent);
     assert.deepEqual(notices, [{kind: 'external-action', actionId: action.actionId, status: 'pending', credentialRef: 'linkedin-main',
-        operation: 'publish_text', createdAt: action.createdAt, expiresAt: action.expiresAt, decidedAt: null, completedAt: null}]);
+        operation: 'publish_text', createdAt: action.createdAt, expiresAt: action.expiresAt, decidedAt: null, completedAt: null, failure: null}]);
     assert.equal(JSON.stringify(notices).includes('Episode 12'), false, 'notices never carry the planned content');
 }));
 
@@ -77,7 +77,7 @@ test('inbox_ApprovedAndExecuted_OneNoticeWithLatestStatus', () => scenario(async
     assert.equal(executed.status, 'completed');
     assert.equal(provider.calls, 1);
     const completed = await actionNotices(h, agent);
-    assert.deepEqual(completed.map(n => [n.actionId, n.status, n.completedAt]), [[actionId, 'completed', executed.completedAt]]);
+    assert.deepEqual(completed.map(n => [n.actionId, n.status, n.completedAt, n.failure]), [[actionId, 'completed', executed.completedAt, null]]);
 }));
 
 test('inbox_UnknownOutcome_NoticeReportsUnknown', () => scenario(async ({h, provider}) => {
@@ -86,7 +86,7 @@ test('inbox_UnknownOutcome_NoticeReportsUnknown', () => scenario(async ({h, prov
     await approve(h, humanId, actionId);
     provider.respond = () => new Response('{}', {status: 502});
     assert.equal((await h.ok(`/v1/external-actions/${actionId}/execute`, agent, 'POST', {}) as {status: string}).status, 'unknown');
-    assert.deepEqual((await actionNotices(h, agent)).map(n => n.status), ['unknown']);
+    assert.deepEqual((await actionNotices(h, agent)).map(n => [n.status, n.failure]), [['unknown', 'outcome-unknown']]);
 }));
 
 test('inbox_RejectedAction_NoticeReportsRejected', () => scenario(async ({h}) => {
@@ -174,7 +174,29 @@ test('inbox_ProviderRejected_NoticeReportsFailed', () => scenario(async ({h, pro
     await approve(h, humanId, actionId);
     provider.respond = () => Response.json({reason: 'duplicate content'}, {status: 422});
     assert.equal((await h.ok(`/v1/external-actions/${actionId}/execute`, agent, 'POST', {}) as {status: string}).status, 'failed');
-    assert.deepEqual((await actionNotices(h, agent)).map(n => [n.actionId, n.status]), [[actionId, 'failed']]);
+    const failed = await h.ok(`/v1/external-actions/${actionId}`, agent) as {failure: string};
+    assert.equal(failed.failure, 'provider-rejected: duplicate content');
+    assert.deepEqual((await actionNotices(h, agent)).map(n => [n.actionId, n.status, n.failure]), [[actionId, 'failed', failed.failure]],
+        'the notice carries the same failure code the action read returns');
+}));
+
+test('inbox_PlanNoLongerHeld_NoticeCarriesPreDispatchFailure', () => scenario(async ({h, provider}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const {actionId} = await propose(h, agent);
+    await approve(h, humanId, actionId);
+    await h.db.prepare(`UPDATE external_credentials SET revision='rev-2' WHERE account_id=?`).bind(agent.accountId).run();
+    assert.equal((await h.ok(`/v1/external-actions/${actionId}/execute`, agent, 'POST', {}) as {status: string}).status, 'failed');
+    assert.equal(provider.calls, 0);
+    assert.deepEqual((await actionNotices(h, agent)).map(n => [n.status, n.failure]), [['failed', 'credential-changed']]);
+}));
+
+test('inbox_RejectedOrExpired_NoticeHasNoFailure', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const rejected = await propose(h, agent, 'first');
+    const lapsed = await propose(h, agent, 'second');
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: rejected.actionId}), {ok: true});
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind((nowTicks() - 1n).toString(), lapsed.actionId).run();
+    assert.deepEqual(new Set((await actionNotices(h, agent)).map(n => `${n.status}:${n.failure}`)), new Set(['rejected:null', 'expired:null']));
 }));
 
 test('inbox_LapsedPlanNewerThanCappedRows_RankedByExpiry', () => scenario(async ({h}) => {
