@@ -20,6 +20,8 @@ export type ProposedPlan = {accountId: string; operation: string; content: strin
  * ms) marks a completed effect that the provider finishes later, such as a queued or scheduled post: its publication
  * state is asked for from that time on.
  */
+/** A post's text limits: `unit` is how `max` counts; `maxWithMedia` replaces `max` when media is attached; `maxBytes` caps the UTF-8 size. */
+export type TextRules = {max: number; unit: 'characters' | 'graphemes' | 'weighted characters'; maxWithMedia: number | null; maxBytes: number | null};
 export type ProviderResult = {status: 'completed'; receipt: string; trackFrom?: number} | {status: 'rejected'; reason: string};
 /** A later state of a tracked effect. `error` is the platform's own text: untrusted, bounded and shown as data. */
 export type PublicationState = {state: 'queued' | 'published' | 'failed'; url: string | null; error: string | null};
@@ -30,6 +32,8 @@ export type ExternalProvider = {
     operations: readonly string[];
     /** What `content` must be for this credential's account, for the agent composing a plan. */
     describeContent(targetAccount: string): string;
+    /** The post text limits `checkContent` enforces, as data for apps; absent when the content is not a post. */
+    textRules?: TextRules;
     /** Provider-specific content rules checked when the plan is proposed; the reason it is invalid, or null. */
     checkContent?(tx: Transaction, plan: ProposedPlan): Promise<string | null>;
     execute(env: Env, call: ProviderCall): Promise<ProviderResult>;
