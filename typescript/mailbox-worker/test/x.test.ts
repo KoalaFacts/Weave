@@ -37,7 +37,7 @@ function signedByKeys(request: Request, url: URL): boolean {
 
 type Call = {method: string; path: string; signed: boolean; json?: any; upload?: {category: string; type: string; bytes: Buffer}};
 /** An X API v2 fake. `me`, `upload` and `answer` override its replies. */
-type Fake = {calls: Call[]; me?: () => Response; upload?: (call: Call) => Response; answer?: (call: Call) => Response};
+type Fake = {calls: Call[]; me?: () => Response; upload?: (call: Call) => Response; metadata?: (call: Call) => Response; answer?: (call: Call) => Response};
 function xApi(fake: Fake) {
     let media = 1710000000000000000n;
     return async (request: Request): Promise<Response> => {
@@ -50,6 +50,10 @@ function xApi(fake: Fake) {
             const form = await request.formData(), file = form.get('media') as File;
             call.upload = {category: String(form.get('media_category')), type: file.type, bytes: Buffer.from(await file.arrayBuffer())};
             return fake.upload?.(call) ?? Response.json({data: {id: String(++media), media_key: '3_' + media, size: call.upload.bytes.length}});
+        }
+        if (request.method === 'POST' && url.pathname === '/2/media/metadata') {
+            call.json = await request.json();
+            return fake.metadata?.(call) ?? Response.json({data: {id: call.json.id, associated_metadata: {alt_text: call.json.metadata.alt_text}}});
         }
         if (request.method === 'POST' && url.pathname === '/2/tweets') {
             call.json = await request.json();
@@ -160,18 +164,18 @@ test('xLength_WeightsLikeX_CjkEmojiAndLinks', () => {
     }
 });
 
-test('xRules_Limits_TextImagesNoAltNoSchedule', async () => {
+test('xRules_Limits_TextImagesAltNoSchedule', async () => {
     const check = (post: unknown) => publishingProvider(x).checkContent!(undefined as never, {accountId: '', operation: 'publish_post', content: JSON.stringify(post), targetAccount: userId});
     const file = (bytes = 1000) => ({mediaId: crypto.randomUUID(), bytes, sha256: 'a'.repeat(64)});
     assert.equal(await check({text: 'a'.repeat(280), media: []}), null);
     const cases: [unknown, RegExp][] = [[{text: 'a'.repeat(281), media: []}, /at most 280 weighted characters/], [{text: '你'.repeat(141), media: []}, /at most 280 weighted/],
         [{text: 'a'.repeat(258) + ' https://example.com', media: []}, /at most 280 weighted/],
-        [{text: 'x', media: Array.from({length: 5}, () => file())}, /at most 4 media/], [{text: 'x', media: [{...file(), alt: 'a photo'}]}, /alt is not supported here/],
+        [{text: 'x', media: Array.from({length: 5}, () => file())}, /at most 4 media/], [{text: 'x', media: [{...file(), alt: 'a'.repeat(1001)}]}, /alt must be at most 1000 characters here/],
         [{text: 'x', media: [], publishAt: new Date(Date.now() + 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z')}, /publishAt is not supported/],
         [{text: 'x', media: [], settings: {reply: true}}, /settings are not taken/], [{text: '', media: []}, /text or media is required/]];
     for (const [post, reason] of cases) assert.match((await check(post)) ?? '', reason, JSON.stringify(post).slice(0, 70));
     const description = publishingProvider(x).describeContent(userId);
-    assert.ok(description.includes('at most 280 weighted characters') && description.includes('takes none'), 'agents are told how X counts and that alt is not taken');
+    assert.ok(description.includes('at most 280 weighted characters') && !description.includes('takes none'), 'agents are told how X counts and that alt is taken');
 });
 
 test('executeXPost_Text_SignedAndPostedOnce', () => scenario(async ({h, fake, env}) => {
@@ -193,6 +197,52 @@ test('executeXPost_Images_UploadExactBytesThenAttach', () => scenario(async ({h,
     assert.deepEqual(uploads.map(call => [call.signed, call.upload!.category, call.upload!.type]), [[true, 'tweet_image', 'image/png'], [true, 'tweet_image', 'image/jpeg']]);
     assert.ok(uploads[0].upload!.bytes.equals(png) && uploads[1].upload!.bytes.equals(jpeg), 'the exact stored bytes are uploaded');
     assert.deepEqual(tweets(fake)[0].json, {media: {media_ids: ['1710000000000000001', '1710000000000000002']}}, 'an empty text is omitted');
+}));
+
+test('executeXPost_ImagesWithAlt_AltSetOnTheUploadedMediaBeforePosting', () => scenario(async ({h, fake, env}) => {
+    const alt = '  Album cover:\n' + 'k'.repeat(985);
+    assert.equal(alt.length, 1000, 'the longest alt text X takes');
+    const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) =>
+        ({text: 'cover', media: [{...await upload(h, agent, randomBytes(100), 'image/png'), alt}, await upload(h, agent, randomBytes(200), 'image/jpeg')]}));
+    assert.equal((await execute(h, agent, actionId)).status, 'completed');
+    const metadata = fake.calls.filter(call => call.path === '/2/media/metadata');
+    assert.deepEqual(metadata.map(call => [call.signed, call.json]), [[true, {id: '1710000000000000001', metadata: {alt_text: {text: alt}}}]],
+        'alt is set once, exactly as approved, only on the file that has it');
+    const order = fake.calls.map(call => call.path).filter(path => path !== '/2/users/me');
+    assert.ok(order.indexOf('/2/media/metadata') < order.indexOf('/2/tweets'), 'alt is set before anything is posted');
+    assert.deepEqual(tweets(fake)[0].json, {text: 'cover', media: {media_ids: ['1710000000000000001', '1710000000000000002']}});
+}));
+
+test('executeXPost_AltRefusedOrUnanswered_FailedWithNothingPosted', () => scenario(async ({h, fake, env}) => {
+    for (const [name, answer] of [['refused', () => Response.json({title: 'Invalid Request'}, {status: 400})], ['server error', () => new Response('oops', {status: 503})],
+        ['another media id', () => Response.json({data: {id: '1710000000000000999'}})],
+        ['not a 200', (call: Call) => Response.json({data: {id: call.json.id}}, {status: 202})], ['network failure', () => { throw Error('connection reset'); }]] as const) {
+        fake.metadata = answer as (call: Call) => Response;
+        const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) =>
+            ({text: 'cover', media: [{...await upload(h, agent, randomBytes(100), 'image/webp'), alt: 'a photo'}]}));
+        const result = await execute(h, agent, actionId);
+        assert.deepEqual([result.status, result.failure], ['failed', 'provider-rejected: media-alt-refused'], name);
+        assert.equal(tweets(fake).length, 0, 'no post is created when alt text is not set: ' + name);
+    }
+}));
+
+test('executeXPost_SecondImageAltRefused_FailedWithNothingPosted', () => scenario(async ({h, fake, env}) => {
+    let metadataCalls = 0;
+    fake.metadata = (call: Call) => ++metadataCalls === 1 ? Response.json({data: {id: call.json.id}}) : new Response('oops', {status: 503});
+    const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) => ({text: 'two', media: [
+        {...await upload(h, agent, randomBytes(100), 'image/png'), alt: 'first'}, {...await upload(h, agent, randomBytes(100), 'image/png'), alt: 'second'}]}));
+    const result = await execute(h, agent, actionId);
+    assert.deepEqual([result.status, result.failure], ['failed', 'provider-rejected: media-alt-refused']);
+    assert.equal(metadataCalls, 2, 'the first alt text was set and the second refused');
+    assert.equal(tweets(fake).length, 0, 'nothing is posted when a later image loses its alt text');
+}));
+
+test('executeXPost_EmptyAlt_NoMetadataCall', () => scenario(async ({h, fake, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) =>
+        ({text: 'plain', media: [{...await upload(h, agent, randomBytes(100), 'image/png'), alt: ''}]}));
+    assert.equal((await execute(h, agent, actionId)).status, 'completed');
+    assert.equal(fake.calls.filter(call => call.path === '/2/media/metadata').length, 0, 'an empty alt text is not sent');
+    assert.equal(tweets(fake).length, 1);
 }));
 
 test('executeXPost_UploadRefusedOrUnanswered_FailedWithNothingPosted', () => scenario(async ({h, fake, env}) => {

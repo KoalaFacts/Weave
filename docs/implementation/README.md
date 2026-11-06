@@ -125,7 +125,7 @@ Last docs housekeeping: 2026-11-06, `weave/docs-housekeeping-2026-11-06` (adds t
 | --- | --- |
 | `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | blocked (#366; owner decision `schema-366` on #365: approve or reject the additive `external_action_keys` table. No further schema work until then) |
 | Status-change notification for apps (shared plan step 4) | 1/2 done (#369, `0d2d22e`, deployed 2026-11-05 21:37 UTC): external-action notices on the inbox. 2/2, a push webhook, is blocked: storing a callback address is a schema change and needs an owner decision first |
-| Native X adapter (shared plan step 4) | 1/2 in progress (this PR): text and up to 4 images over OAuth 1.0a user context. 2/2: alt text, once X's v2 media metadata call is verified |
+| Native X adapter (shared plan step 4) | 1/2 (#370): text and up to 4 images over OAuth 1.0a user context. 2/2 in progress (`weave/x-alt-text`): alt text through `POST /2/media/metadata`, verified from X's docs on 2026-11-06 |
 | Native LinkedIn adapter (shared plan step 4) | todo |
 | `submit-nuget` check (NETSDK1045) | blocked: it is GitHub's Automatic Dependency Submission, not a workflow in this repository, so no repository change fixes it. Owner decision: turn it off, or change its .NET setup, in Code Security settings |
 
