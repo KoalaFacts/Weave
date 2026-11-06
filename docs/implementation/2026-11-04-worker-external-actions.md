@@ -76,16 +76,20 @@ Miniflare's `outboundService`.
 
 ## Verification
 
-`test/external-actions.test.ts` (19 tests) runs against the built Worker and local
+`test/external-actions.test.ts` (25 tests) runs against the built Worker and local
 D1: exactly-once after approval with an idempotent re-execute; unowned agent;
 missing provider; invalid input including a caller-supplied account; wrong digest
 and credential rotation before confirmation; stale owner authentication; another
 human's agent; rotation, revocation and retargeting after approval; frozen owner;
-expiry; rejection; 502, malformed receipt and a lost response recording `unknown`
-with no resend; confirmed provider rejection; five concurrent executes sending once;
-another agent reading or executing. Removing the revision check, or letting
-`unknown` be re-dispatched, fails four of these tests. The OpenAPI route test covers
-the three new paths.
+expiry; the stored content, operation, contract revision or expiry edited after
+approval (`plan-changed`, nothing sent); rejection; 502, malformed receipt and a
+lost response recording `unknown` with no resend; confirmed provider rejection; five
+concurrent executes sending once; another agent reading or executing. Removing the
+revision check, or letting `unknown` be re-dispatched, fails four of these tests.
+Removing the digest re-check at execute fails the content, operation and expiry
+edits; the contract-revision edit fails only when both the contract-revision check
+and the digest re-check are removed, since the digest also covers the revision. The
+OpenAPI route test covers the three new paths.
 
 In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
 content in `<pre>`, verified account, credential revision, bound form tokens) and
