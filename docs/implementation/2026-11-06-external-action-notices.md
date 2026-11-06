@@ -29,9 +29,15 @@ lost.
   - An action's time is its last write, or its expiry when a live plan lapsed with nothing written.
   - It is reported when that time falls in the last 24 hours.
   - It is merged into the existing notices, newest first, at most 50 in all.
-- **No content.** The planned content, the receipt and the failure text are not in the notice. The app reads
+- **No content.** The planned content and the receipt are not in the notice. The app reads
   `GET /v1/external-actions/{actionId}` for those, with the same credential. This keeps the inbox page bounded and adds
   no data the agent could not already read.
+- **Failure code (added 2026-11-06, deliberately changing the first version).** Each notice also carries `failure`,
+  the same value `GET /v1/external-actions/{actionId}` returns: `null` unless the action is `failed` (a pre-dispatch
+  code such as `credential-changed`, or `provider-rejected: <reason>`) or `unknown` (`outcome-unknown`). The first
+  version left it out with the receipt; Envoylet's `/#publish` shows a hint for each failure code, so without it an
+  app needed one extra read per failed action to say why. The code is bounded (an adapter reason is at most 256
+  characters) and already readable by the same credential, so the page stays bounded and no new data is exposed.
 - **Own actions only.** Only rows with the caller's `account_id` are read. Another agent's actions never appear.
 - **Lost proposals.** A proposal whose HTTP response was lost (the case behind Envoylet's `propose-idempotency`
   request) shows up as a `pending` notice with its `actionId`. The app can then show the owner the plan, or let it
@@ -45,7 +51,7 @@ lost.
 ## Verification
 
 `test/external-action-notices.test.ts` runs against the real Worker and D1 in Miniflare: the propose, owner-decide and
-execute paths, with a fake provider. Twelve tests:
+execute paths, with a fake provider. Twelve tests in the first version:
 
 - `inbox_ProposedAction_PendingNoticeWithoutContent`: exact shape; the content string never appears.
 - `inbox_ApprovedAndExecuted_OneNoticeWithLatestStatus`: one notice per action, `approved` then `completed`, and
@@ -75,6 +81,17 @@ Mutation checks. Each mutation made at least one test fail, and each was then re
 | Sort oldest first | 1 |
 | Time an expired action by its last write | 1 |
 | Rank rows in SQL by their last write instead of their event time | 1 |
+
+The failure code (2026-11-06) added `inbox_PlanNoLongerHeld_NoticeCarriesPreDispatchFailure` and
+`inbox_RejectedOrExpired_NoticeHasNoFailure`, and checks `failure` in the pending, completed, unknown and
+provider-rejected tests (fifteen tests in all). Before the change six failed, each because the notice had no
+`failure`. Mutations:
+
+| Mutation | Tests failing |
+| --- | --- |
+| Always report `failure: null` | 3 |
+| Report `failure` only for `failed`, not `unknown` | 1 |
+| Default a missing failure to a non-null value | 3 |
 
 The OpenAPI `Notice` schema gains the `external-action` variant. The inbox page's `notices` description, Agent Start
 and the Worker README are updated.

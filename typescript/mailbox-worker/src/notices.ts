@@ -13,10 +13,10 @@ export type Notice =
     | {kind: 'key-request'; requestId: string; kid: string; endorsedBy: string; status: KeyRequestStatus; createdAt: string; expiresAt: string; decidedAt: string | null}
     | {kind: 'binding-request'; requestId: string; human: string; status: BindingStatus; createdAt: string; expiresAt: string; decidedAt: string | null}
     | {kind: 'external-action'; actionId: string; status: ActionStatus | 'expired'; credentialRef: string; operation: string; createdAt: string;
-        expiresAt: string; decidedAt: string | null; completedAt: string | null};
+        expiresAt: string; decidedAt: string | null; completedAt: string | null; failure: string | null};
 
 type StoredAction = {action_id: string; status: string; credential_ref: string; operation: string; created_at: string; expires_at: string;
-    decided_at: string | null; completed_at: string | null; at: string};
+    decided_at: string | null; completed_at: string | null; failure: string | null; at: string};
 const optionalInstant = (ticks: string | null) => ticks === null ? null : apiInstant(exactInt64(ticks));
 
 type StoredKey = {kid: string; label: string | null; created_at: string; revoked_at: string | null; cooling_until: string | null};
@@ -27,7 +27,8 @@ type StoredKey = {kid: string; label: string | null; created_at: string; revoked
  * recovery key of an agent created without one. A key made by confirming a key request is reported once, by that request's
  * `key-request` notice. A pending request past its expiry is reported as expired, at its expiry time. An external action is
  * reported once, with its current status (the same status `GET /v1/external-actions/{id}` returns), at its latest change; a
- * pending or approved action past its expiry reads as expired, at its expiry time. Its content is never included.
+ * pending or approved action past its expiry reads as expired, at its expiry time. Its content and receipt are never included;
+ * its failure code is, exactly as the action read returns it, so a failed or unknown notice says why without another read.
  */
 export async function accountNotices(tx: Transaction, accountId: string, now: bigint): Promise<Notice[]> {
     const since = (now - noticeWindowTicks).toString();
@@ -74,7 +75,7 @@ export async function accountNotices(tx: Transaction, accountId: string, now: bi
     // An action's latest change: its last write, or its expiry when a live plan lapsed with nothing written.
     const live = `status IN ('pending','approved') AND expires_at<=CAST(?3 AS INTEGER)`;
     const actions = await tx.db.prepare(`SELECT action_id,status,credential_ref,operation,CAST(created_at AS TEXT) created_at,
-            CAST(expires_at AS TEXT) expires_at,CAST(decided_at AS TEXT) decided_at,CAST(completed_at AS TEXT) completed_at,
+            CAST(expires_at AS TEXT) expires_at,CAST(decided_at AS TEXT) decided_at,CAST(completed_at AS TEXT) completed_at,failure,
             CAST(CASE WHEN ${live} THEN expires_at ELSE updated_at END AS TEXT) at
         FROM external_actions WHERE account_id=?1 AND (updated_at>CAST(?2 AS INTEGER) OR (${live} AND expires_at>CAST(?2 AS INTEGER)))
         ORDER BY CASE WHEN ${live} THEN expires_at ELSE updated_at END DESC LIMIT ?4`).bind(accountId, since, now.toString(), maxNotices).all<StoredAction>();
@@ -82,7 +83,7 @@ export async function accountNotices(tx: Transaction, accountId: string, now: bi
         entries.push({at: exactInt64(row.at), notice: {kind: 'external-action', actionId: row.action_id,
             status: effectiveStatus(row.status, row.expires_at, now), credentialRef: row.credential_ref, operation: row.operation,
             createdAt: apiInstant(exactInt64(row.created_at)), expiresAt: apiInstant(exactInt64(row.expires_at)),
-            decidedAt: optionalInstant(row.decided_at), completedAt: optionalInstant(row.completed_at)}});
+            decidedAt: optionalInstant(row.decided_at), completedAt: optionalInstant(row.completed_at), failure: row.failure}});
     }
     return entries.sort((a, b) => a.at > b.at ? -1 : a.at < b.at ? 1 : 0).slice(0, maxNotices).map(entry => entry.notice);
 }
