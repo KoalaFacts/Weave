@@ -138,27 +138,26 @@ test('connectX_MalformedOrRefusedKeys_NothingStored', () => scenario(async ({h, 
 }));
 
 test('xLength_WeightsLikeX_CjkEmojiAndLinks', () => {
-    assert.equal(xLength('hello'), 5);
-    assert.equal(xLength('你好'), 4, 'CJK counts 2');
-    assert.equal(xLength('👨‍👩‍👧‍👦'), 2, 'one emoji sequence counts 2');
-    assert.equal(xLength('see https://example.com/a/very/long/path/that/is/longer/than/twenty-three'), 4 + 23, 'a link counts 23 whatever its length');
-    assert.equal(xLength('x.co'), 23, 'a bare domain counts at least 23');
-    assert.equal(xLength('(see http://x.co).'), 1 + 4 + 23 + 2, 'brackets and trailing punctuation around a link count on their own');
-    assert.equal(xLength('node.js 3.5'), 23 + 1 + 3, 'a word that may be a domain counts as one; a number does not');
-    assert.equal(xLength('https://x.com/a' + 'あ'.repeat(200)), 23 + 400, 'a link ends at the first character that is not a URL character');
-    assert.equal(xLength('詳細はhttps://example.comをご覧ください'), 6 + 23 + 14, 'a link inside CJK text counts 23');
-    assert.equal(xLength('「https://example.com」'), 2 + 23 + 2, 'CJK brackets count on their own');
-    assert.equal(xLength('例え.jp'), 23, 'an international domain counts at least 23');
-    assert.equal(xLength('see:https://x.co'), 4 + 23, 'a scheme joined to a word starts a link');
-    assert.equal(xLength('https://' + 'a'.repeat(300)), 308, 'a scheme without a domain is not a link');
-    assert.equal(xLength('🇦🇺 1️⃣'), 2 + 1 + 2, 'a flag and a keycap count 2 each');
-    assert.equal(xLength('😀' + '\u0301'.repeat(300)), 2 + 300, 'marks stacked on an emoji are counted');
-    const started = performance.now();
-    assert.equal(xLength('http://'.repeat(50_000)), 50_000 * 7, 'many schemes in one word are counted without recursion');
-    assert.equal(xLength('ab.'.repeat(30_000) + 'com'), 90_003, 'a long word is counted at its own length when longer than a link');
-    assert.ok(performance.now() - started < 1000, 'counting stays fast for long input');
-    assert.equal(xLength('é'), 1, 'text is NFC-normalized first');
-    assert.equal(xLength('“quoted” — dash'), 15, 'common punctuation counts 1');
+    const cases: [string, number, string][] = [
+        ['hello', 5, 'Latin counts 1'], ['你好', 4, 'CJK counts 2'], ['e\u0301', 1, 'text is NFC-normalized first'], ['“quoted” — dash', 15, 'common punctuation counts 1'],
+        ['👨\u200d👩\u200d👧\u200d👦', 2, 'an emoji sequence counts 2'], ['❤\ufe0f 👍🏽', 5, 'a variation selector and a skin tone stay with their emoji'],
+        ['🇦🇺 1\ufe0f\u20e3 #\ufe0f\u20e3', 8, 'a flag and keycaps count 2 each'], ['🏴󠁧󠁢󠁳󠁣󠁴󠁿', 2, 'a tag flag counts 2'],
+        ['😀' + '\u0301'.repeat(30), 32, 'marks stacked on an emoji are counted'], ['😀' + '\u200c'.repeat(30), 32, 'joiners on an emoji are counted'],
+        ['😀\u200d'.repeat(5) + '😀', 17, 'more pictographs than an emoji has are counted one by one'], ['a\u20e3'.repeat(10), 30, 'a keycap mark on a letter is not a keycap'],
+        ['see https://example.com/a/very/long/path/that/is/longer/than/twenty-three', 4 + 23, 'a link counts 23 whatever its length'],
+        ['(see http://x.co).', 1 + 4 + 23 + 2, 'brackets and trailing punctuation around a link count on their own'],
+        ['https://x.co/a' + 'あ'.repeat(100), 23 + 200, 'a link ends at the first character that is not a URL character'],
+        ['詳細はhttps://example.comをご覧ください', 6 + 23 + 14, 'a link inside CJK text counts 23'], ['「https://example.com」', 2 + 23 + 2, 'CJK brackets count on their own'],
+        ['see:https://x.co', 4 + 23, 'a scheme after punctuation starts a link'], ['seehttps://x.co/' + 'a'.repeat(20), 36, 'a scheme joined to a word is not a link'],
+        ['https://' + 'a'.repeat(30), 38, 'a scheme without a domain is not a link'], ['https://例え.co.jp', 23, 'a link to an international host counts at least 23'], ['https://例え.中国', 23, 'so does one with an international top-level domain'],
+        ['x.co', 23, 'a bare domain counts at least 23'], ['例え.jp', 23, 'an international domain counts at least 23'], ['node.js 3.5', 23 + 1 + 3, 'a number is not a domain']];
+    for (const [text, weight, why] of cases) assert.equal(xLength(text), weight, why);
+    assert.ok(xLength('a'.repeat(281)) > 280 && xLength('https://x.co/a' + 'あ'.repeat(200)) > 280, 'counting past 280 only says the text is too long');
+    for (const long of [' a'.repeat(500_000), 'あa'.repeat(500_000), '(https://x.co)'.repeat(70_000), 'a'.repeat(1_000_000), '\u0301'.repeat(1_000_000)]) {
+        const started = performance.now();
+        assert.ok(xLength(long) > 280);
+        assert.ok(performance.now() - started < 1000, 'counting a megabyte stays fast: ' + JSON.stringify(long.slice(0, 6)));
+    }
 });
 
 test('xRules_Limits_TextImagesNoAltNoSchedule', async () => {

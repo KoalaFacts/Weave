@@ -10,6 +10,8 @@ const api = 'https://api.x.com/2/';
 const timeoutMs = 15_000, uploadTimeoutMs = 120_000, maxJsonBytes = 64 * 1024;
 /** X takes images of at most 5 MB through the simple upload; files are read into memory before anything is sent. */
 const maxImageBytes = 5_000_000;
+/** X's limit for a post from an account without Premium, in weighted characters. */
+const maxText = 280;
 const keyPattern = /^[A-Za-z0-9]{10,64}$/, secretPattern = /^[A-Za-z0-9]{30,80}$/, tokenPattern = /^[0-9]{1,20}-[A-Za-z0-9]{10,64}$/;
 const idPattern = /^[0-9]{1,19}$/, usernamePattern = /^[A-Za-z0-9_]{1,15}$/;
 type XKeys = {apiKey: string; apiKeySecret: string; accessToken: string; accessTokenSecret: string};
@@ -91,16 +93,16 @@ async function verify(values: Readonly<Record<string, string>>) {
 
 const light = (c: number) => c <= 0x10ff || (c >= 0x2000 && c <= 0x200d) || (c >= 0x2010 && c <= 0x201f) || (c >= 0x2032 && c <= 0x2037);
 const segmenter = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
-/** An emoji counts 2; marks stacked on it, other than its own variation selector and keycap, are weighed on their own. */
+/** Shapes X counts as one emoji: a flag, a keycap, a tag flag, or up to four pictographs joined by ZWJ, each with an optional variation selector and skin tone. */
+const pictograph = String.raw`\p{Extended_Pictographic}[\ufe0e\ufe0f]?[\u{1f3fb}-\u{1f3ff}]?`;
+const emoji = new RegExp(String.raw`^(?:\p{Regional_Indicator}{2}|[0-9#*]\ufe0f?\u20e3|\u{1f3f4}[\u{e0020}-\u{e007e}]{1,7}\u{e007f}|${pictograph}(?:\u200d${pictograph}){0,3})$`, 'u');
+/** Code points count 1 or 2; a grapheme of an emoji's shape counts 2 instead, and nothing else is counted for less than its code points. */
 function weigh(part: string): number {
     let total = 0;
     for (const {segment} of segmenter.segment(part)) {
-        if (/\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(segment)) {
-            total += 2;
-            for (const char of segment) if (/\p{M}/u.test(char) && !/[\ufe0e\ufe0f\u20e3]/u.test(char)) total += light(char.codePointAt(0)!) ? 1 : 2;
-            continue;
-        }
-        for (const char of segment) total += light(char.codePointAt(0)!) ? 1 : 2;
+        let own = 0;
+        for (const char of segment) own += light(char.codePointAt(0)!) ? 1 : 2;
+        total += own > 2 && emoji.test(segment) ? 2 : own;
     }
     return total;
 }
@@ -111,7 +113,7 @@ function isDomain(host: string): boolean {
 }
 const opening = '("\'<[{', closing = ')"\'>]}.,!?;:';
 
-/** The weight of one run of ASCII URL characters: a link counts 23, anything else its own weight. */
+/** The weight of one run of ASCII URL characters that holds at most one scheme, at its start: a link counts 23. */
 function weighRun(run: string): number {
     let from = 0, to = run.length;
     while (from < to && opening.includes(run[from])) from++;
@@ -123,26 +125,37 @@ function weighRun(run: string): number {
     return linked === null ? weigh(run) : weigh(run.slice(0, from)) + linked + weigh(run.slice(to));
 }
 
+/** The weight of one word: its runs of ASCII URL characters and what lies between them. */
+function weighWord(word: string): number {
+    let weight = 0, last = 0, schemes = 0;
+    // A keycap's digit, # or * stays with its emoji.
+    for (const match of word.matchAll(/(?:[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%](?![\ufe0e\ufe0f\u20e3]))+/g)) {
+        weight += weigh(word.slice(last, match.index));
+        // X links a scheme only after a character that cannot be part of a word (see:https://… but not seehttps://…).
+        for (const run of match[0].split(/(?<=^|[^A-Za-z0-9@$#])(?=https?:\/\/)/i)) {
+            weight += weighRun(run);
+            if (/^https?:\/\//i.test(run)) schemes++;
+            if (weight > maxText) return weight;
+        }
+        last = match.index + match[0].length;
+    }
+    weight += weigh(word.slice(last));
+    // A link whose host is not plain ASCII (https://例え.jp) or a domain joined to other letters still counts at least 23.
+    return Math.max(weight, 23 * schemes, /(?=\p{L})[^\0-\x7f]\.[a-z]{2,}/iu.test(word) ? 23 : 0);
+}
+
 /**
- * The length X counts for a post: text is NFC-normalized; code points in X's light ranges (Latin, most European
- * scripts, common punctuation) count 1 and others 2; an emoji counts 2; a link counts 23. A link ends at the first
- * character that is not an ASCII URL character. A domain joined to other letters (an international name such as
- * 例え.jp) counts at least 23, and so does its word. The count can overshoot X's for unusual text; it can undershoot
- * for an emoji sequence X does not know, which X then refuses with nothing posted. Linear in the text's length.
+ * The length X counts for a post, exact up to 280 and only "more than 280" beyond it, so that counting stops early
+ * on long input. Text is NFC-normalized; code points in X's light ranges (Latin, most European scripts, common
+ * punctuation) count 1 and others 2; an emoji counts 2; a link counts 23 and ends at the first character that is not
+ * an ASCII URL character. Every shortcut is taken only when X would take it, so the count may exceed X's but should
+ * not fall short of it; if it ever does, X refuses the post at dispatch with nothing posted.
  */
 export function xLength(text: string): number {
     let total = 0;
     for (const word of text.normalize('NFC').split(/(\s+)/)) {
-        let weight = 0, last = 0, international = false;
-        // A keycap's digit, # or * stays with its emoji.
-        for (const match of word.matchAll(/(?:[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%](?![\ufe0e\ufe0f\u20e3]))+/g)) {
-            // A scheme inside a run starts a link there, as in see:https://example.com.
-            weight += weigh(word.slice(last, match.index)) + match[0].split(/(?=https?:\/\/)/i).reduce((sum, run) => sum + weighRun(run), 0);
-            if (match.index > 0 && /^\.[a-z]{2,}(?:[/?#:]|$)/i.test(match[0]) && /\p{L}/u.test(word[match.index - 1])) international = true;
-            last = match.index + match[0].length;
-        }
-        weight += weigh(word.slice(last));
-        total += international ? Math.max(23, weight) : weight;
+        total += /^\s/.test(word) ? weigh(word) : weighWord(word);
+        if (total > maxText) return total;
     }
     return total;
 }
@@ -151,7 +164,7 @@ export const x: PublishingAdapter = {
     name: 'x',
     contractRevision: 'x-post-v1',
     rules: {
-        text: {max: 280, unit: 'weighted characters', weigh: xLength},
+        text: {max: maxText, unit: 'weighted characters', weigh: xLength},
         media: {max: 4, types: {'image/jpeg': maxImageBytes, 'image/png': maxImageBytes, 'image/webp': maxImageBytes}, maxAlt: 0},
         schedule: null,
         note: 'X counts most CJK characters and every emoji as 2 and every link as 23. Alt text is not sent to X yet, so media take no alt.'
