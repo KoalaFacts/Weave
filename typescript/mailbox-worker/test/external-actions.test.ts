@@ -244,6 +244,18 @@ test('executeExternalAction_ProviderConfirmedRejection_Failed', () => scenario(a
     assert.equal(provider.calls.length, 1);
 }));
 
+test('executeExternalAction_RejectionReasonWithControlsAndSplitPair_StoredVisibleAndWellFormed', () => scenario(async ({h, provider}) => {
+    const {agent, actionId} = await approved(h);
+    provider.respond = () => Response.json({reason: 'Bad\u0000 \u202etoken\ud800 ' + 'x'.repeat(240) + '\u{1F600}'.repeat(10)}, {status: 422});
+    const result = await execute(h, agent, actionId);
+    assert.equal(result.status, 'failed');
+    const reason = result.failure.slice('provider-rejected: '.length);
+    assert.ok(result.failure.startsWith('provider-rejected: Bad token\uFFFD x'), result.failure);
+    assert.ok(reason.isWellFormed(), 'no half surrogate pair is stored');
+    assert.ok(reason.length <= 256 && reason.length >= 255, String(reason.length));
+    assert.doesNotMatch(reason, /[\u0000-\u001f\u202e]/u);
+}));
+
 test('executeExternalAction_ConcurrentExecutes_SendOnce', () => scenario(async ({h, provider}) => {
     const {agent, actionId} = await approved(h);
     const results = await Promise.all(Array.from({length: 5}, () => execute(h, agent, actionId)));

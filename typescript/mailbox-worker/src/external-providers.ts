@@ -10,6 +10,7 @@ import { telegram } from './telegram-provider.ts';
 import { discord } from './discord-provider.ts';
 import { x } from './x-provider.ts';
 import { publishingProvider, type PublishingAdapter } from './publishing.ts';
+import { visibleExcerpt } from './visible-text.ts';
 
 /** `secret` is the opened credential secret, null for a provider that needs none. It never leaves the provider. */
 export type ProviderCall = {accountId: string; operation: string; content: string; targetAccount: string; actionId: string; secret: string | null};
@@ -63,7 +64,7 @@ const testHttp: ExternalProvider = {
         if (response.status === 200 && typeof body.externalId === 'string' && body.externalId.length > 0 && body.externalId.length <= maxReceipt)
             return {status: 'completed', receipt: body.externalId};
         if (response.status === 422 && typeof body.reason === 'string')
-            return {status: 'rejected', reason: body.reason.slice(0, maxReason)};
+            return {status: 'rejected', reason: visibleExcerpt(body.reason, maxReason)};
         throw Error('Unconfirmed provider response.');
     }
 };

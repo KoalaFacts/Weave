@@ -4,7 +4,7 @@
  * record. Endpoints are fixed, never configuration. The API key stays in these functions and the vault.
  */
 import type { PublicationState } from './external-providers.ts';
-import { replaceInvisible } from './visible-text.ts';
+import { visibleExcerpt } from './visible-text.ts';
 import { maxMediaBytes, signedMediaUrl } from './external-media.ts';
 import type { PublishingAdapter } from './publishing.ts';
 
@@ -132,7 +132,7 @@ function publicationState(post: Record<string, unknown>): PublicationState {
         return {state: 'published', url, error: null};
     }
     if (post.state === 'ERROR') {
-        const text = typeof post.error === 'string' ? replaceInvisible(post.error, ' ').replace(/\s+/g, ' ').trim().slice(0, maxError) : '';
+        const text = typeof post.error === 'string' ? visibleExcerpt(post.error, maxError) : '';
         return {state: 'failed', url: null, error: text || null};
     }
     return {state: 'queued', url: null, error: null};
