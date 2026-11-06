@@ -5,10 +5,11 @@ they describe the code when they were written and are not rewritten later, so a 
 wins where they differ. A record superseded by a later one says so in its first lines.
 
 Current rules live in [AGENTS.md](../../AGENTS.md) and target semantics in [ARCHITECTURE.md](../../ARCHITECTURE.md).
-Newest first within each area. Every record in this directory is listed once.
+Newest first within each area. Every record (or dated record section) in this directory is listed once.
 
 ## Publishing router and governed external actions (TypeScript Workers)
 
+- 2026-11-06: [X publishing adapter](2026-11-05-publishing-router.md#native-x-adapter-2026-11-06)
 - 2026-11-06: [External-action status notices on the inbox](2026-11-06-external-action-notices.md)
 - 2026-11-05: [Telegram publishing adapter](2026-11-05-telegram-adapter.md)
 - 2026-11-05: [Publishing router: one post format, one connect flow, platforms as adapters](2026-11-05-publishing-router.md)
@@ -123,11 +124,20 @@ Last docs housekeeping: 2026-11-06, `weave/docs-housekeeping-2026-11-06` (adds t
 | Item | Status |
 | --- | --- |
 | `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | blocked (#366; owner decision `schema-366` on #365: approve or reject the additive `external_action_keys` table. No further schema work until then) |
-| Status-change notification for apps (shared plan step 4) | 1/2 in progress: external-action notices on the inbox, no schema (this PR). 2/2, a push webhook, needs somewhere to keep a callback address: an owner schema decision first |
-| Native X adapter, then native LinkedIn (shared plan step 4) | todo |
+| Status-change notification for apps (shared plan step 4) | 1/2 done (#369, `0d2d22e`, deployed 2026-11-05 21:37 UTC): external-action notices on the inbox. 2/2, a push webhook, is blocked: storing a callback address is a schema change and needs an owner decision first |
+| Native X adapter (shared plan step 4) | 1/2 in progress (this PR): text and up to 4 images over OAuth 1.0a user context. 2/2: alt text, once X's v2 media metadata call is verified |
+| Native LinkedIn adapter (shared plan step 4) | todo |
+| `submit-nuget` check (NETSDK1045) | blocked: it is GitHub's Automatic Dependency Submission, not a workflow in this repository, so no repository change fixes it. Owner decision: turn it off, or change its .NET setup, in Code Security settings |
 
 ### Run log
 
+- 2026-11-06 10:17 (Sydney):
+  - Baseline on `main` `0d2d22e`, Node 24: mailbox-worker 50 + 938, auth-worker 92 + 93, all passing.
+  - `submit-nuget` was the recorded next item. It turned out to be GitHub's dynamic Automatic Dependency Submission,
+    not a workflow here, so it was marked blocked on a settings decision instead of attempted.
+  - Opened the native X adapter (OAuth 1.0a, text and images). OAuth 2.0 was set aside: it needs a Weave-registered X
+    app, and its refresh token rotates on use, which would change the sealed secret on every dispatch. Alt text was
+    left out because X's v2 metadata call could not be verified from its documentation in this run.
 - 2026-11-06 04:17 (Sydney):
   - Merged #367 (records index, historical banners).
   - Housekeeping, #368, merged: added `scripts/docs/check-docs.ts` with tests and a CI job; renamed the docs index to
