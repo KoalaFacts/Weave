@@ -93,8 +93,9 @@ test('connectTelegram_AdminBot_StoresChatAndSealedToken', () => scenario(async (
     const sealed = row.secret instanceof ArrayBuffer ? new Uint8Array(row.secret) : Uint8Array.from(row.secret);
     assert.ok(!Buffer.from(sealed).toString('latin1').includes(token.split(':')[1]), 'the token is never stored in clear');
     assert.equal(await openSecret(key, {accountId: agent.accountId, credentialRef: ref, provider: 'telegram', revision: row.revision}, sealed), token);
-    assert.deepEqual((await h.ok('/v1/external-credentials', agent)).items.map((item: any) => [item.credentialRef, item.operations, item.textRules]),
-        [[ref, ['publish_post'], {max: 4096, unit: 'characters', maxWithMedia: 1024, maxBytes: null}]]);
+    assert.deepEqual((await h.ok('/v1/external-credentials', agent)).items.map((item: any) => [item.credentialRef, item.operations, item.textRules, item.mediaRules]),
+        [[ref, ['publish_post'], {max: 4096, unit: 'characters', maxWithMedia: 1024, maxBytes: null},
+            {max: 10, types: {'image/jpeg': 10_000_000, 'image/png': 10_000_000, 'video/mp4': 50_000_000}, maxTotalBytes: 50_000_000, maxAlt: null}]]);
 }));
 
 test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(async ({h, fake, env}) => {
