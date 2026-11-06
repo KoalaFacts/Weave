@@ -247,6 +247,17 @@ test('publication_PlatformRefuses_FailedWithBoundedVisibleError', () => scenario
     assert.ok(read.error.startsWith('Token expired x') && read.error.length === 300, read.error);
 }));
 
+test('publication_PlatformErrorCutInsideSurrogatePair_ErrorStaysWellFormed', () => scenario(async ({h, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    const due = ms((await publication(h, actionId)).due_at);
+    await sweepWith(env, listing([{id: 'post-1', state: 'ERROR', error: 'Lone \udc00 ' + 'x'.repeat(292) + '\u{1F600}'.repeat(5)}]), due + 1000);
+    const read = (await h.ok(`/v1/external-actions/${actionId}`, agent)).publication;
+    assert.equal(read.state, 'failed');
+    assert.ok(read.error.isWellFormed(), 'no half surrogate pair is stored');
+    assert.ok(read.error.startsWith('Lone \uFFFD x') && read.error.length === 299, String(read.error.length));
+}));
+
 test('publication_StillQueuedOrUnreachable_BacksOffWithoutChangingState', () => scenario(async ({h, env}) => {
     const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
     await execute(h, agent, actionId);
