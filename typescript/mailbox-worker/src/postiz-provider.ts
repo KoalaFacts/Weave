@@ -63,7 +63,7 @@ export const postiz: PublishingAdapter = {
     contractRevision: 'postiz-post-v1',
     rules: {
         text: {max: 7000, unit: 'characters'},
-        media: {max: 10, types: Object.fromEntries(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4'].map(type => [type, maxMediaBytes]))},
+        media: {max: 10, types: Object.fromEntries(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4'].map(type => [type, maxMediaBytes])), maxAlt: 0},
         schedule: 90 * 24 * 3600_000,
         settings: targetAccount => {
             const identifier = targetAccount.split('/')[0];

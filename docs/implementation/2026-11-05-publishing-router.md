@@ -42,7 +42,8 @@ An adapter's `rules` declare:
   optional lower limit when media is attached (a caption);
 - the media count, the accepted types each with its largest size, an optional total,
   and an optional alt text limit, refused before approval so that alt text is never
-  shortened at dispatch;
+  shortened at dispatch. An adapter whose request carries no alt text sets it to 0
+  (X, Telegram, Postiz), so an owner never approves a description that is not sent;
 - the scheduling horizon, or none;
 - for each account, the settings it requires: fixed values (Postiz's `__type`) and
   required names.
@@ -104,10 +105,13 @@ Neither the authorization server, the owner page nor the RPC surface changes.
 - `textRules` on `GET /v1/external-credentials` and `list_my_credentials`:
   `agent-credentials-media` (Postiz, and null for an unavailable YouTube credential),
   `bluesky` (with its 3000-byte cap), `discord`, `telegram` (1024 with media) and `x`
-  (weighted). `mediaRules` in the same tests: Postiz (five types, no total, no alt
-  cap), Bluesky (1 MB images), Discord (10 MiB per file and in all, alt 1024),
-  Telegram (50 MB total), X (`maxAlt` 0), and null for the unavailable YouTube
-  credential.
+  (weighted). `mediaRules` in the same tests: Postiz (five types, no total, `maxAlt`
+  0), Bluesky (1 MB images), Discord (10 MiB per file and in all, alt 1024),
+  Telegram (50 MB total, `maxAlt` 0), X (`maxAlt` 0), and null for the unavailable YouTube
+  credential. `publishing`
+  `altRules_AdaptersThatSendNoAlt_RefuseAltBeforeApproval`: Telegram and Postiz refuse
+  alt at propose with "alt is not supported here; omit it" and say so in their
+  description (a reported finding: both accepted alt and then sent none).
 - `test/postiz.test.ts` and `test/bluesky.test.ts` run their connect, plan and
   dispatch tests through the router. Bluesky's limits are checked through the router,
   and so is the exact-field rule.

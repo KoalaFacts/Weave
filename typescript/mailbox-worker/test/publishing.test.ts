@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { start } from './harness.ts';
 import { describePost, parsePost, publishingProvider, type PublishCall, type PublishingAdapter } from '../src/publishing.ts';
 import { postiz } from '../src/postiz-provider.ts';
+import { telegram } from '../src/telegram-provider.ts';
 import type { Env } from '../src/database.ts';
 
 const file = (overrides: Record<string, unknown> = {}) => ({mediaId: crypto.randomUUID(), bytes: 10, sha256: 'a'.repeat(64), ...overrides});
@@ -19,6 +20,17 @@ test('parsePost_OneFormat_OptionalAltSettingsAndSchedule', () => {
         {text: 'x', media: [file({alt: 'x'.repeat(2001)})]}, {text: 'x', media: [], settings: []}, {text: 'x', media: [], publishAt: 'tomorrow'}, {text: 1, media: []}])
         assert.equal(parsePost(JSON.stringify(post)), null, JSON.stringify(post).slice(0, 60));
     assert.equal(parsePost('not json'), null);
+});
+
+test('altRules_AdaptersThatSendNoAlt_RefuseAltBeforeApproval', async () => {
+    // Telegram and Postiz request bodies carry no alt text, so accepting it would let an owner approve a description that is never sent.
+    const linkedin = 'linkedin-page/cm4', settings = {__type: 'linkedin-page'};
+    for (const [adapter, post, target] of [[telegram, {text: 'x', media: [file({alt: 'A cover'})]}, '-100123'],
+        [postiz, {text: 'x', media: [file({alt: 'A cover'})], settings}, linkedin]] as const) {
+        assert.equal(adapter.rules.media.maxAlt, 0, adapter.name);
+        assert.match((await check(adapter, post, target)) ?? '', /alt is not supported here; omit it/, adapter.name);
+        assert.ok(publishingProvider(adapter).describeContent(target).includes('takes none'), adapter.name + ' tells agents alt is not taken');
+    }
 });
 
 test('postizRules_SettingsTypeRequiredNamesAndScheduleHorizon', async () => {
