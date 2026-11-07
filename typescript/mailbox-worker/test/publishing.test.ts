@@ -38,11 +38,13 @@ test('execute_AltApprovedBeforeAltWasRefused_RejectedWithoutSending', async () =
     const linkedin = 'linkedin-page/cm4', settings = {__type: 'linkedin-page'};
     for (const [adapter, post, target] of [[telegram, {text: 'x', media: [file({alt: 'A cover'})]}, '-100123'],
         [postiz, {text: 'x', media: [file({alt: 'A cover'})], settings}, linkedin]] as const) {
-        let sent = 0;
+        let sent = 0, envReads = 0;
+        // The refusal must come before any storage read or network call: the env records any use, publish counts sends.
+        const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
         const provider = publishingProvider({...adapter, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
-        const result = await provider.execute(undefined as never, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
-            content: JSON.stringify(post), targetAccount: target, secret: 'token'});
-        assert.deepEqual([result, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0], adapter.name);
+        const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+            content: JSON.stringify(post), targetAccount: target, secret: 'token'}).catch((error: unknown) => ({thrown: String(error)}));
+        assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0], adapter.name);
     }
 });
 
