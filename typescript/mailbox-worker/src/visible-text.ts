@@ -16,6 +16,9 @@ export const replaceInvisible = (text: string, replacement: string): string => t
  */
 export const visibleName = (text: string): boolean => replaceInvisible(text, '') === text && visibleCharacter.test(text);
 
+/** True when `text` has at least one character that is neither whitespace nor default ignorable. */
+export const hasVisibleCharacter = (text: string): boolean => visibleCharacter.test(text);
+
 /**
  * Text a platform sent back (a refusal reason, an error), made safe to store and show: invisible and control characters
  * become spaces, whitespace runs collapse, lone surrogates become U+FFFD, and the cut to at most `max` UTF-16 units
