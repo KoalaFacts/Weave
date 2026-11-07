@@ -1,10 +1,11 @@
-# Weave per-user OAuth authorization server (NOT deployed)
+# Weave per-user OAuth authorization server
 
-**Operator-gated integration source, not real live OAuth acceptance.** This
-separate Cloudflare Worker uses the official `@cloudflare/workers-oauth-provider`
-v1.2.4 split-server API. It cannot be used until explicitly authorized KV,
-SQLite Durable Objects, a GitHub OAuth app, secrets, HTTPS issuer and both
-Service Bindings exist.
+**Operator-gated.** The owner deploys this separate Cloudflare Worker as
+`weave-auth-demo`, the public demo's issuer
+(`https://weave-auth-demo.weave-389.workers.dev`). It uses the official
+`@cloudflare/workers-oauth-provider` v1.2.4 split-server API and works only once
+authorized KV, SQLite Durable Objects, a GitHub OAuth app, secrets, HTTPS issuer
+and both Service Bindings exist.
 
 Flow: public OAuth client discovers the trusted issuer; SDK validates exact
 client/redirect, RFC8707 resource and PKCE S256. A browser without a valid
@@ -140,9 +141,10 @@ sign-in to 1–10 distinct numeric GitHub user IDs, comma-delimited with no spac
 Changing the list does not revoke what was already issued. Existing human session cookies and OAuth grants stay
 valid until they expire, so removing someone needs revocation, not just editing this value.
 
-## One-time, approved first-party AS-to-demo binding rollout (not executed)
+## One-time, approved first-party AS-to-demo binding rollout
 
-The existing demo release keeps OAuth disabled by default. Only **after separate
+The owner has run this rollout for the public demo; keep it for a new environment.
+OAuth stays disabled by default. Only **after separate
 operator approval** of live authorization-service and resource-worker changes,
 provision the existing `weave-auth-demo` Worker at the fixed issuer above, with
 approved KV and SQLite Durable Object, the `GITHUB_CLIENT_ID` var, the

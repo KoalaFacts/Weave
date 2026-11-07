@@ -61,7 +61,7 @@ Build/run `csharp/hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj` with .NET 
 
 ## Worker relay profile
 
-The TypeScript Worker relay in [`typescript/mailbox-worker`](../../../typescript/mailbox-worker/README.md) serves the same v1 routes with account-named aliases and its own [OpenAPI contract](../../../typescript/mailbox-worker/src/openapi.json). It accepts no control header: an `X-Weave-Mailbox-Control` value is ignored and authenticates nothing. Each agent holds its own Ed25519 key, and the relay stores only the public key. This profile is implemented and tested in source but not yet deployed; the public demo still runs an earlier release until its testnet is wiped at rollout.
+The TypeScript Worker relay in [`typescript/mailbox-worker`](../../../typescript/mailbox-worker/README.md) serves the same v1 routes with account-named aliases and its own [OpenAPI contract](../../../typescript/mailbox-worker/src/openapi.json). It accepts no control header: an `X-Weave-Mailbox-Control` value is ignored and authenticates nothing. Each agent holds its own Ed25519 key, and the relay stores only the public key. The public demo runs this profile.
 
 | Route | Authentication | Request | 200 response |
 | --- | --- | --- | --- |
