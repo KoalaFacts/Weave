@@ -57,7 +57,12 @@ so what agents read and what is enforced cannot drift apart. Since 2026-11-06
 is not a post, or whose provider is unavailable): the same text limits as data, so an
 app can count before proposing without parsing the description. `unit` is
 `characters` (UTF-16 code units), `graphemes` or `weighted characters` (X); clients
-should treat an unknown unit as no limit. The router still decides at proposal.
+should treat an unknown unit as no limit. Beside it, `mediaRules: {max, types,
+maxTotalBytes, maxAlt}` (Envoylet request `credential-media-rules`) carries the media
+limits from the same rules: the file count, each accepted type with its largest file
+in bytes, the total-bytes cap or null, and `maxAlt` (0: the platform takes no alt;
+null: only the post format's 2000-character limit). It is null exactly when
+`textRules` is. The router still decides at proposal.
 
 At dispatch the router re-reads the files, and a file gone or changed since approval
 sends nothing. The adapter receives the parsed post with each file's stored type.
@@ -106,7 +111,10 @@ Neither the authorization server, the owner page nor the RPC surface changes.
 - `textRules` on `GET /v1/external-credentials` and `list_my_credentials`:
   `agent-credentials-media` (Postiz, and null for an unavailable YouTube credential),
   `bluesky` (with its 3000-byte cap), `discord`, `telegram` (1024 with media) and `x`
-  (weighted).
+  (weighted). `mediaRules` in the same tests: Postiz (five types, no total, no alt
+  cap), Bluesky (1 MB images), Discord (10 MiB per file and in all, alt 1024),
+  Telegram (50 MB total), X (`maxAlt` 0), and null for the unavailable YouTube
+  credential.
 - `test/postiz.test.ts` and `test/bluesky.test.ts` run their connect, plan and
   dispatch tests through the router. Bluesky's limits are checked through the router,
   and so is the exact-field rule.

@@ -150,6 +150,7 @@ export function publishingProvider(adapter: PublishingAdapter): ExternalProvider
         operations: ['publish_post'],
         describeContent: targetAccount => describePost(adapter.rules, targetAccount),
         textRules: {max: adapter.rules.text.max, unit: adapter.rules.text.unit, maxWithMedia: adapter.rules.text.maxWithMedia ?? null, maxBytes: adapter.rules.text.maxBytes ?? null},
+        mediaRules: {max: adapter.rules.media.max, types: {...adapter.rules.media.types}, maxTotalBytes: adapter.rules.media.maxTotalBytes ?? null, maxAlt: adapter.rules.media.maxAlt ?? null},
         async checkContent(tx, {accountId, content, targetAccount}) {
             const post = parsePost(content);
             if (!post) return 'must be JSON {text, media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}';

@@ -7,7 +7,7 @@ import { writesRefused } from './humans.ts';
 import { reauthFutureSkewMs, reauthWindowMs, type OwnerDecision } from './owner-actions.ts';
 import { sealSecret } from './credential-vault.ts';
 import { connectYoutube, youtubeConfigured, type ConnectRefusal } from './youtube-provider.ts';
-import { provider, publishingAdapter, type TextRules } from './external-providers.ts';
+import { provider, publishingAdapter, type MediaRules, type TextRules } from './external-providers.ts';
 import { apiTime, nowUtc } from './time.ts';
 import { visibleExcerpt } from './visible-text.ts';
 import type { ActionCaller } from './external-actions.ts';
@@ -86,7 +86,7 @@ export async function ownedCredentials(tx: Transaction, agentIds: string[]): Pro
 
 /** A live credential as its agent sees it: what to pass as credentialRef, which operations work now and the content they take. */
 export type AgentCredential = {credentialRef: string; provider: string; targetAccount: string; targetDisplay: string; operations: string[]; content: string | null;
-    textRules: TextRules | null};
+    textRules: TextRules | null; mediaRules: MediaRules | null};
 
 /** GET /v1/external-credentials: the agent's live credentials. A provider this deployment cannot use lists no operations. */
 export async function listAgentCredentials(env: Env, caller: ActionCaller): Promise<{items: AgentCredential[]}> {
@@ -99,7 +99,7 @@ export async function listAgentCredentials(env: Env, caller: ActionCaller): Prom
             const usable = provider(env, row.provider);
             return {credentialRef: row.credential_ref, provider: row.provider, targetAccount: row.target_account, targetDisplay: row.target_display,
                 operations: usable ? [...usable.operations] : [], content: usable ? usable.describeContent(row.target_account) : null,
-                textRules: usable?.textRules ?? null};
+                textRules: usable?.textRules ?? null, mediaRules: usable?.mediaRules ?? null};
         })};
     });
 }
