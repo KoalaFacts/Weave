@@ -111,7 +111,11 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   credential. `publishing`
   `altRules_AdaptersThatSendNoAlt_RefuseAltBeforeApproval`: Telegram and Postiz refuse
   alt at propose with "alt is not supported here; omit it" and say so in their
-  description (a reported finding: both accepted alt and then sent none).
+  description (a reported finding: both accepted alt and then sent none). Their
+  contract revisions stay `telegram-post-v1` / `postiz-post-v1`: what they send is
+  unchanged, so approved plans without alt still dispatch, and a plan with alt
+  approved before the deploy is refused at execute (`plan-unreadable`) without a
+  provider call (`execute_AltApprovedBeforeAltWasRefused_RejectedWithoutSending`).
 - `test/postiz.test.ts` and `test/bluesky.test.ts` run their connect, plan and
   dispatch tests through the router. Bluesky's limits are checked through the router,
   and so is the exact-field rule.

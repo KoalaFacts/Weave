@@ -33,6 +33,19 @@ test('altRules_AdaptersThatSendNoAlt_RefuseAltBeforeApproval', async () => {
     }
 });
 
+test('execute_AltApprovedBeforeAltWasRefused_RejectedWithoutSending', async () => {
+    // contractRevision is unchanged because what is sent is unchanged; a plan with alt approved before this rule is refused at execute, never sent without its alt.
+    const linkedin = 'linkedin-page/cm4', settings = {__type: 'linkedin-page'};
+    for (const [adapter, post, target] of [[telegram, {text: 'x', media: [file({alt: 'A cover'})]}, '-100123'],
+        [postiz, {text: 'x', media: [file({alt: 'A cover'})], settings}, linkedin]] as const) {
+        let sent = 0;
+        const provider = publishingProvider({...adapter, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
+        const result = await provider.execute(undefined as never, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+            content: JSON.stringify(post), targetAccount: target, secret: 'token'});
+        assert.deepEqual([result, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0], adapter.name);
+    }
+});
+
 test('postizRules_SettingsTypeRequiredNamesAndScheduleHorizon', async () => {
     const tiktok = 'tiktok/cm4';
     assert.match((await check(postiz, {text: 'x', media: []}, tiktok))!, /settings\.__type must be "tiktok"/);
