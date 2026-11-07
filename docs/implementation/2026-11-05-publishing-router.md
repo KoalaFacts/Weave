@@ -94,8 +94,9 @@ renders the values.
 The account name each platform sends back (a Telegram chat title, a Discord webhook
 name, a Postiz channel name, a YouTube channel title) is stored as `targetDisplay` only
 after `shownName` in `src/external-credentials.ts` passes it through `visibleExcerpt`
-with the published 400-unit bound; a name with nothing visible left becomes the
-provider-verified account id (2026-11-07). The owner overview, the approval page, the
+with the published 400-unit bound; a name with no visible character left (only
+whitespace or default-ignorable characters such as U+200C or a variation selector)
+becomes the provider-verified account id (2026-11-07). The owner overview, the approval page, the
 credential list and pending actions (joined to the live credential row) read that stored value.
 
 Adding a platform is now one adapter file plus one entry in `publishingAdapters`.
@@ -137,18 +138,21 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   well-formed step each fails at least one of them (2026-11-06).
 - Stored account names: `telegram`
   `connectTelegram_TitleWithControlOrBidiCharacters_StoredDisplayVisibleAndWellFormed`
-  and `connectTelegram_TitleOnlyInvisibleCharacters_DisplayFallsBackToChatId`, and
+  `connectTelegram_TitleOnlyInvisibleCharacters_DisplayFallsBackToChatId` and
+  `connectTelegram_TitleOnlyDefaultIgnorableCharacters_DisplayFallsBackToChatId`, and
   `external-credentials`
   `connectExternalCredential_YoutubeTitleWithBidiOverride_StoredDisplayVisible`, failed
   before the change (a newline, U+202E and U+200B were stored as sent). Mutations, each
   killed: the fallback removed; the cleaning removed from `connectAccount`; the
-  cleaning removed from the YouTube connect (2026-11-08).
+  cleaning removed from the YouTube connect; the fallback tested on an empty string
+  instead of on a visible character (2026-11-07). Raising the 400-unit bound survives:
+  every current adapter cuts its name shorter, so the bound only guards future adapters.
 
 ## Limits
 
 - Settings are checked for presence and fixed values, not for each platform's value
   rules; the platform still refuses invalid values at dispatch.
-- Account names stored before 2026-11-08 keep their text until the owner reconnects
+- Account names stored before this change is deployed keep their text until the owner reconnects
   that account; HTML pages escape them either way.
 - One secret field per connector. A platform that needs an OAuth redirect (YouTube)
   keeps its own flow.

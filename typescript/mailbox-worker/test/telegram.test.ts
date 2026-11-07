@@ -118,6 +118,15 @@ test('connectTelegram_TitleOnlyInvisibleCharacters_DisplayFallsBackToChatId', ()
             {ok: true, accounts: [String(chatId)]});
     });
 }));
+test('connectTelegram_TitleOnlyDefaultIgnorableCharacters_DisplayFallsBackToChatId', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    // Zero-width non-joiner, function application, a variation selector, a tag character and the Hangul filler.
+    fake.answers.getChat = () => ok({id: chatId, type: 'channel', title: '\u200c\u2061\ufe0f\u{E0041}\u3164'});
+    await withBotApi(fake, async () => {
+        assert.deepEqual(await connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats'}),
+            {ok: true, accounts: [String(chatId)]});
+    });
+}));
 test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(async ({h, fake, env}) => {
     const agent = await h.register(), humanId = await h.claim(agent);
     const attempt = (overrides: Record<string, unknown> = {}) => connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats', ...overrides} as any);

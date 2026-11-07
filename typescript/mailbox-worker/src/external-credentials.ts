@@ -9,7 +9,7 @@ import { sealSecret } from './credential-vault.ts';
 import { connectYoutube, youtubeConfigured, type ConnectRefusal } from './youtube-provider.ts';
 import { provider, publishingAdapter, type MediaRules, type TextRules } from './external-providers.ts';
 import { apiTime, nowUtc } from './time.ts';
-import { visibleExcerpt } from './visible-text.ts';
+import { hasVisibleCharacter, visibleExcerpt } from './visible-text.ts';
 import type { ActionCaller } from './external-actions.ts';
 
 export type ConnectProvider = 'youtube';
@@ -182,8 +182,10 @@ export async function connectAccount(env: Env, input: ConnectAccountInput, clock
 /**
  * The account name a provider sent back, as stored and shown on owner and approval pages: invisible, control and bidi
  * characters removed, whitespace collapsed, well formed and at most 400 UTF-16 units (the published bound). A name with
- * nothing visible left reads as the provider-verified account id instead.
+ * no visible character left (only whitespace or default-ignorable characters) reads as the provider-verified account
+ * id instead.
  */
 function shownName(account: {targetAccount: string; targetDisplay: string}): string {
-    return visibleExcerpt(account.targetDisplay, 400) || visibleExcerpt(account.targetAccount, 400);
+    const name = visibleExcerpt(account.targetDisplay, 400);
+    return hasVisibleCharacter(name) ? name : visibleExcerpt(account.targetAccount, 400);
 }
