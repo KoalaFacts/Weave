@@ -95,8 +95,8 @@ The account name each platform sends back (a Telegram chat title, a Discord webh
 name, a Postiz channel name, a YouTube channel title) is stored as `targetDisplay` only
 after `shownName` in `src/external-credentials.ts` passes it through `visibleExcerpt`
 with the published 400-unit bound; a name with nothing visible left becomes the
-provider-verified account id (2026-11-08). The owner overview, the approval page, the
-credential list and every later proposal snapshot read that stored value.
+provider-verified account id (2026-11-07). The owner overview, the approval page, the
+credential list and pending actions (joined to the live credential row) read that stored value.
 
 Adding a platform is now one adapter file plus one entry in `publishingAdapters`.
 Neither the authorization server, the owner page nor the RPC surface changes.
