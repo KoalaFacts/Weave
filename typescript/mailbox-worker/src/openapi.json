@@ -6095,7 +6095,8 @@
           "targetDisplay",
           "operations",
           "content",
-          "textRules"
+          "textRules",
+          "mediaRules"
         ],
         "properties": {
           "credentialRef": {
@@ -6180,6 +6181,55 @@
               }
             ],
             "description": "The text limits the router enforces when a post is proposed, as data; the same limits content describes. null when no operation is available or the content is not a post."
+          },
+          "mediaRules": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "max",
+                  "types",
+                  "maxTotalBytes",
+                  "maxAlt"
+                ],
+                "properties": {
+                  "max": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The most media files a post may carry."
+                  },
+                  "types": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "description": "Each accepted media type (such as image/jpeg) and the largest file of that type, in bytes. Any other type is refused."
+                  },
+                  "maxTotalBytes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "description": "The most bytes all of a post's media may take together; null when only the per-type limits apply."
+                  },
+                  "maxAlt": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "The most characters (UTF-16 code units) of alt text per file: 0 means this platform takes no alt, so omit it; null means only the post format's 2000-character limit applies."
+                  }
+                }
+              }
+            ],
+            "description": "The media limits the router enforces when a post is proposed, as data; the same limits content describes. null exactly when textRules is null."
           }
         }
       }

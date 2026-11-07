@@ -88,8 +88,10 @@ test('connectDiscord_IncomingWebhook_StoresChannelAndSealedUrl', () => scenario(
     const sealed = row.secret instanceof ArrayBuffer ? new Uint8Array(row.secret) : Uint8Array.from(row.secret);
     assert.ok(!Buffer.from(sealed).toString('latin1').includes(token), 'the webhook token is never stored in clear');
     assert.equal(await openSecret(key, {accountId: agent.accountId, credentialRef: ref, provider: 'discord', revision: row.revision}, sealed), webhookUrl);
-    assert.deepEqual((await h.ok('/v1/external-credentials', agent)).items.map((item: any) => [item.credentialRef, item.operations, item.textRules]),
-        [[ref, ['publish_post'], {max: 2000, unit: 'characters', maxWithMedia: null, maxBytes: null}]]);
+    const upload = 10 * 1024 * 1024;
+    assert.deepEqual((await h.ok('/v1/external-credentials', agent)).items.map((item: any) => [item.credentialRef, item.operations, item.textRules, item.mediaRules]),
+        [[ref, ['publish_post'], {max: 2000, unit: 'characters', maxWithMedia: null, maxBytes: null},
+            {max: 10, types: {'image/jpeg': upload, 'image/png': upload, 'image/gif': upload, 'image/webp': upload, 'video/mp4': upload}, maxTotalBytes: upload, maxAlt: 1024}]]);
 }));
 
 test('connectDiscord_NotAWebhookOrRefused_NothingStored', () => scenario(async ({h, fake, env}) => {
