@@ -86,6 +86,13 @@ values to `connectAccount`, which accepts exactly the adapter's field names with
 printable values up to 512 characters. The authorization server never stores, logs or
 renders the values.
 
+The account name each platform sends back (a Telegram chat title, a Discord webhook
+name, a Postiz channel name, a YouTube channel title) is stored as `targetDisplay` only
+after `shownName` in `src/external-credentials.ts` passes it through `visibleExcerpt`
+with the published 400-unit bound; a name with nothing visible left becomes the
+provider-verified account id (2026-11-08). The owner overview, the approval page, the
+credential list and every later proposal snapshot read that stored value.
+
 Adding a platform is now one adapter file plus one entry in `publishingAdapters`.
 Neither the authorization server, the owner page nor the RPC surface changes.
 
@@ -120,11 +127,21 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   `executeExternalAction_RejectionReasonWithControlsAndSplitPair_StoredVisibleAndWellFormed`
   pin it; dropping the pair check, the invisible-character replacement or the
   well-formed step each fails at least one of them (2026-11-06).
+- Stored account names: `telegram`
+  `connectTelegram_TitleWithControlOrBidiCharacters_StoredDisplayVisibleAndWellFormed`
+  and `connectTelegram_TitleOnlyInvisibleCharacters_DisplayFallsBackToChatId`, and
+  `external-credentials`
+  `connectExternalCredential_YoutubeTitleWithBidiOverride_StoredDisplayVisible`, failed
+  before the change (a newline, U+202E and U+200B were stored as sent). Mutations, each
+  killed: the fallback removed; the cleaning removed from `connectAccount`; the
+  cleaning removed from the YouTube connect (2026-11-08).
 
 ## Limits
 
 - Settings are checked for presence and fixed values, not for each platform's value
   rules; the platform still refuses invalid values at dispatch.
+- Account names stored before 2026-11-08 keep their text until the owner reconnects
+  that account; HTML pages escape them either way.
 - One secret field per connector. A platform that needs an OAuth redirect (YouTube)
   keeps its own flow.
 - A post goes to one credential. Sending the same post to several channels is one

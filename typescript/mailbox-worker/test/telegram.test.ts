@@ -97,6 +97,26 @@ test('connectTelegram_AdminBot_StoresChatAndSealedToken', () => scenario(async (
         [[ref, ['publish_post'], {max: 4096, unit: 'characters', maxWithMedia: 1024, maxBytes: null}]]);
 }));
 
+test('connectTelegram_TitleWithControlOrBidiCharacters_StoredDisplayVisibleAndWellFormed', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    // A chat title cut inside an emoji, with a newline, a right-to-left override and a zero-width space.
+    fake.answers.getChat = () => ok({id: chatId, type: 'channel', title: 'HSC\n\u202eBeats\u200b ' + 'x'.repeat(107) + '\u{1F600}', username: 'hscbeats'});
+    await withBotApi(fake, async () => {
+        const result = await connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats'});
+        assert.deepEqual(result, {ok: true, accounts: ['HSC Beats ' + 'x'.repeat(107) + '\ufffd (@hscbeats)']});
+    });
+    const display = (await h.db.prepare('SELECT target_display FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<string>('target_display'))!;
+    assert.equal(display, 'HSC Beats ' + 'x'.repeat(107) + '\ufffd (@hscbeats)');
+    assert.equal((await h.ok('/v1/external-credentials', agent)).items[0].targetDisplay, display);
+}));
+test('connectTelegram_TitleOnlyInvisibleCharacters_DisplayFallsBackToChatId', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    fake.answers.getChat = () => ok({id: chatId, type: 'channel', title: '\u200b\u202e\u2066'});
+    await withBotApi(fake, async () => {
+        assert.deepEqual(await connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats'}),
+            {ok: true, accounts: [String(chatId)]});
+    });
+}));
 test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(async ({h, fake, env}) => {
     const agent = await h.register(), humanId = await h.claim(agent);
     const attempt = (overrides: Record<string, unknown> = {}) => connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats', ...overrides} as any);

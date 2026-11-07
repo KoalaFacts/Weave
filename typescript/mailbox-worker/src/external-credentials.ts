@@ -9,6 +9,7 @@ import { sealSecret } from './credential-vault.ts';
 import { connectYoutube, youtubeConfigured, type ConnectRefusal } from './youtube-provider.ts';
 import { provider, publishingAdapter, type TextRules } from './external-providers.ts';
 import { apiTime, nowUtc } from './time.ts';
+import { visibleExcerpt } from './visible-text.ts';
 import type { ActionCaller } from './external-actions.ts';
 
 export type ConnectProvider = 'youtube';
@@ -51,8 +52,9 @@ export async function connectExternalCredential(env: Env, input: ConnectCredenti
     try {
         const before = await atomic(env.db, tx => ownership(tx, input.humanId, input.agentId), clock);
         if (before !== 'ok') return {ok: false, reason: before};
-        const connected = await connectYoutube(env, input);
-        if (typeof connected === 'string') return {ok: false, reason: connected};
+        const verified = await connectYoutube(env, input);
+        if (typeof verified === 'string') return {ok: false, reason: verified};
+        const connected = {...verified, targetDisplay: shownName(verified)};
         const credentialRef = referenceFor(input.provider), revision = crypto.randomUUID();
         const sealed = await sealSecret(env.EXTERNAL_CREDENTIAL_KEY, {accountId: input.agentId, credentialRef, provider: input.provider, revision}, connected.secret);
         return await atomic(env.db, async tx => {
@@ -153,7 +155,7 @@ export async function connectAccount(env: Env, input: ConnectAccountInput, clock
         const rows = await Promise.all(accounts.map(async account => {
             const credentialRef = provider + ':' + account.ref, revision = crypto.randomUUID();
             const sealed = await sealSecret(env.EXTERNAL_CREDENTIAL_KEY, {accountId: input.agentId, credentialRef, provider, revision}, secret);
-            return {...account, credentialRef, revision, sealed};
+            return {...account, targetDisplay: shownName(account), credentialRef, revision, sealed};
         }));
         return await atomic(env.db, async tx => {
             const now = await ownership(tx, input.humanId, input.agentId);
@@ -175,4 +177,13 @@ export async function connectAccount(env: Env, input: ConnectAccountInput, clock
         console.error('external-credential: connect failed');
         return {ok: false, reason: 'unavailable'};
     }
+}
+
+/**
+ * The account name a provider sent back, as stored and shown on owner and approval pages: invisible, control and bidi
+ * characters removed, whitespace collapsed, well formed and at most 400 UTF-16 units (the published bound). A name with
+ * nothing visible left reads as the provider-verified account id instead.
+ */
+function shownName(account: {targetAccount: string; targetDisplay: string}): string {
+    return visibleExcerpt(account.targetDisplay, 400) || visibleExcerpt(account.targetAccount, 400);
 }
