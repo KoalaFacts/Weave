@@ -22,6 +22,7 @@ Use Node 24+. From this directory:
 npm ci
 npm run typecheck
 npm test
+npm run test:files -- test/x.test.ts   # rebuilds dist/, then runs only the files named
 node scripts/local-storage.ts initialize
 npm run dev -- --ip 127.0.0.1 --port 8787 --var REGISTRATION_ENABLED:true
 ```
