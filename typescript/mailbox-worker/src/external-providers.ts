@@ -19,6 +19,8 @@ export type ProposedPlan = {accountId: string; operation: string; content: strin
 /** A post's text limits: `unit` is how `max` counts; `maxWithMedia` replaces `max` when media is attached; `maxBytes` caps the UTF-8 size. */
 export type TextRules = {max: number; unit: 'characters' | 'graphemes' | 'weighted characters'; maxWithMedia: number | null; maxBytes: number | null};
 /** A post's media limits: `types` maps each accepted type to its largest file in bytes; `maxAlt` 0 means no alt, null only the post format's limit. */
+/** Settings `checkContent` checks beyond presence, by name: the value's type and, when closed, its allowed values. */
+export type SettingRules = Record<string, {type: 'string' | 'boolean' | 'number'; values: string[] | null}>;
 export type MediaRules = {max: number; types: Readonly<Record<string, number>>; maxTotalBytes: number | null; maxAlt: number | null};
 /**
  * `rejected` only when the provider confirmed nothing happened. Throw when the outcome is uncertain. `trackFrom` (epoch
@@ -37,6 +39,8 @@ export type ExternalProvider = {
     describeContent(targetAccount: string): string;
     /** The post text limits `checkContent` enforces for one account, as data for apps; absent when the content is not a post. */
     textRules?(targetAccount: string): TextRules;
+    /** The setting types and values `checkContent` enforces for one account, by name, as data for apps; present exactly when `textRules` is. */
+    settingRules?(targetAccount: string): SettingRules;
     /** The post media limits `checkContent` enforces, as data for apps; present exactly when `textRules` is. */
     mediaRules?: MediaRules;
     /** Provider-specific content rules checked when the plan is proposed; the reason it is invalid, or null. */

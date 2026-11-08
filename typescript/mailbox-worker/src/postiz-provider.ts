@@ -6,7 +6,7 @@
 import type { PublicationState } from './external-providers.ts';
 import { visibleExcerpt } from './visible-text.ts';
 import { maxMediaBytes, signedMediaUrl } from './external-media.ts';
-import type { PublishingAdapter, TextRule } from './publishing.ts';
+import type { PublishingAdapter, SettingRules, TextRule } from './publishing.ts';
 import { xLength } from './x-provider.ts';
 
 const api = 'https://api.postiz.com/public/v1';
@@ -29,6 +29,10 @@ const channelText: Readonly<Record<string, TextRule>> = {
     x: {max: 280, unit: 'weighted characters', weigh: xLength}, bluesky: {max: 300, unit: 'graphemes', maxBytes: 3000},
     linkedin: {max: 3000, unit: 'characters'}, 'linkedin-page': {max: 3000, unit: 'characters'},
     instagram: {max: 2200, unit: 'characters'}, 'instagram-standalone': {max: 2200, unit: 'characters'},
+};
+/** Setting values Postiz documents as a closed list (docs.postiz.com/public-api/providers/x); other settings are checked for presence only. */
+const channelSettings: Readonly<Record<string, SettingRules>> = {
+    x: {who_can_reply_post: {type: 'string', values: ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']}},
 };
 const integrationId = /^[A-Za-z0-9_-]{1,64}$/, apiKeyPattern = /^[\x21-\x7e]{16,512}$/;
 
@@ -83,7 +87,8 @@ export const postiz: PublishingAdapter = {
         schedule: 90 * 24 * 3600_000,
         settings: targetAccount => {
             const identifier = targetAccount.split('/')[0];
-            return {fixed: {__type: identifier}, required: postizChannels[identifier] ?? [], documented: `with values as Postiz documents them for ${identifier}`};
+            return {fixed: {__type: identifier}, required: postizChannels[identifier] ?? [], documented: `with values as Postiz documents them for ${identifier}`,
+                rules: Object.hasOwn(channelSettings, identifier) ? channelSettings[identifier] : {}};
         }
     },
     connector: {

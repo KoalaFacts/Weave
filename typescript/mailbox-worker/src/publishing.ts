@@ -15,6 +15,9 @@ export type Post = {text: string; media: PostFile[]; settings: Record<string, un
 
 /** A text limit. `weigh` counts the text when the platform weighs characters unequally; its unit is then 'weighted characters'. */
 export type TextRule = {max: number; maxBytes?: number; maxWithMedia?: number} & ({unit: 'characters' | 'graphemes'; weigh?: never} | {unit: 'weighted characters'; weigh: (text: string) => number});
+/** The type of a setting's value and, when the platform has a closed list, its allowed values. */
+export type SettingRule = {type: 'string' | 'boolean' | 'number'; values: readonly string[] | null};
+export type SettingRules = Readonly<Record<string, SettingRule>>;
 /** What one platform accepts. The router refuses anything else before the owner is asked. */
 export type PostRules = {
     /** The text limit, or the limit for one account when it depends on where the account posts. */
@@ -23,8 +26,8 @@ export type PostRules = {
     media: {max: number; types: Readonly<Record<string, number>>; maxTotalBytes?: number; maxAlt?: number};
     /** How far ahead publishAt may be, in ms; null when the platform posts immediately only. */
     schedule: number | null;
-    /** Settings this account's posts must carry: fixed values and required names. Absent: the post takes no settings. */
-    settings?: (targetAccount: string) => {fixed: Readonly<Record<string, string>>; required: readonly string[]; documented: string};
+    /** Settings this account's posts must carry: fixed values, required names, and the type and values of the settings Weave can check. Absent: the post takes no settings. */
+    settings?: (targetAccount: string) => {fixed: Readonly<Record<string, string>>; required: readonly string[]; documented: string; rules?: SettingRules};
     /** A note for agents, for example which text becomes clickable. */
     note?: string;
 };
@@ -112,7 +115,14 @@ function ruleBreak(post: Parsed, rules: PostRules, targetAccount: string, now: n
     if (!expected) return Object.keys(post.settings).length ? 'settings are not taken here; omit them' : null;
     for (const [name, value] of Object.entries(expected.fixed)) if (post.settings[name] !== value) return `settings.${name} must be "${value}" for this account`;
     const missing = expected.required.filter(name => !Object.hasOwn(post.settings, name));
-    return missing.length ? 'settings must include ' + missing.join(', ') : null;
+    if (missing.length) return 'settings must include ' + missing.join(', ');
+    for (const [name, rule] of Object.entries(expected.rules ?? {})) {
+        if (!Object.hasOwn(post.settings, name)) continue;
+        const value = post.settings[name];
+        if (typeof value !== rule.type) return `settings.${name} must be a ${rule.type}`;
+        if (rule.values && !rule.values.includes(value as string)) return `settings.${name} must be one of ${rule.values.map(allowed => `"${allowed}"`).join(', ')}`;
+    }
+    return null;
 }
 
 const typeNames = (types: Readonly<Record<string, number>>) =>
@@ -121,7 +131,10 @@ const typeNames = (types: Readonly<Record<string, number>>) =>
 /** The description agents read for one account: the post format and this platform's limits. */
 export function describePost(rules: PostRules, targetAccount: string): string {
     const expected = rules.settings?.(targetAccount);
-    const settings = expected ? `"settings": {${[...Object.entries(expected.fixed).map(([name, value]) => `"${name}": "${value}"`), ...expected.required.map(name => `"${name}"`)].join(', ')}} ${expected.documented}, ` : '';
+    const settings = expected ? `"settings": {${[...Object.entries(expected.fixed).map(([name, value]) => `"${name}": "${value}"`), ...expected.required.map(name => {
+        const values = expected.rules?.[name]?.values;
+        return values ? `"${name}": one of ${values.map(value => `"${value}"`).join(' | ')}` : `"${name}"`;
+    })].join(', ')}} ${expected.documented}, ` : '';
     const schedule = rules.schedule === null ? '' : `"publishAt": optional future UTC time such as 2026-01-31T09:00:00Z, at most ${Math.round(rules.schedule / 86_400_000)} days ahead, `;
     const text = textRule(rules, targetAccount);
     const caption = text.maxWithMedia === undefined ? '' : ` (${text.maxWithMedia} with media)`;
@@ -156,6 +169,10 @@ export function publishingProvider(adapter: PublishingAdapter): ExternalProvider
         textRules: targetAccount => {
             const text = textRule(adapter.rules, targetAccount);
             return {max: text.max, unit: text.unit, maxWithMedia: text.maxWithMedia ?? null, maxBytes: text.maxBytes ?? null};
+        },
+        settingRules: targetAccount => {
+            const expected = adapter.rules.settings?.(targetAccount);
+            return expected ? Object.fromEntries(Object.entries(expected.rules ?? {}).map(([name, rule]) => [name, {type: rule.type, values: rule.values && [...rule.values]}])) : {};
         },
         mediaRules: {max: adapter.rules.media.max, types: {...adapter.rules.media.types}, maxTotalBytes: adapter.rules.media.maxTotalBytes ?? null, maxAlt: adapter.rules.media.maxAlt ?? null},
         async checkContent(tx, {accountId, content, targetAccount}) {
