@@ -141,6 +141,16 @@ test('connectLinkedIn_TokenUpToLinkedInsPlannedLength_StoredWhole', () => scenar
         assert.deepEqual(await connectLinkedIn(env, {humanId, authAt: Date.now(), agentId: agent.accountId, fields: {accessToken: 'a'.repeat(2049)}}),
             {ok: false, reason: 'not-found'}, 'the router takes field values of at most 2048 characters');
     });
+    // The two optional '=' padding characters count toward the 2000-character total limit.
+    for (const length of [2001, 2002]) {
+        const padded = 'AQV' + 'a'.repeat(length - 5) + '==';
+        assert.equal(padded.length, length);
+        fake.token = padded;
+        await withLinkedIn(fake, async () => {
+            assert.notEqual((await connectLinkedIn(env, {humanId, authAt: Date.now(), agentId: agent.accountId,
+                fields: {accessToken: padded}})).ok, true, 'reject the padded ' + length + '-character token');
+        });
+    }
     assert.equal(fake.calls.length, 0, 'an overlong value is never sent to LinkedIn');
 }));
 
