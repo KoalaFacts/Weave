@@ -154,7 +154,7 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   `bluesky` (with its 3000-byte cap), `discord`, `telegram` (1024 with media) and `x`
   (weighted). `mediaRules` in the same tests: Postiz (five types, no total, `maxAlt`
   0), Bluesky (1 MB images), Discord (10 MiB per file and in all, alt 1024),
-  Telegram (50 MB total, `maxAlt` 0), X (`maxAlt` 0), and null for the unavailable YouTube
+  Telegram (50 MB total, `maxAlt` 0), X (`maxAlt` 1000, from #372), and null for the unavailable YouTube
   credential. `publishing`
   `altRules_AdaptersThatSendNoAlt_RefuseAltBeforeApproval`: Telegram and Postiz refuse
   alt at propose with "alt is not supported here; omit it" and say so in their
@@ -371,3 +371,34 @@ A local gate passes. No request is made to the real X API: tests use the fake, a
   revoked in Weave.
 - OAuth 2.0 user tokens are not supported. They expire within hours and need a Weave-registered X app and a stored
   refresh token, which rotates on use.
+
+### X alt text (2026-11-06, sub-step 2/2)
+
+This supersedes the "No alt text" router change, the "Alt text: not taken" post rule and the alt text item in the X
+limits above.
+
+- **Rule:** each image may carry alt text of at most 1000 characters (`maxAlt: 1000`, the `maxLength` of X's
+  `POST /2/media/metadata`, read on 2026-11-06). Longer alt text is refused before approval with "alt must be at most
+  1000 characters here". The router measures UTF-16 code units, which are never fewer than the code points a JSON
+  Schema `maxLength` counts. This rests on the published schema; X's own counting of alt text is not live-verified.
+- **Dispatch:** after an image with alt text is uploaded, one signed `POST https://api.x.com/2/media/metadata` sends
+  `{id, metadata: {alt_text: {text}}}` with the approved text unchanged. Only a 200 whose `data.id` is that media id
+  counts as set. Any other answer or a network failure is a refusal, `media-alt-refused`, with nothing posted, because
+  no post exists until `POST /2/tweets`. A post is never sent without the alt text the owner approved. Images without
+  alt text, or with an empty alt text (which describes nothing), make no metadata call.
+- **Verification** (`test/x.test.ts`):
+  - `executeXPost_ImagesWithAlt_AltSetOnTheUploadedMediaBeforePosting` checks a 1000-character alt text with leading
+    spaces and a newline. It is sent exactly, signed, on the right media id, only for the image that has it, and before
+    the post.
+  - `executeXPost_AltRefusedOrUnanswered_FailedWithNothingPosted` covers a 400, a 503, another media id, a 202 and a
+    network failure.
+  - `executeXPost_SecondImageAltRefused_FailedWithNothingPosted`: the first image's alt text is set, the second is
+    refused, and nothing is posted.
+  - `executeXPost_EmptyAlt_NoMetadataCall`: an empty alt text makes no metadata call (it failed before the fix, which
+    sent `""`).
+  - `xRules_Limits_TextImagesAltNoSchedule` refuses 1001 characters, and agents are no longer told X takes no alt.
+  - Before the change, the new tests failed because alt was refused at proposal (`400`).
+- **Mutation checks** (each fails a test): any id accepted as confirmation; a metadata failure ignored; no metadata
+  call; any 2xx accepted; the limit raised to the router's 2000; the text trimmed before sending.
+- **Limit:** the fake follows X's documented shape. No live X call has been made. X documents only a generic error
+  response for this call (read on 2026-11-06), so every non-200 answer is treated as a refusal.

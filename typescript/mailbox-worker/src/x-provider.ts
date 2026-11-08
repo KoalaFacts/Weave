@@ -10,6 +10,8 @@ const api = 'https://api.x.com/2/';
 const timeoutMs = 15_000, uploadTimeoutMs = 120_000, maxJsonBytes = 64 * 1024;
 /** X takes images of at most 5 MB through the simple upload; files are read into memory before anything is sent. */
 const maxImageBytes = 5_000_000;
+/** X's POST /2/media/metadata takes at most 1000 characters of alt text. */
+const maxAltText = 1000;
 /** X's limit for a post from an account without Premium, in weighted characters. */
 const maxText = 280;
 const keyPattern = /^[A-Za-z0-9]{10,64}$/, secretPattern = /^[A-Za-z0-9]{30,80}$/, tokenPattern = /^[0-9]{1,20}-[A-Za-z0-9]{10,64}$/;
@@ -165,9 +167,9 @@ export const x: PublishingAdapter = {
     contractRevision: 'x-post-v1',
     rules: {
         text: {max: maxText, unit: 'weighted characters', weigh: xLength},
-        media: {max: 4, types: {'image/jpeg': maxImageBytes, 'image/png': maxImageBytes, 'image/webp': maxImageBytes}, maxAlt: 0},
+        media: {max: 4, types: {'image/jpeg': maxImageBytes, 'image/png': maxImageBytes, 'image/webp': maxImageBytes}, maxAlt: maxAltText},
         schedule: null,
-        note: 'X counts most CJK characters and every emoji as 2 and every link as 23. Alt text is not sent to X yet, so media take no alt.'
+        note: 'X counts most CJK characters and every emoji as 2 and every link as 23.'
     },
     connector: {
         label: 'X', replaces: false,
@@ -197,6 +199,16 @@ export const x: PublishingAdapter = {
                 id = data(response.ok ? await boundedJson(response) : (void response.body?.cancel().catch(() => {}), null))?.id;
             } catch { /* no post exists yet */ }
             if (typeof id !== 'string' || !idPattern.test(id)) return {status: 'rejected', reason: 'media-upload-refused'};
+            // Approved alt text is set before anything is posted; if X does not confirm it, nothing is posted rather than
+            // a post without the alt text the owner approved. An empty alt text describes nothing, so it is not sent.
+            if (file.alt) {
+                let confirmed: unknown = null;
+                try {
+                    const response = await call(keys, 'POST', 'media/metadata', {json: {id, metadata: {alt_text: {text: file.alt}}}});
+                    confirmed = data(response.status === 200 ? await boundedJson(response) : (void response.body?.cancel().catch(() => {}), null))?.id;
+                } catch { /* no post exists yet */ }
+                if (confirmed !== id) return {status: 'rejected', reason: 'media-alt-refused'};
+            }
             mediaIds.push(id);
         }
         const body = {...(post.text ? {text: post.text} : {}), ...(mediaIds.length ? {media: {media_ids: mediaIds}} : {})};
