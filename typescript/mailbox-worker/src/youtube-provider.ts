@@ -82,19 +82,24 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, s
 /** What an owner approves for one upload. The media is named by ID and pinned by its size and SHA-256. */
 export type VideoPlan = {title: string; description: string; privacyStatus: 'private' | 'unlisted' | 'public'; mediaId: string; bytes: number; sha256: string};
 
-/** The content of an upload_video action, or null when it is not exactly this shape. */
-export function videoPlan(content: string): VideoPlan | null {
+/** The content of an upload_video action, or why it is not exactly this shape within YouTube's limits. */
+function videoPlan(content: string): VideoPlan | string {
+    const shape = 'must be JSON {title, description, privacyStatus, mediaId, bytes, sha256}';
     let value: unknown;
-    try { value = JSON.parse(content); } catch { return null; }
+    try { value = JSON.parse(content); } catch { return shape; }
     const plan = value as Record<string, unknown>;
-    if (!plan || typeof plan !== 'object' || Array.isArray(plan) || Object.keys(plan).sort().join() !== 'bytes,description,mediaId,privacyStatus,sha256,title') return null;
+    if (!plan || typeof plan !== 'object' || Array.isArray(plan) || Object.keys(plan).sort().join() !== 'bytes,description,mediaId,privacyStatus,sha256,title') return shape;
     const {title, description, privacyStatus, mediaId, bytes, sha256} = plan;
     // YouTube's own limits: a 1-100 character title without angle brackets, a description of at most 5000 bytes.
-    if (typeof title !== 'string' || title.trim() === '' || title.length > 100 || /[<>]/.test(title)) return null;
-    if (typeof description !== 'string' || new TextEncoder().encode(description).byteLength > 5000 || /[<>]/.test(description)) return null;
-    if (typeof privacyStatus !== 'string' || !privacyStatuses.has(privacyStatus)) return null;
-    if (typeof mediaId !== 'string' || !uuid.test(mediaId) || typeof sha256 !== 'string' || !sha.test(sha256)) return null;
-    if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1) return null;
+    if (typeof title !== 'string' || title.trim() === '') return 'title must be a non-blank string';
+    if (title.length > 100) return 'title must be at most 100 characters';
+    if (/[<>]/.test(title)) return 'title must not contain < or >';
+    if (typeof description !== 'string') return 'description must be a string';
+    if (new TextEncoder().encode(description).byteLength > 5000) return 'description must be at most 5000 bytes';
+    if (/[<>]/.test(description)) return 'description must not contain < or >';
+    if (typeof privacyStatus !== 'string' || !privacyStatuses.has(privacyStatus)) return 'privacyStatus must be one of "private", "unlisted", "public"';
+    if (typeof mediaId !== 'string' || !uuid.test(mediaId) || typeof sha256 !== 'string' || !sha.test(sha256)
+        || typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1) return 'must name your uploaded video with its exact bytes and sha256';
     return {title, description, privacyStatus: privacyStatus as VideoPlan['privacyStatus'], mediaId, bytes, sha256};
 }
 
@@ -117,7 +122,7 @@ export const youtubeUpload: ExternalProvider & {available(env: Env): boolean} = 
         + '"mediaId", "bytes", "sha256"} naming one of your uploaded videos exactly as uploaded.',
     async checkContent(tx, {accountId, content}) {
         const plan = videoPlan(content);
-        if (!plan) return 'must be JSON {title, description, privacyStatus, mediaId, bytes, sha256} within YouTube limits';
+        if (typeof plan === 'string') return plan;
         const media = await readMediaRecord(tx, accountId, plan.mediaId);
         // The plan must name the exact uploaded bytes, so the owner approves this file and no other.
         if (!media || media.bytes !== plan.bytes || media.sha256 !== plan.sha256 || !media.contentType.startsWith('video/'))
@@ -126,7 +131,7 @@ export const youtubeUpload: ExternalProvider & {available(env: Env): boolean} = 
     },
     async execute(env, call) {
         const plan = videoPlan(call.content);
-        if (!plan || call.secret === null) return {status: 'rejected', reason: 'plan-unreadable'};
+        if (typeof plan === 'string' || call.secret === null) return {status: 'rejected', reason: 'plan-unreadable'};
         const token = await accessToken(env, call.secret);
         if (!token) return {status: 'rejected', reason: 'credential-refused'};
         const media = await openMedia(env, call.accountId, plan.mediaId);
