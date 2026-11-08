@@ -65,7 +65,7 @@ are taken` when it carries an extra key. Keys an agent sent are never echoed int
 reason. The accepted format is unchanged, so plans approved before still execute;
 `proposeExternalAction_PostOutsideTheFormat_NamesTheField` (Telegram, through the
 Worker) covers each reason, and five mutations (alt limit, UTC pattern, file index,
-array settings, zero bytes) each fail it.
+array settings, zero bytes) each fail it. `execute_PlanOutsideThePostFormat_RejectedWithoutSending` pins that execute still answers `plan-unreadable` with no storage read or send for such a plan.
 
 The router derives the description `list_my_credentials` returns from the same rules,
 so what agents read and what is enforced cannot drift apart. Since 2026-11-06

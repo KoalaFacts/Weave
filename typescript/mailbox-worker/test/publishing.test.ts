@@ -48,6 +48,18 @@ test('execute_AltApprovedBeforeAltWasRefused_RejectedWithoutSending', async () =
     }
 });
 
+test('execute_PlanOutsideThePostFormat_RejectedWithoutSending', async () => {
+    // parsePost returns a reason for a plan outside the format; execute must still answer plan-unreadable before any storage read or send, never throw.
+    for (const content of ['not json', JSON.stringify({text: 1, media: []}), JSON.stringify({text: 'x'}), JSON.stringify({text: 'x', media: [file({alt: 3})]})]) {
+        let sent = 0, envReads = 0;
+        const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
+        const provider = publishingProvider({...telegram, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
+        const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+            content, targetAccount: '-100123', secret: 'token'}).catch((error: unknown) => ({thrown: String(error)}));
+        assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0], content);
+    }
+});
+
 test('postizTextRules_ChannelWithAStricterPlatform_RefusedAtProposeAndListed', async () => {
     // Postiz takes 7000 characters, but the platform behind a channel may refuse less after the owner approved it; the smaller limit is enforced at propose.
     const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}'; // one grapheme, 25 UTF-8 bytes
