@@ -6271,7 +6271,7 @@
                 "description": "Each setting checked beyond presence, by name."
               }
             ],
-            "description": "The setting types and values the router enforces when a post is proposed for this account, as data; settings not listed here are only checked for presence (content names the required ones). {} when none is checked; null exactly when textRules is null."
+            "description": "The setting types and values the router enforces when a post is proposed for this account, as data; settings not listed here are only checked for presence (content names the required ones), and a required one that is null or a blank string is refused. {} when none is checked; null exactly when textRules is null."
           }
         }
       }
