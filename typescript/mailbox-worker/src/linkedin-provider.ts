@@ -15,8 +15,8 @@ const timeoutMs = 15_000, uploadTimeoutMs = 120_000, maxJsonBytes = 64 * 1024;
 const maxImageBytes = 8_000_000;
 /** LinkedIn's limit for a post's commentary, counted after reserved characters are escaped. */
 const maxText = 3000;
-/** LinkedIn's tokens are about 500 characters; the router takes field values of at most 512. */
-const tokenPattern = /^[A-Za-z0-9\-._~+/]{20,500}={0,2}$/, memberPattern = /^[A-Za-z0-9_-]{1,64}$/;
+/** LinkedIn's tokens are about 500 characters, and LinkedIn asks apps to handle at least 1000; the router takes up to 2048. */
+const tokenPattern = /^[A-Za-z0-9\-._~+/]{20,2000}={0,2}$/, memberPattern = /^[A-Za-z0-9_-]{1,64}$/;
 const postPattern = /^urn:li:(?:share|ugcPost):[0-9]{1,30}$/, imagePattern = /^urn:li:image:[A-Za-z0-9_-]{1,100}$/;
 
 /** Little text format: these characters are markup unless escaped with a backslash, even where no markup uses them. */
@@ -92,7 +92,7 @@ export const linkedin: PublishingAdapter = {
     },
     connector: {
         label: 'LinkedIn', replaces: false,
-        fields: [{name: 'accessToken', label: 'Access token', secret: true, pattern: '[A-Za-z0-9\\-._~+/]{20,500}={0,2}'}],
+        fields: [{name: 'accessToken', label: 'Access token', secret: true, pattern: '[A-Za-z0-9\\-._~+/]{20,2000}={0,2}'}],
         help: 'In the LinkedIn developer portal, add "Sign In with LinkedIn using OpenID Connect" and "Share on LinkedIn" to your app, then generate a member access token with the openid, profile and w_member_social scopes and paste it here. LinkedIn tokens expire after about 60 days; connect again with a new one.',
         verify
     },

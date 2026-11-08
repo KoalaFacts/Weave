@@ -121,7 +121,8 @@ export async function revokeExternalCredential(tx: Transaction, humanId: string,
 export type ConnectAccountInput = {humanId: string; authAt: number; agentId: string; provider: string; fields: Record<string, string>};
 export type ConnectAccountResult = {ok: true; accounts: string[]}
     | {ok: false; reason: 'stale-authentication' | 'frozen' | 'not-found' | 'provider-unavailable' | 'provider-refused' | 'no-channel' | 'unavailable'};
-const fieldValue = /^[\x20-\x7e]{1,512}$/;
+/** A connect field value: printable text, long enough for LinkedIn's tokens, which it asks apps to plan at 1000 or more. */
+const fieldValue = /^[\x20-\x7e]{1,2048}$/;
 
 /**
  * Owner RPC for any publishing adapter: the owner's values for exactly the adapter's connect fields. The platform verifies

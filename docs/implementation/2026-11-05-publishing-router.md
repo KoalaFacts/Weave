@@ -128,7 +128,7 @@ authorization server renders one form per connector and agent from those field l
 
 `POST /account/connect` needs a sign-in in the last 10 minutes. It passes the typed
 values to `connectAccount`, which accepts exactly the adapter's field names with
-printable values up to 512 characters. The authorization server never stores, logs or
+printable values up to 2048 characters (at most four, in a form of at most 28 KiB). The authorization server never stores, logs or
 renders the values.
 
 The account name each platform sends back (a Telegram chat title, a Discord webhook
@@ -450,7 +450,7 @@ id. The credential is `linkedin:<sub>`, its target account `urn:li:person:<sub>`
 
 ### LinkedIn verification
 
-`typescript/mailbox-worker/test/linkedin.test.ts` (10 tests) runs against a LinkedIn fake that answers 401 without the
+`typescript/mailbox-worker/test/linkedin.test.ts` (11 tests) runs against a LinkedIn fake that answers 401 without the
 member's Bearer token and 426 without the version headers. It covers connecting and sealing, refused and malformed
 tokens with nothing stored or sent, escaping and counting, the post rules, a text post sent once, images uploaded
 byte-for-byte and attached with alt text, one image as `media`, every upload failure with nothing posted and the token
@@ -460,12 +460,22 @@ escaping; plain length instead of the weighted count; accepting any upload host;
 422 or 426; sending empty alt text; dropping the version header; accepting any `x-restli-id`; accepting any image id; always
 using `multiImage`.
 
+Long tokens (2026-11-08): `connectLinkedIn_TokenUpToLinkedInsPlannedLength_StoredWhole` seals 1000- and
+2000-character tokens whole and refuses 2001 (LinkedIn's pattern) and 2049 (the router) with nothing sent;
+`readConnectForm_LongValues_UpTo2048CharactersEachAccepted` (auth-worker) takes four 2048-character values even when
+every character is percent-encoded and refuses 2049; the workerd test
+`connectLinkedIn_ThousandCharacterToken_PassesBothWorkersAndIsStoredSealed` posts a 1000-character token through the
+owner's form and stores the credential sealed. Mutation checks, each failing one of them: the router back at 512 or
+unbounded; LinkedIn's pattern back at 500 or unbounded; the form field limit back at 512 or unchecked; the connect
+form read with the 4096-byte cap of the other owner forms.
+
 ### LinkedIn limits
 
 - Checked against LinkedIn's Posts, Images, MultiImage and little-text pages on 2026-11-06; not run against LinkedIn.
 - LinkedIn sunsets each API version about a year after release, so `linkedinVersion` must be moved forward before
   then; once sunset, LinkedIn answers 426 and every post is refused with nothing posted.
 - Member tokens expire after about 60 days and are not refreshed; a refused post is the sign to connect again.
-- A token longer than 500 characters is refused at connect: the router takes field values of at most 512 printable
-  ASCII characters. LinkedIn documents its tokens as about 500 characters but may lengthen them.
+- Tokens of up to 2000 characters are taken (2026-11-08): LinkedIn's authorization-code page says tokens are about
+  500 characters and asks apps to plan for at least 1000. The router and the owner's connect form take field values
+  of up to 2048 printable ASCII characters; a longer token is refused at connect with nothing sent to LinkedIn.
 - Needs an owner deploy (no schema change) once merged.

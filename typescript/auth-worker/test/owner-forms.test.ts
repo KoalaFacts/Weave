@@ -146,6 +146,15 @@ test("readOwnerAction_InvalidUtf8Body_Null",async()=>{
   assert.equal(await readOwnerAction(key,request,sessionFor(randomUUID()),now),null);
 });
 
+test("readConnectForm_LongValues_UpTo2048CharactersEachAccepted",async()=>{
+  // LinkedIn asks apps to plan for tokens of at least 1000 characters; each value may be 2048, even when every character is escaped.
+  const humanId=randomUUID(),agentId=randomUUID(),session=sessionFor(humanId);
+  const token=await ownerActionToken(key,humanId,{kind:"connect-account",agentId,provider:"linkedin"},now);
+  const long="/".repeat(2048),fields=Object.fromEntries(["a","b","c","d"].map(n=>[n,long]));
+  assert.deepEqual(await readConnectForm(key,form(["action",token],...Object.entries(fields)),session,now+1000),{agentId,provider:"linkedin",fields});
+  assert.equal(await readConnectForm(key,form(["action",token],["accessToken","a".repeat(2049)]),session,now+1000),null,"over 2048 characters");
+});
+
 test("readConnectForm_TokenThenFields_ReturnsProviderAndValues",async()=>{
   const humanId=randomUUID(),agentId=randomUUID(),session=sessionFor(humanId);
   const token=await ownerActionToken(key,humanId,{kind:"connect-account",agentId,provider:"bluesky"},now);
