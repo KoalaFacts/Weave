@@ -92,7 +92,7 @@ export const linkedin: PublishingAdapter = {
     },
     connector: {
         label: 'LinkedIn', replaces: false,
-        fields: [{name: 'accessToken', label: 'Access token', secret: true, pattern: '(?=.{20,2000}$)[A-Za-z0-9\\-._~+/]{20,2000}={0,2}'}],
+        fields: [{name: 'accessToken', label: 'Access token', secret: true, pattern: '(?=.{20,2000}$)[A-Za-z0-9\\-._~+\\/]{20,2000}={0,2}'}],
         help: 'In the LinkedIn developer portal, add "Sign In with LinkedIn using OpenID Connect" and "Share on LinkedIn" to your app, then generate a member access token with the openid, profile and w_member_social scopes and paste it here. LinkedIn tokens expire after about 60 days; connect again with a new one.',
         verify
     },
