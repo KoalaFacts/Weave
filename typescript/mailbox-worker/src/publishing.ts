@@ -132,8 +132,9 @@ const typeNames = (types: Readonly<Record<string, number>>) =>
 export function describePost(rules: PostRules, targetAccount: string): string {
     const expected = rules.settings?.(targetAccount);
     const settings = expected ? `"settings": {${[...Object.entries(expected.fixed).map(([name, value]) => `"${name}": "${value}"`), ...expected.required.map(name => {
-        const values = expected.rules?.[name]?.values;
-        return values ? `"${name}": one of ${values.map(value => `"${value}"`).join(' | ')}` : `"${name}"`;
+        const rule = expected.rules?.[name];
+        if (rule?.type === 'boolean') return `"${name}": true | false`;
+        return rule?.values ? `"${name}": one of ${rule.values.map(value => `"${value}"`).join(' | ')}` : `"${name}"`;
     })].join(', ')}} ${expected.documented}, ` : '';
     const schedule = rules.schedule === null ? '' : `"publishAt": optional future UTC time such as 2026-01-31T09:00:00Z, at most ${Math.round(rules.schedule / 86_400_000)} days ahead, `;
     const text = textRule(rules, targetAccount);

@@ -87,13 +87,19 @@ when `textRules` is; `{}` when no setting is checked beyond presence). `type` is
 `string`, `boolean` or `number`; `values` is the closed list, or null when any value of
 the type is accepted. A present setting of the wrong JSON type is refused with
 "settings.<name> must be a <type>", and one outside the list with "settings.<name>
-must be one of ...". The description names the allowed values. So far only Postiz X
-`who_can_reply_post` is listed (`everyone`, `following`, `mentionedUsers`,
-`subscribers`, `verified`, from docs.postiz.com/public-api/providers/x); other Postiz
-settings are checked for presence only. Not yet listed although the same Postiz page
-documents them: X `post_type` (`post`, `article`), `article_status` (`draft`,
-`published`) and the booleans `made_with_ai` and `paid_partnership`; values for the other
-channels are still to be sourced from Postiz's documentation.
+must be one of ...". The description names the allowed values and shows a boolean
+setting as `true | false`. Listed so far, each from docs.postiz.com/public-api/providers/<channel>
+and only for settings Postiz requires: X `who_can_reply_post` (`everyone`, `following`,
+`mentionedUsers`, `subscribers`, `verified`); Instagram and Instagram Standalone
+`post_type` (`post`, `story`); YouTube `title` (any string) and `type` (`public`,
+`unlisted`, `private`); TikTok `privacy_level` (`PUBLIC_TO_EVERYONE`,
+`MUTUAL_FOLLOW_FRIENDS`, `FOLLOWER_OF_CREATOR`, `SELF_ONLY`), `autoAddMusic` (`yes`, `no`),
+`content_posting_method` (`DIRECT_POST`, `UPLOAD`) and the booleans `duet`, `stitch`,
+`comment`, `brand_content_toggle` and `brand_organic_toggle`. Other settings (Pinterest
+`board`, Reddit `subreddit`, Discord `channel`, and optional ones) are checked for presence
+only. Not yet listed although Postiz documents them: X `post_type` (`post`, `article`;
+article mode changes the text format and limit), `article_status` and the optional
+booleans.
 The contract revision stays `postiz-post-v1`: a plan approved before the deploy with a
 value outside the list, which Postiz would refuse, is refused at execute
 (`plan-unreadable`) before any env read or provider call.
@@ -165,10 +171,16 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   channel plan over 280 is refused at execute before any read or send.
   `postizSettingRules_XReplySetting_OnlyDocumentedValuesAccepted`: the five X reply
   values are accepted; other strings (case, blank, padded) and non-strings are refused;
-  Instagram `post_type` stays presence-only and `constructor/...` lists `{}`.
+  Pinterest `board` stays presence-only and `constructor/...` lists `{}`.
+  `postizSettingRules_InstagramYoutubeTiktok_DocumentedTypesAndValuesChecked`: the
+  documented values and JSON types pass; an undocumented value, a string where TikTok
+  takes a boolean (`"false"`), `0`, and a non-string title are refused; the listing and
+  the `true | false` description match. Mutations killed (step 2): dropping TikTok
+  `duet`; adding a value to `privacy_level`; dropping Instagram Standalone; dropping the
+  boolean description.
   `execute_PostizSettingApprovedBeforeValuesWereChecked_RejectedWithoutSending`: an
   approved X plan with `who_can_reply_post: "anyone"` is refused before any read or send.
-  `agent-credentials-media` lists `settingRules` per credential (TikTok `{}`, X the
+  `agent-credentials-media` lists `settingRules` per credential (TikTok's toggles and lists, X the
   reply list, null for the unavailable YouTube credential) and the description names
   the values. Mutations killed: dropping the type check; dropping the values check.
   Equivalent (survived, harmless): `Object.hasOwn` → `in` on the channel table and on

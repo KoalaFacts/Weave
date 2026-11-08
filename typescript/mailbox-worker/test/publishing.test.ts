@@ -95,8 +95,8 @@ test('postizSettingRules_XReplySetting_OnlyDocumentedValuesAccepted', async () =
     for (const value of [true, 1, null, ['everyone']]) assert.match((await check(postiz, post(value), target)) ?? '', /settings\.who_can_reply_post must be a string/, JSON.stringify(value));
     assert.deepEqual(provider.settingRules?.(target), {who_can_reply_post: {type: 'string', values: ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']}});
     // Channels without a documented list keep presence-only checks; inherited names never match.
-    assert.equal(await check(postiz, {text: 'x', media: [], settings: {__type: 'instagram', post_type: 'anything'}}, 'instagram/cm4'), null);
-    assert.deepEqual([provider.settingRules?.('instagram/cm4'), provider.settingRules?.('constructor/cm4')], [{}, {}]);
+    assert.equal(await check(postiz, {text: 'x', media: [], settings: {__type: 'pinterest', board: 'anything'}}, 'pinterest/cm4'), null);
+    assert.deepEqual([provider.settingRules?.('pinterest/cm4'), provider.settingRules?.('constructor/cm4')], [{}, {}]);
 });
 
 test('execute_PostizSettingApprovedBeforeValuesWereChecked_RejectedWithoutSending', async () => {
@@ -153,4 +153,32 @@ test('publishingProvider_AnyAdapter_ValidatesThenHandsItTheApprovedPostAndStored
             {status: 'rejected', reason: 'media-unavailable'});
         assert.equal(sent.length, 1);
     } finally { await h.close(); }
+});
+
+test('postizSettingRules_InstagramYoutubeTiktok_DocumentedTypesAndValuesChecked', async () => {
+    // Values from docs.postiz.com/public-api/providers/{instagram,youtube,tiktok}; anything else fails at Postiz after approval.
+    const provider = publishingProvider(postiz);
+    const tiktokSettings = {__type: 'tiktok', privacy_level: 'SELF_ONLY', duet: false, stitch: false, comment: true, autoAddMusic: 'no',
+        brand_content_toggle: false, brand_organic_toggle: false, content_posting_method: 'DIRECT_POST'};
+    const post = (settings: Record<string, unknown>) => ({text: 'x', media: [], settings});
+    for (const [target, settings] of [['instagram/cm4', {__type: 'instagram', post_type: 'story'}], ['instagram-standalone/cm4', {__type: 'instagram-standalone', post_type: 'post'}],
+        ['youtube/cm4', {__type: 'youtube', title: 'My video', type: 'unlisted'}], ['tiktok/cm4', tiktokSettings]] as const)
+        assert.equal(await check(postiz, post(settings), target), null, target);
+    const refused: [string, Record<string, unknown>, RegExp][] = [
+        ['instagram/cm4', {__type: 'instagram', post_type: 'reel'}, /settings\.post_type must be one of "post", "story"/],
+        ['youtube/cm4', {__type: 'youtube', title: 'My video', type: 'Public'}, /settings\.type must be one of "public", "unlisted", "private"/],
+        ['youtube/cm4', {__type: 'youtube', title: 7, type: 'public'}, /settings\.title must be a string/],
+        ['tiktok/cm4', {...tiktokSettings, duet: 'false'}, /settings\.duet must be a boolean/],
+        ['tiktok/cm4', {...tiktokSettings, brand_organic_toggle: 0}, /settings\.brand_organic_toggle must be a boolean/],
+        ['tiktok/cm4', {...tiktokSettings, privacy_level: 'PUBLIC'}, /settings\.privacy_level must be one of "PUBLIC_TO_EVERYONE", /],
+        ['tiktok/cm4', {...tiktokSettings, autoAddMusic: true}, /settings\.autoAddMusic must be a string/],
+        ['tiktok/cm4', {...tiktokSettings, content_posting_method: 'DRAFT'}, /settings\.content_posting_method must be one of "DIRECT_POST", "UPLOAD"/]];
+    for (const [target, settings, reason] of refused) assert.match((await check(postiz, post(settings), target)) ?? '', reason, JSON.stringify(settings));
+    const tiktok = provider.settingRules?.('tiktok/cm4');
+    assert.deepEqual(tiktok?.privacy_level, {type: 'string', values: ['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY']});
+    for (const name of ['duet', 'stitch', 'comment', 'brand_content_toggle', 'brand_organic_toggle']) assert.deepEqual(tiktok?.[name], {type: 'boolean', values: null}, name);
+    assert.deepEqual(provider.settingRules?.('youtube/cm4'), {title: {type: 'string', values: null}, type: {type: 'string', values: ['public', 'unlisted', 'private']}});
+    assert.deepEqual(provider.settingRules?.('instagram-standalone/cm4'), {post_type: {type: 'string', values: ['post', 'story']}});
+    // The description says which settings take a boolean.
+    assert.match(provider.describeContent('tiktok/cm4'), /"duet": true \| false/);
 });

@@ -771,7 +771,7 @@ test("ownerMedia_OnlyTheOwnerSeesFilesTheActionNames",{timeout:90_000},async()=>
   }
   const proposed=await agentFetch(agent,"/v1/external-actions",{method:"POST",body:{credentialRef:"postiz:cm4tiktok00000000000000001",operation:"publish_post",
     content:JSON.stringify({text:"",media:[{mediaId,bytes:bytes.length,sha256}],settings:{__type:"tiktok",privacy_level:"SELF_ONLY",duet:false,stitch:false,comment:false,
-      autoAddMusic:false,brand_content_toggle:false,brand_organic_toggle:false,content_posting_method:"DIRECT_POST"}})}});
+      autoAddMusic:"no",brand_content_toggle:false,brand_organic_toggle:false,content_posting_method:"DIRECT_POST"}})}});
   assert.equal(proposed.status,200,await proposed.clone().text());
   const {actionId}=await proposed.json() as {actionId:string};
   assert.ok((await (await account(await sessionCookie(human))).text()).includes('src="/account/media/'+actionId+'/'+mediaId+'"'));
