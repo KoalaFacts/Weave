@@ -48,6 +48,44 @@ test('execute_AltApprovedBeforeAltWasRefused_RejectedWithoutSending', async () =
     }
 });
 
+test('postizTextRules_ChannelWithAStricterPlatform_RefusedAtProposeAndListed', async () => {
+    // Postiz takes 7000 characters, but the platform behind a channel may refuse less after the owner approved it; the smaller limit is enforced at propose.
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}'; // one grapheme, 25 UTF-8 bytes
+    const cases: [string, Record<string, unknown>, string, string, RegExp, object][] = [
+        ['x/cm4', {__type: 'x', who_can_reply_post: 'everyone'}, 'a'.repeat(280), '\u6f22'.repeat(141), /at most 280 weighted characters/,
+            {max: 280, unit: 'weighted characters', maxWithMedia: null, maxBytes: null}],
+        ['bluesky/cm4', {__type: 'bluesky'}, 'a'.repeat(300), 'a'.repeat(301), /at most 300 graphemes/, {max: 300, unit: 'graphemes', maxWithMedia: null, maxBytes: 3000}],
+        ['bluesky/cm4', {__type: 'bluesky'}, family.repeat(120), family.repeat(121), /at most 3000 bytes/, {max: 300, unit: 'graphemes', maxWithMedia: null, maxBytes: 3000}],
+        ['linkedin/cm4', {__type: 'linkedin'}, 'a'.repeat(3000), 'a'.repeat(3001), /at most 3000 characters/, {max: 3000, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        ['linkedin-page/cm4', {__type: 'linkedin-page'}, 'a'.repeat(3000), 'a'.repeat(3001), /at most 3000 characters/, {max: 3000, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        ['instagram/cm4', {__type: 'instagram', post_type: 'post'}, 'a'.repeat(2200), 'a'.repeat(2201), /at most 2200 characters/, {max: 2200, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        ['instagram-standalone/cm4', {__type: 'instagram-standalone', post_type: 'post'}, 'a'.repeat(2200), 'a'.repeat(2201), /at most 2200 characters/,
+            {max: 2200, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        // Channels without a stricter platform limit Weave can stand behind keep Postiz's own.
+        ['threads/cm4', {__type: 'threads'}, 'a'.repeat(7000), 'a'.repeat(7001), /at most 7000 characters/, {max: 7000, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        ['mastodon/cm4', {__type: 'mastodon'}, 'a'.repeat(7000), 'a'.repeat(7001), /at most 7000 characters/, {max: 7000, unit: 'characters', maxWithMedia: null, maxBytes: null}]];
+    const provider = publishingProvider(postiz);
+    for (const [target, settings, fits, over, refusal, listed] of cases) {
+        assert.equal(await check(postiz, {text: fits, media: [], settings}, target), null, target + ' accepts text at its limit');
+        assert.match((await check(postiz, {text: over, media: [], settings}, target)) ?? '', refusal, target);
+        assert.deepEqual(provider.textRules?.(target), listed, target + ' lists the limit it enforces');
+        const max = (listed as {max: number}).max, unit = (listed as {unit: string}).unit;
+        assert.ok(provider.describeContent(target).includes(`"text": at most ${max} ${unit}`), target + ' tells agents the same limit');
+    }
+    assert.equal(provider.textRules?.('constructor/cm4').max, 7000, 'only the listed channel types, never inherited names');
+});
+
+test('execute_PostizTextApprovedBeforeThePlatformLimit_RejectedWithoutSending', async () => {
+    // contractRevision is unchanged: a plan within the new limit sends exactly what was approved; a longer one is refused before any read or send.
+    let sent = 0, envReads = 0;
+    const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
+    const provider = publishingProvider({...postiz, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
+    const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+        content: JSON.stringify({text: 'a'.repeat(281), media: [], settings: {__type: 'x', who_can_reply_post: 'everyone'}}), targetAccount: 'x/cm4', secret: 'token'})
+        .catch((error: unknown) => ({thrown: String(error)}));
+    assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0]);
+});
+
 test('postizRules_SettingsTypeRequiredNamesAndScheduleHorizon', async () => {
     const tiktok = 'tiktok/cm4';
     assert.match((await check(postiz, {text: 'x', media: []}, tiktok))!, /settings\.__type must be "tiktok"/);

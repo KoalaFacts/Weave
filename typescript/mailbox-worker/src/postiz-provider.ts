@@ -6,7 +6,8 @@
 import type { PublicationState } from './external-providers.ts';
 import { visibleExcerpt } from './visible-text.ts';
 import { maxMediaBytes, signedMediaUrl } from './external-media.ts';
-import type { PublishingAdapter } from './publishing.ts';
+import type { PublishingAdapter, TextRule } from './publishing.ts';
+import { xLength } from './x-provider.ts';
 
 const api = 'https://api.postiz.com/public/v1';
 const timeoutMs = 15_000, mediaTimeoutMs = 5 * 60_000, maxJsonBytes = 256 * 1024;
@@ -16,6 +17,18 @@ export const postizChannels: Readonly<Record<string, readonly string[]>> = {
     x: ['who_can_reply_post'], linkedin: [], 'linkedin-page': [], facebook: [], instagram: ['post_type'], 'instagram-standalone': ['post_type'],
     threads: [], bluesky: [], mastodon: [], telegram: [], youtube: ['title', 'type'], pinterest: ['board'], reddit: ['subreddit'], discord: ['channel'],
     tiktok: ['privacy_level', 'duet', 'stitch', 'comment', 'autoAddMusic', 'brand_content_toggle', 'brand_organic_toggle', 'content_posting_method'],
+};
+/**
+ * Postiz takes 7000 characters, but the platform behind a channel refuses longer text after the owner approved it. Where the
+ * platform's limit is smaller and countable here, it is the channel's limit: X and Bluesky as their native adapters count,
+ * LinkedIn's 3000 and Instagram's 2200 caption characters. Threads is left out: Meta counts an emoji as its UTF-8 bytes,
+ * which none of these units does.
+ */
+const postizText: TextRule = {max: 7000, unit: 'characters'};
+const channelText: Readonly<Record<string, TextRule>> = {
+    x: {max: 280, unit: 'weighted characters', weigh: xLength}, bluesky: {max: 300, unit: 'graphemes', maxBytes: 3000},
+    linkedin: {max: 3000, unit: 'characters'}, 'linkedin-page': {max: 3000, unit: 'characters'},
+    instagram: {max: 2200, unit: 'characters'}, 'instagram-standalone': {max: 2200, unit: 'characters'},
 };
 const integrationId = /^[A-Za-z0-9_-]{1,64}$/, apiKeyPattern = /^[\x21-\x7e]{16,512}$/;
 
@@ -62,7 +75,10 @@ export const postiz: PublishingAdapter = {
     name: 'postiz',
     contractRevision: 'postiz-post-v1',
     rules: {
-        text: {max: 7000, unit: 'characters'},
+        text: targetAccount => {
+            const identifier = targetAccount.split('/')[0];
+            return Object.hasOwn(channelText, identifier) ? channelText[identifier] : postizText;
+        },
         media: {max: 10, types: Object.fromEntries(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4'].map(type => [type, maxMediaBytes])), maxAlt: 0},
         schedule: 90 * 24 * 3600_000,
         settings: targetAccount => {
