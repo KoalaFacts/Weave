@@ -123,6 +123,19 @@ test('connectX_SignedKeys_StoresUserAndSealsAllFourValues', () => scenario(async
         'the owner page asks for all four values as secrets');
 }));
 
+test('connectX_KeysPastedWithSurroundingSpaces_SealsAllFourTrimmed', () => scenario(async ({h, fake, env}) => {
+    // Several secret fields are sealed together as one JSON object; each value is trimmed before it is signed and sealed.
+    const agent = await h.register(), humanId = await h.claim(agent);
+    const padded = Object.fromEntries(Object.entries(keys).map(([name, value]) => [name, ' ' + value + '  ']));
+    await withX(fake, async () => {
+        assert.deepEqual(await connectX(env, {humanId, authAt: Date.now(), agentId: agent.accountId, fields: padded}), {ok: true, accounts: ['@hscbeats']});
+    });
+    const row = (await h.db.prepare('SELECT revision,secret FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<any>())!;
+    const sealed = row.secret instanceof ArrayBuffer ? new Uint8Array(row.secret) : Uint8Array.from(row.secret);
+    assert.deepEqual(JSON.parse(await openSecret(key, {accountId: agent.accountId, credentialRef: ref, provider: 'x', revision: row.revision}, sealed)), keys,
+        'the four trimmed keys are sealed');
+}));
+
 test('connectX_MalformedOrRefusedKeys_NothingStored', () => scenario(async ({h, fake, env}) => {
     const agent = await h.register(), humanId = await h.claim(agent);
     const attempt = (fields: Record<string, string> = keys) => connectX(env, {humanId, authAt: Date.now(), agentId: agent.accountId, fields});
