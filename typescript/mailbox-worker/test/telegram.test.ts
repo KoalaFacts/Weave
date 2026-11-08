@@ -98,6 +98,26 @@ test('connectTelegram_AdminBot_StoresChatAndSealedToken', () => scenario(async (
             {max: 10, types: {'image/jpeg': 10_000_000, 'image/png': 10_000_000, 'video/mp4': 50_000_000}, maxTotalBytes: 50_000_000, maxAlt: 0}]]);
 }));
 
+test('connectTelegram_ValuesPastedWithSurroundingSpaces_ConnectsAndSealsTrimmedToken', () => scenario(async ({h, fake, env}) => {
+    // Copying a token often brings a space along; the form keeps it, so the router trims every connect value before checking it.
+    const agent = await h.register(), humanId = await h.claim(agent);
+    await withBotApi(fake, async () => {
+        assert.deepEqual(await connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: '  ' + token + ' ', chat: ' @hscbeats '}),
+            {ok: true, accounts: ['HSC Beats (@hscbeats)']});
+    });
+    assert.ok(fake.calls.every(call => call.tokenInPath), 'only the trimmed token is sent to Telegram');
+    const row = (await h.db.prepare('SELECT revision,secret FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<any>())!;
+    const sealed = row.secret instanceof ArrayBuffer ? new Uint8Array(row.secret) : Uint8Array.from(row.secret);
+    assert.equal(await openSecret(key, {accountId: agent.accountId, credentialRef: ref, provider: 'telegram', revision: row.revision}, sealed), token, 'the trimmed token is sealed');
+    const other = await h.register(), otherHuman = await h.claim(other);
+    fake.calls.length = 0;
+    await withBotApi(fake, async () => {
+        assert.deepEqual(await connectTelegram(env, {humanId: otherHuman, authAt: Date.now(), agentId: other.accountId, botToken: '   ', chat: '@hscbeats'}),
+            {ok: false, reason: 'not-found'}, 'a value of only spaces is missing, not sent');
+    });
+    assert.equal(fake.calls.length, 0);
+}));
+
 test('connectTelegram_TitleWithControlOrBidiCharacters_StoredDisplayVisibleAndWellFormed', () => scenario(async ({h, fake, env}) => {
     const agent = await h.register(), humanId = await h.claim(agent);
     // A chat title cut inside an emoji, with a newline, a right-to-left override and a zero-width space.

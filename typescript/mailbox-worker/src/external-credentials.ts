@@ -138,9 +138,11 @@ export async function connectAccount(env: Env, input: ConnectAccountInput, clock
         || typeof value.provider !== 'string' || !value.fields || typeof value.fields !== 'object' || Array.isArray(value.fields)) return {ok: false, reason: 'not-found'};
     const adapter = publishingAdapter(env, input.provider);
     const fields = adapter?.connector.fields ?? [];
-    // Exactly the adapter's fields, each printable text; anything else reads as an unknown form.
-    if (adapter && (Object.keys(input.fields).length !== fields.length || fields.some(field => typeof input.fields[field.name] !== 'string' || !fieldValue.test(input.fields[field.name]))))
+    // Exactly the adapter's fields, each printable text once the spaces a paste brings along are trimmed; anything else reads as an unknown form.
+    if (adapter && (Object.keys(input.fields).length !== fields.length || fields.some(field => typeof input.fields[field.name] !== 'string')))
         return {ok: false, reason: 'not-found'};
+    const values = Object.fromEntries(fields.map(field => [field.name, (input.fields[field.name] as string).trim()]));
+    if (fields.some(field => !fieldValue.test(values[field.name]))) return {ok: false, reason: 'not-found'};
     const nowMs = Number(clock() / 10000n);
     if (nowMs - input.authAt > reauthWindowMs || input.authAt > nowMs + reauthFutureSkewMs) return {ok: false, reason: 'stale-authentication'};
     if (!adapter) return {ok: false, reason: 'provider-unavailable'};
@@ -148,12 +150,12 @@ export async function connectAccount(env: Env, input: ConnectAccountInput, clock
     try {
         const before = await atomic(env.db, tx => ownership(tx, input.humanId, input.agentId), clock);
         if (before !== 'ok') return {ok: false, reason: before};
-        const accounts = await adapter.connector.verify(input.fields);
+        const accounts = await adapter.connector.verify(values);
         if (accounts === null) return {ok: false, reason: 'provider-refused'};
         if (accounts.length === 0) return {ok: false, reason: 'no-channel'};
         // One secret field is sealed as its value; several are sealed together as one JSON object of their values.
-        const secret = secretFields.length === 1 ? input.fields[secretFields[0].name]
-            : JSON.stringify(Object.fromEntries(secretFields.map(field => [field.name, input.fields[field.name]])));
+        const secret = secretFields.length === 1 ? values[secretFields[0].name]
+            : JSON.stringify(Object.fromEntries(secretFields.map(field => [field.name, values[field.name]])));
         const rows = await Promise.all(accounts.map(async account => {
             const credentialRef = provider + ':' + account.ref, revision = crypto.randomUUID();
             const sealed = await sealSecret(env.EXTERNAL_CREDENTIAL_KEY, {accountId: input.agentId, credentialRef, provider, revision}, secret);
