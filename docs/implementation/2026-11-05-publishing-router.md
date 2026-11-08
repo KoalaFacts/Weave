@@ -73,8 +73,10 @@ characters with the native X adapter's `xLength`; Bluesky 300 graphemes and 3000
 bytes; `linkedin` and `linkedin-page` 3000 characters; `instagram` and
 `instagram-standalone` 2200 characters. Threads keeps 7000: Meta counts an emoji as
 its UTF-8 bytes, which no listed unit expresses, so Weave does not claim a Threads
-limit. `textRules` and the description are computed per credential from the same
-rule. The contract revision stays `postiz-post-v1`, since what is sent is unchanged:
+limit. Limit: X Premium accounts, which X lets post longer text, are held to 280
+through Postiz as through the native adapter, since neither API says which tier an
+account has. `textRules` and the description are computed per credential from the
+same rule. The contract revision stays `postiz-post-v1`, since what is sent is unchanged:
 a plan within the new limit dispatches as approved, and a longer plan approved before
 the deploy is refused at execute (`plan-unreadable`) with no storage read or call.
 
