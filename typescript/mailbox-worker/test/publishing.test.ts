@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { start } from './harness.ts';
 import { describePost, parsePost, publishingProvider, type PublishCall, type PublishingAdapter } from '../src/publishing.ts';
 import { postiz } from '../src/postiz-provider.ts';
+import { telegram } from '../src/telegram-provider.ts';
 import type { Env } from '../src/database.ts';
 
 const file = (overrides: Record<string, unknown> = {}) => ({mediaId: crypto.randomUUID(), bytes: 10, sha256: 'a'.repeat(64), ...overrides});
@@ -19,6 +20,93 @@ test('parsePost_OneFormat_OptionalAltSettingsAndSchedule', () => {
         {text: 'x', media: [file({alt: 'x'.repeat(2001)})]}, {text: 'x', media: [], settings: []}, {text: 'x', media: [], publishAt: 'tomorrow'}, {text: 1, media: []}])
         assert.equal(parsePost(JSON.stringify(post)), null, JSON.stringify(post).slice(0, 60));
     assert.equal(parsePost('not json'), null);
+});
+
+test('altRules_AdaptersThatSendNoAlt_RefuseAltBeforeApproval', async () => {
+    // Telegram and Postiz request bodies carry no alt text, so accepting it would let an owner approve a description that is never sent.
+    const linkedin = 'linkedin-page/cm4', settings = {__type: 'linkedin-page'};
+    for (const [adapter, post, target] of [[telegram, {text: 'x', media: [file({alt: 'A cover'})]}, '-100123'],
+        [postiz, {text: 'x', media: [file({alt: 'A cover'})], settings}, linkedin]] as const) {
+        assert.equal(adapter.rules.media.maxAlt, 0, adapter.name);
+        assert.match((await check(adapter, post, target)) ?? '', /alt is not supported here; omit it/, adapter.name);
+        assert.ok(publishingProvider(adapter).describeContent(target).includes('takes none'), adapter.name + ' tells agents alt is not taken');
+    }
+});
+
+test('execute_AltApprovedBeforeAltWasRefused_RejectedWithoutSending', async () => {
+    // contractRevision is unchanged because what is sent is unchanged; a plan with alt approved before this rule is refused at execute, never sent without its alt.
+    const linkedin = 'linkedin-page/cm4', settings = {__type: 'linkedin-page'};
+    for (const [adapter, post, target] of [[telegram, {text: 'x', media: [file({alt: 'A cover'})]}, '-100123'],
+        [postiz, {text: 'x', media: [file({alt: 'A cover'})], settings}, linkedin]] as const) {
+        let sent = 0, envReads = 0;
+        // The refusal must come before any storage read or network call: the env records any use, publish counts sends.
+        const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
+        const provider = publishingProvider({...adapter, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
+        const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+            content: JSON.stringify(post), targetAccount: target, secret: 'token'}).catch((error: unknown) => ({thrown: String(error)}));
+        assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0], adapter.name);
+    }
+});
+
+test('postizTextRules_ChannelWithAStricterPlatform_RefusedAtProposeAndListed', async () => {
+    // Postiz takes 7000 characters, but the platform behind a channel may refuse less after the owner approved it; the smaller limit is enforced at propose.
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}'; // one grapheme, 25 UTF-8 bytes
+    const cases: [string, Record<string, unknown>, string, string, RegExp, object][] = [
+        ['x/cm4', {__type: 'x', who_can_reply_post: 'everyone'}, 'a'.repeat(280), '\u6f22'.repeat(141), /at most 280 weighted characters/,
+            {max: 280, unit: 'weighted characters', maxWithMedia: null, maxBytes: null}],
+        ['bluesky/cm4', {__type: 'bluesky'}, 'a'.repeat(300), 'a'.repeat(301), /at most 300 graphemes/, {max: 300, unit: 'graphemes', maxWithMedia: null, maxBytes: 3000}],
+        ['bluesky/cm4', {__type: 'bluesky'}, family.repeat(120), family.repeat(121), /at most 3000 bytes/, {max: 300, unit: 'graphemes', maxWithMedia: null, maxBytes: 3000}],
+        ['linkedin/cm4', {__type: 'linkedin'}, 'a'.repeat(3000), 'a'.repeat(3001), /at most 3000 characters/, {max: 3000, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        ['linkedin-page/cm4', {__type: 'linkedin-page'}, 'a'.repeat(3000), 'a'.repeat(3001), /at most 3000 characters/, {max: 3000, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        ['instagram/cm4', {__type: 'instagram', post_type: 'post'}, 'a'.repeat(2200), 'a'.repeat(2201), /at most 2200 characters/, {max: 2200, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        ['instagram-standalone/cm4', {__type: 'instagram-standalone', post_type: 'post'}, 'a'.repeat(2200), 'a'.repeat(2201), /at most 2200 characters/,
+            {max: 2200, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        // Channels without a stricter platform limit Weave can stand behind keep Postiz's own.
+        ['threads/cm4', {__type: 'threads'}, 'a'.repeat(7000), 'a'.repeat(7001), /at most 7000 characters/, {max: 7000, unit: 'characters', maxWithMedia: null, maxBytes: null}],
+        ['mastodon/cm4', {__type: 'mastodon'}, 'a'.repeat(7000), 'a'.repeat(7001), /at most 7000 characters/, {max: 7000, unit: 'characters', maxWithMedia: null, maxBytes: null}]];
+    const provider = publishingProvider(postiz);
+    for (const [target, settings, fits, over, refusal, listed] of cases) {
+        assert.equal(await check(postiz, {text: fits, media: [], settings}, target), null, target + ' accepts text at its limit');
+        assert.match((await check(postiz, {text: over, media: [], settings}, target)) ?? '', refusal, target);
+        assert.deepEqual(provider.textRules?.(target), listed, target + ' lists the limit it enforces');
+        const max = (listed as {max: number}).max, unit = (listed as {unit: string}).unit;
+        assert.ok(provider.describeContent(target).includes(`"text": at most ${max} ${unit}`), target + ' tells agents the same limit');
+    }
+    assert.equal(provider.textRules?.('constructor/cm4').max, 7000, 'only the listed channel types, never inherited names');
+});
+
+test('execute_PostizTextApprovedBeforeThePlatformLimit_RejectedWithoutSending', async () => {
+    // contractRevision is unchanged: a plan within the new limit sends exactly what was approved; a longer one is refused before any read or send.
+    let sent = 0, envReads = 0;
+    const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
+    const provider = publishingProvider({...postiz, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
+    const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+        content: JSON.stringify({text: 'a'.repeat(281), media: [], settings: {__type: 'x', who_can_reply_post: 'everyone'}}), targetAccount: 'x/cm4', secret: 'token'})
+        .catch((error: unknown) => ({thrown: String(error)}));
+    assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0]);
+});
+
+test('postizSettingRules_XReplySetting_OnlyDocumentedValuesAccepted', async () => {
+    // A value Postiz does not take would be approved and then fail at Postiz; it is refused at propose instead.
+    const target = 'x/cm4', provider = publishingProvider(postiz);
+    const post = (who_can_reply_post: unknown) => ({text: 'x', media: [], settings: {__type: 'x', who_can_reply_post}});
+    for (const value of ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']) assert.equal(await check(postiz, post(value), target), null, value);
+    for (const value of ['Everyone', 'anyone', '', ' everyone']) assert.match((await check(postiz, post(value), target)) ?? '', /settings\.who_can_reply_post must be one of "everyone", /, value);
+    for (const value of [true, 1, null, ['everyone']]) assert.match((await check(postiz, post(value), target)) ?? '', /settings\.who_can_reply_post must be a string/, JSON.stringify(value));
+    assert.deepEqual(provider.settingRules?.(target), {who_can_reply_post: {type: 'string', values: ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']}});
+    // Channels without a documented list keep presence-only checks; inherited names never match.
+    assert.equal(await check(postiz, {text: 'x', media: [], settings: {__type: 'instagram', post_type: 'anything'}}, 'instagram/cm4'), null);
+    assert.deepEqual([provider.settingRules?.('instagram/cm4'), provider.settingRules?.('constructor/cm4')], [{}, {}]);
+});
+
+test('execute_PostizSettingApprovedBeforeValuesWereChecked_RejectedWithoutSending', async () => {
+    let sent = 0, envReads = 0;
+    const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
+    const provider = publishingProvider({...postiz, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
+    const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+        content: JSON.stringify({text: 'x', media: [], settings: {__type: 'x', who_can_reply_post: 'anyone'}}), targetAccount: 'x/cm4', secret: 'token'})
+        .catch((error: unknown) => ({thrown: String(error)}));
+    assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0]);
 });
 
 test('postizRules_SettingsTypeRequiredNamesAndScheduleHorizon', async () => {

@@ -42,18 +42,64 @@ An adapter's `rules` declare:
   optional lower limit when media is attached (a caption);
 - the media count, the accepted types each with its largest size, an optional total,
   and an optional alt text limit, refused before approval so that alt text is never
-  shortened at dispatch;
+  shortened at dispatch. An adapter whose request carries no alt text sets it to 0
+  (X, Telegram, Postiz), so an owner never approves a description that is not sent;
 - the scheduling horizon, or none;
 - for each account, the settings it requires: fixed values (Postiz's `__type`) and
-  required names.
+  required names, plus, for settings whose values the platform documents, the value's
+  JSON type and closed list of values.
 
 Where the platform has no use for something, the router refuses it: a `publishAt` for
 a platform that posts immediately only, or settings for an adapter that takes none.
 
 The router derives the description `list_my_credentials` returns from the same rules,
-so what agents read and what is enforced cannot drift apart. At dispatch the router
-re-reads the files, and a file gone or changed since approval sends nothing. The
-adapter receives the parsed post with each file's stored type.
+so what agents read and what is enforced cannot drift apart. Since 2026-11-06
+(Envoylet request `credential-text-rules`) each listed credential also carries
+`textRules: {max, unit, maxWithMedia, maxBytes}` (null for a credential whose content
+is not a post, or whose provider is unavailable): the same text limits as data, so an
+app can count before proposing without parsing the description. `unit` is
+`characters` (UTF-16 code units), `graphemes` or `weighted characters` (X); clients
+should treat an unknown unit as no limit. Beside it, `mediaRules: {max, types,
+maxTotalBytes, maxAlt}` (Envoylet request `credential-media-rules`) carries the media
+limits from the same rules: the file count, each accepted type with its largest file
+in bytes, the total-bytes cap or null, and `maxAlt` (0: the platform takes no alt;
+null: only the post format's 2000-character limit). It is null exactly when
+`textRules` is. The router still decides at proposal.
+
+An adapter's text limit may depend on the account (Envoylet request
+`postiz-channel-text-rules`, 2026-11-08): a Postiz channel takes the smaller of
+Postiz's 7000 characters and its platform's limit, so text the platform would refuse
+after approval is refused at proposal instead. X channels count 280 weighted
+characters with the native X adapter's `xLength`; Bluesky 300 graphemes and 3000
+bytes; `linkedin` and `linkedin-page` 3000 characters; `instagram` and
+`instagram-standalone` 2200 characters. Threads keeps 7000: Meta counts an emoji as
+its UTF-8 bytes, which no listed unit expresses, so Weave does not claim a Threads
+limit. Limit: X Premium accounts, which X lets post longer text, are held to 280
+through Postiz as through the native adapter: Weave does not read an account's
+subscription tier. `textRules` and the description are computed per credential from the
+same rule. The contract revision stays `postiz-post-v1`, since what is sent is unchanged:
+a plan within the new limit dispatches as approved, and a longer plan approved before
+the deploy is refused at execute (`plan-unreadable`) with no storage read or call.
+
+Settings values (Envoylet request `postiz-setting-values`, 2026-11-08, first step):
+each listed credential carries `settingRules: {<name>: {type, values}}` (null exactly
+when `textRules` is; `{}` when no setting is checked beyond presence). `type` is
+`string`, `boolean` or `number`; `values` is the closed list, or null when any value of
+the type is accepted. A present setting of the wrong JSON type is refused with
+"settings.<name> must be a <type>", and one outside the list with "settings.<name>
+must be one of ...". The description names the allowed values. So far only Postiz X
+`who_can_reply_post` is listed (`everyone`, `following`, `mentionedUsers`,
+`subscribers`, `verified`, from docs.postiz.com/public-api/providers/x); other Postiz
+settings are checked for presence only. Not yet listed although the same Postiz page
+documents them: X `post_type` (`post`, `article`), `article_status` (`draft`,
+`published`) and the booleans `made_with_ai` and `paid_partnership`; values for the other
+channels are still to be sourced from Postiz's documentation.
+The contract revision stays `postiz-post-v1`: a plan approved before the deploy with a
+value outside the list, which Postiz would refuse, is refused at execute
+(`plan-unreadable`) before any env read or provider call.
+
+At dispatch the router re-reads the files, and a file gone or changed since approval
+sends nothing. The adapter receives the parsed post with each file's stored type.
 
 ## Connecting
 
@@ -79,6 +125,14 @@ values to `connectAccount`, which accepts exactly the adapter's field names with
 printable values up to 512 characters. The authorization server never stores, logs or
 renders the values.
 
+The account name each platform sends back (a Telegram chat title, a Discord webhook
+name, a Postiz channel name, a YouTube channel title) is stored as `targetDisplay` only
+after `shownName` in `src/external-credentials.ts` passes it through `visibleExcerpt`
+with the published 400-unit bound; a name with no visible character left (only
+whitespace or default-ignorable characters such as U+200C or a variation selector)
+becomes the provider-verified account id (2026-11-07). The owner overview, the approval page, the
+credential list and pending actions (joined to the live credential row) read that stored value.
+
 Adding a platform is now one adapter file plus one entry in `publishingAdapters`.
 Neither the authorization server, the owner page nor the RPC surface changes.
 
@@ -89,6 +143,36 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   - Postiz settings and schedule rules, and their description;
   - a test-only adapter is validated, gets the parsed post and stored files, and is
     not called when a file disappeared after approval.
+- `textRules` on `GET /v1/external-credentials` and `list_my_credentials`:
+  `agent-credentials-media` (Postiz, and null for an unavailable YouTube credential),
+  `bluesky` (with its 3000-byte cap), `discord`, `telegram` (1024 with media) and `x`
+  (weighted). `mediaRules` in the same tests: Postiz (five types, no total, `maxAlt`
+  0), Bluesky (1 MB images), Discord (10 MiB per file and in all, alt 1024),
+  Telegram (50 MB total, `maxAlt` 0), X (`maxAlt` 0), and null for the unavailable YouTube
+  credential. `publishing`
+  `altRules_AdaptersThatSendNoAlt_RefuseAltBeforeApproval`: Telegram and Postiz refuse
+  alt at propose with "alt is not supported here; omit it" and say so in their
+  description (a reported finding: both accepted alt and then sent none). Their
+  contract revisions stay `telegram-post-v1` / `postiz-post-v1`: what they send is
+  unchanged, so approved plans without alt still dispatch, and a plan with alt
+  approved before the deploy is refused at execute (`plan-unreadable`) without a
+  provider call (`execute_AltApprovedBeforeAltWasRefused_RejectedWithoutSending`).
+  `postizTextRules_ChannelWithAStricterPlatform_RefusedAtProposeAndListed`: each
+  Postiz channel type accepts text at its limit, refuses one unit over (X with CJK
+  weighting, Bluesky by graphemes and by bytes), and lists and describes the same
+  limit; Threads and Mastodon keep 7000.
+  `execute_PostizTextApprovedBeforeThePlatformLimit_RejectedWithoutSending`: an X
+  channel plan over 280 is refused at execute before any read or send.
+  `postizSettingRules_XReplySetting_OnlyDocumentedValuesAccepted`: the five X reply
+  values are accepted; other strings (case, blank, padded) and non-strings are refused;
+  Instagram `post_type` stays presence-only and `constructor/...` lists `{}`.
+  `execute_PostizSettingApprovedBeforeValuesWereChecked_RejectedWithoutSending`: an
+  approved X plan with `who_can_reply_post: "anyone"` is refused before any read or send.
+  `agent-credentials-media` lists `settingRules` per credential (TikTok `{}`, X the
+  reply list, null for the unavailable YouTube credential) and the description names
+  the values. Mutations killed: dropping the type check; dropping the values check.
+  Equivalent (survived, harmless): `Object.hasOwn` → `in` on the channel table and on
+  the posted settings, since inherited names carry no entries.
 - `test/postiz.test.ts` and `test/bluesky.test.ts` run their connect, plan and
   dispatch tests through the router. Bluesky's limits are checked through the router,
   and so is the exact-field rule.
@@ -100,11 +184,33 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   - a hostile descriptor is escaped.
 - workerd tests connect Postiz and Bluesky through `/account/connect` and refuse an
   extra field.
+- Platform text that Weave stores (a Postiz `ERROR` message as `publication.error`, a
+  test provider's refusal reason after `provider-rejected: `) goes through
+  `visibleExcerpt` in `src/visible-text.ts`: invisible and control characters become
+  spaces, whitespace collapses, lone surrogates become U+FFFD, and the cut never splits a
+  surrogate pair. `postiz` `publication_PlatformErrorCutInsideSurrogatePair_ErrorStaysWellFormed`
+  and `external-actions`
+  `executeExternalAction_RejectionReasonWithControlsAndSplitPair_StoredVisibleAndWellFormed`
+  pin it; dropping the pair check, the invisible-character replacement or the
+  well-formed step each fails at least one of them (2026-11-06).
+- Stored account names: `telegram`
+  `connectTelegram_TitleWithControlOrBidiCharacters_StoredDisplayVisibleAndWellFormed`
+  `connectTelegram_TitleOnlyInvisibleCharacters_DisplayFallsBackToChatId` and
+  `connectTelegram_TitleOnlyDefaultIgnorableCharacters_DisplayFallsBackToChatId`, and
+  `external-credentials`
+  `connectExternalCredential_YoutubeTitleWithBidiOverride_StoredDisplayVisible`, failed
+  before the change (a newline, U+202E and U+200B were stored as sent). Mutations, each
+  killed: the fallback removed; the cleaning removed from `connectAccount`; the
+  cleaning removed from the YouTube connect; the fallback tested on an empty string
+  instead of on a visible character (2026-11-07). Raising the 400-unit bound survives:
+  every current adapter cuts its name shorter, so the bound only guards future adapters.
 
 ## Limits
 
 - Settings are checked for presence and fixed values, not for each platform's value
   rules; the platform still refuses invalid values at dispatch.
+- Account names stored before this change is deployed keep their text until the owner reconnects
+  that account; HTML pages escape them either way.
 - One secret field per connector. A platform that needs an OAuth redirect (YouTube)
   keeps its own flow.
 - A post goes to one credential. Sending the same post to several channels is one
@@ -253,34 +359,3 @@ A local gate passes. No request is made to the real X API: tests use the fake, a
   revoked in Weave.
 - OAuth 2.0 user tokens are not supported. They expire within hours and need a Weave-registered X app and a stored
   refresh token, which rotates on use.
-
-### X alt text (2026-11-06, sub-step 2/2)
-
-This supersedes the "No alt text" router change, the "Alt text: not taken" post rule and the alt text item in the X
-limits above.
-
-- **Rule:** each image may carry alt text of at most 1000 characters (`maxAlt: 1000`, the `maxLength` of X's
-  `POST /2/media/metadata`, read on 2026-11-06). Longer alt text is refused before approval with "alt must be at most
-  1000 characters here". The router measures UTF-16 code units, which are never fewer than the code points a JSON
-  Schema `maxLength` counts. This rests on the published schema; X's own counting of alt text is not live-verified.
-- **Dispatch:** after an image with alt text is uploaded, one signed `POST https://api.x.com/2/media/metadata` sends
-  `{id, metadata: {alt_text: {text}}}` with the approved text unchanged. Only a 200 whose `data.id` is that media id
-  counts as set. Any other answer or a network failure is a refusal, `media-alt-refused`, with nothing posted, because
-  no post exists until `POST /2/tweets`. A post is never sent without the alt text the owner approved. Images without
-  alt text, or with an empty alt text (which describes nothing), make no metadata call.
-- **Verification** (`test/x.test.ts`):
-  - `executeXPost_ImagesWithAlt_AltSetOnTheUploadedMediaBeforePosting` checks a 1000-character alt text with leading
-    spaces and a newline. It is sent exactly, signed, on the right media id, only for the image that has it, and before
-    the post.
-  - `executeXPost_AltRefusedOrUnanswered_FailedWithNothingPosted` covers a 400, a 503, another media id, a 202 and a
-    network failure.
-  - `executeXPost_SecondImageAltRefused_FailedWithNothingPosted`: the first image's alt text is set, the second is
-    refused, and nothing is posted.
-  - `executeXPost_EmptyAlt_NoMetadataCall`: an empty alt text makes no metadata call (it failed before the fix, which
-    sent `""`).
-  - `xRules_Limits_TextImagesAltNoSchedule` refuses 1001 characters, and agents are no longer told X takes no alt.
-  - Before the change, the new tests failed because alt was refused at proposal (`400`).
-- **Mutation checks** (each fails a test): any id accepted as confirmation; a metadata failure ignored; no metadata
-  call; any 2xx accepted; the limit raised to the router's 2000; the text trimmed before sending.
-- **Limit:** the fake follows X's documented shape. No live X call has been made. X documents only a generic error
-  response for this call (read on 2026-11-06), so every non-200 answer is treated as a refusal.

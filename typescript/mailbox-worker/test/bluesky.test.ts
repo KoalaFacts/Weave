@@ -86,7 +86,9 @@ test('connectBluesky_AppPassword_StoresVerifiedAccountAndSealedPassword', () => 
     assert.ok(!Buffer.from(sealed).toString('latin1').includes(appPassword), 'the app password is never stored in clear');
     assert.equal(await openSecret(key, {accountId: agent.accountId, credentialRef: ref, provider: 'bluesky', revision: row.revision}, sealed), appPassword);
     const listed = await h.ok('/v1/external-credentials', agent);
-    assert.deepEqual(listed.items.map((item: any) => [item.credentialRef, item.operations]), [[ref, ['publish_post']]]);
+    assert.deepEqual(listed.items.map((item: any) => [item.credentialRef, item.operations, item.textRules, item.mediaRules]),
+        [[ref, ['publish_post'], {max: 300, unit: 'graphemes', maxWithMedia: null, maxBytes: 3000},
+            {max: 4, types: {'image/jpeg': 1_000_000, 'image/png': 1_000_000, 'image/webp': 1_000_000}, maxTotalBytes: null, maxAlt: null}]], 'the byte cap is in textRules, not only in content');
     // Reconnecting the same account rotates its revision.
     await withBluesky(verifying, async () => { await connectBluesky(env, {humanId, authAt: Date.now(), agentId: agent.accountId, handle, appPassword}); });
     assert.notEqual((await h.db.prepare('SELECT revision FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<string>('revision')), row.revision);

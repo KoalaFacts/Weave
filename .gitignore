@@ -52,7 +52,7 @@ secrets.enc
 *.local.json
 
 ## Node
-node_modules/
+node_modules
 .wrangler/
 
 ## OS

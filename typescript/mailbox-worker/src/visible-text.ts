@@ -15,3 +15,17 @@ export const replaceInvisible = (text: string, replacement: string): string => t
  * or invisible formatting/variation characters could be mistaken for another or for none.
  */
 export const visibleName = (text: string): boolean => replaceInvisible(text, '') === text && visibleCharacter.test(text);
+
+/** True when `text` has at least one character that is neither whitespace nor default ignorable. */
+export const hasVisibleCharacter = (text: string): boolean => visibleCharacter.test(text);
+
+/**
+ * Text a platform sent back (a refusal reason, an error), made safe to store and show: invisible and control characters
+ * become spaces, whitespace runs collapse, lone surrogates become U+FFFD, and the cut to at most `max` UTF-16 units
+ * never splits a surrogate pair.
+ */
+export function visibleExcerpt(text: string, max: number): string {
+    const flat = replaceInvisible(text, ' ').replace(/\s+/g, ' ').trim().toWellFormed();
+    const cut = flat.slice(0, max);
+    return (/[\ud800-\udbff]$/.test(cut) ? cut.slice(0, -1) : cut).trimEnd();
+}

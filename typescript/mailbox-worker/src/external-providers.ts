@@ -10,11 +10,18 @@ import { telegram } from './telegram-provider.ts';
 import { discord } from './discord-provider.ts';
 import { x } from './x-provider.ts';
 import { publishingProvider, type PublishingAdapter } from './publishing.ts';
+import { visibleExcerpt } from './visible-text.ts';
 
 /** `secret` is the opened credential secret, null for a provider that needs none. It never leaves the provider. */
 export type ProviderCall = {accountId: string; operation: string; content: string; targetAccount: string; actionId: string; secret: string | null};
 /** What a provider checks when a plan is proposed; `targetAccount` is the credential's provider-verified account. */
 export type ProposedPlan = {accountId: string; operation: string; content: string; targetAccount: string};
+/** A post's text limits: `unit` is how `max` counts; `maxWithMedia` replaces `max` when media is attached; `maxBytes` caps the UTF-8 size. */
+export type TextRules = {max: number; unit: 'characters' | 'graphemes' | 'weighted characters'; maxWithMedia: number | null; maxBytes: number | null};
+/** Settings `checkContent` checks beyond presence, by name: the value's type and, when closed, its allowed values. */
+export type SettingRules = Record<string, {type: 'string' | 'boolean' | 'number'; values: string[] | null}>;
+/** A post's media limits: `types` maps each accepted type to its largest file in bytes; `maxAlt` 0 means no alt, null only the post format's limit. */
+export type MediaRules = {max: number; types: Readonly<Record<string, number>>; maxTotalBytes: number | null; maxAlt: number | null};
 /**
  * `rejected` only when the provider confirmed nothing happened. Throw when the outcome is uncertain. `trackFrom` (epoch
  * ms) marks a completed effect that the provider finishes later, such as a queued or scheduled post: its publication
@@ -30,6 +37,12 @@ export type ExternalProvider = {
     operations: readonly string[];
     /** What `content` must be for this credential's account, for the agent composing a plan. */
     describeContent(targetAccount: string): string;
+    /** The post text limits `checkContent` enforces for one account, as data for apps; absent when the content is not a post. */
+    textRules?(targetAccount: string): TextRules;
+    /** The setting types and values `checkContent` enforces for one account, by name, as data for apps; present exactly when `textRules` is. */
+    settingRules?(targetAccount: string): SettingRules;
+    /** The post media limits `checkContent` enforces, as data for apps; present exactly when `textRules` is. */
+    mediaRules?: MediaRules;
     /** Provider-specific content rules checked when the plan is proposed; the reason it is invalid, or null. */
     checkContent?(tx: Transaction, plan: ProposedPlan): Promise<string | null>;
     execute(env: Env, call: ProviderCall): Promise<ProviderResult>;
@@ -59,7 +72,7 @@ const testHttp: ExternalProvider = {
         if (response.status === 200 && typeof body.externalId === 'string' && body.externalId.length > 0 && body.externalId.length <= maxReceipt)
             return {status: 'completed', receipt: body.externalId};
         if (response.status === 422 && typeof body.reason === 'string')
-            return {status: 'rejected', reason: body.reason.slice(0, maxReason)};
+            return {status: 'rejected', reason: visibleExcerpt(body.reason, maxReason)};
         throw Error('Unconfirmed provider response.');
     }
 };
