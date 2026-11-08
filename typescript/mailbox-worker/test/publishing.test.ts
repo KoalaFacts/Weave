@@ -111,7 +111,10 @@ test('postizSettings_RequiredSettingBlankOrNull_RefusedBeforeApproval', async ()
         assert.equal(await check(postiz, {text: 'x', media: [], settings: {...settings, [name]: ' a '}}, target), null, target);
     }
     // Structured values Postiz documents for some channels (Reddit's subreddit list) are still checked for presence only.
-    assert.equal(await check(postiz, {text: 'x', media: [], settings: {__type: 'reddit', subreddit: [{value: {subreddit: 'a'}}]}}, 'reddit/cm4'), null);
+    for (const subreddit of [[{value: {subreddit: 'a'}}], []])
+        assert.equal(await check(postiz, {text: 'x', media: [], settings: {__type: 'reddit', subreddit}}, 'reddit/cm4'), null, JSON.stringify(subreddit));
+    // Only required settings are refused when blank; an optional one is passed on as sent.
+    assert.equal(await check(postiz, {text: 'x', media: [], settings: {__type: 'pinterest', board: 'b', title: ' '}}, 'pinterest/cm4'), null);
 });
 
 test('execute_PostizBlankSettingApprovedBeforeItWasRefused_RejectedWithoutSending', async () => {

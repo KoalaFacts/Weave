@@ -97,7 +97,7 @@ and only for settings Postiz requires: X `who_can_reply_post` (`everyone`, `foll
 `content_posting_method` (`DIRECT_POST`, `UPLOAD`) and the booleans `duet`, `stitch`,
 `comment`, `brand_content_toggle` and `brand_organic_toggle`. Other settings (Pinterest
 `board`, Reddit `subreddit`, Discord `channel`, and optional ones) are checked for presence
-only. A required setting that is null or a string of only spaces is refused at propose with
+only. A required setting that is null or a string of only whitespace is refused at propose with
 "settings.<name> must not be blank" (2026-11-08): Postiz would refuse it after approval. A
 typed setting refuses null as the wrong type first; a structured value (an array or object)
 is still only checked for presence. Not yet listed although Postiz documents them: X `post_type` (`post`, `article`;
@@ -233,8 +233,8 @@ Neither the authorization server, the owner page nor the RPC surface changes.
 
 ## Limits
 
-- Settings without listed `settingRules` are checked for presence, fixed values and
-  blankness only; the platform still refuses other invalid values at dispatch.
+- Settings without listed `settingRules` are checked for presence and fixed values only, and
+  a required one also for blankness; the platform still refuses other invalid values at dispatch.
 - Account names stored before this change is deployed keep their text until the owner reconnects
   that account; HTML pages escape them either way.
 - One secret field per connector. A platform that needs an OAuth redirect (YouTube)
