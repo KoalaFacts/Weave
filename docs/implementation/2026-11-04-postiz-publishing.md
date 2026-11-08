@@ -37,9 +37,11 @@ Content is JSON `{text, media: [{mediaId, bytes, sha256}], settings, publishAt?}
   requires for it (for example YouTube `title` and `type`; TikTok
   `privacy_level`, `duet`, `stitch`, `comment`, `autoAddMusic`,
   `brand_content_toggle`, `brand_organic_toggle`, `content_posting_method`;
-  Instagram `post_type`; X `who_can_reply_post`). X `who_can_reply_post` must be one of
-  `everyone`, `following`, `mentionedUsers`, `subscribers` or `verified`, and is listed
-  in the credential's `settingRules`; other settings are checked for presence only.
+  Instagram `post_type`; X `who_can_reply_post`). The documented JSON type and closed
+  values of the X, Instagram, YouTube and TikTok required settings are checked and listed
+  in the credential's `settingRules` (TikTok's toggles are JSON booleans, `autoAddMusic`
+  is `yes` or `no`); other settings are checked for presence only. The router record
+  lists each value.
 - Every media item is pinned to the agent's own uploaded file with its exact size and
   SHA-256, and must be JPEG, PNG, GIF, WebP or MP4 (what Postiz accepts).
 - `publishAt`, when present, is a future UTC instant within 90 days.

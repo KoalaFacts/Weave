@@ -30,9 +30,16 @@ const channelText: Readonly<Record<string, TextRule>> = {
     linkedin: {max: 3000, unit: 'characters'}, 'linkedin-page': {max: 3000, unit: 'characters'},
     instagram: {max: 2200, unit: 'characters'}, 'instagram-standalone': {max: 2200, unit: 'characters'},
 };
-/** Setting values Postiz documents as a closed list (docs.postiz.com/public-api/providers/x); other settings are checked for presence only. */
+/** Required setting types and closed values as Postiz documents them (docs.postiz.com/public-api/providers/<channel>); other settings are checked for presence only. */
+const instagramSettings: SettingRules = {post_type: {type: 'string', values: ['post', 'story']}};
+const toggle = {type: 'boolean', values: null} as const;
 const channelSettings: Readonly<Record<string, SettingRules>> = {
     x: {who_can_reply_post: {type: 'string', values: ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']}},
+    instagram: instagramSettings, 'instagram-standalone': instagramSettings,
+    youtube: {title: {type: 'string', values: null}, type: {type: 'string', values: ['public', 'unlisted', 'private']}},
+    tiktok: {privacy_level: {type: 'string', values: ['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY']},
+        duet: toggle, stitch: toggle, comment: toggle, autoAddMusic: {type: 'string', values: ['yes', 'no']},
+        brand_content_toggle: toggle, brand_organic_toggle: toggle, content_posting_method: {type: 'string', values: ['DIRECT_POST', 'UPLOAD']}},
 };
 const integrationId = /^[A-Za-z0-9_-]{1,64}$/, apiKeyPattern = /^[\x21-\x7e]{16,512}$/;
 

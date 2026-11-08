@@ -11,7 +11,7 @@ const {executePrivateMcp} = await import('data:text/javascript;base64,' + Buffer
 
 type Harness = Awaited<ReturnType<typeof start>>;
 const key = randomBytes(32).toString('base64url'), origin = 'http://localhost';
-const tiktok = {__type: 'tiktok', privacy_level: 'PUBLIC_TO_EVERYONE', duet: false, stitch: false, comment: true, autoAddMusic: false,
+const tiktok = {__type: 'tiktok', privacy_level: 'PUBLIC_TO_EVERYONE', duet: false, stitch: false, comment: true, autoAddMusic: 'no',
     brand_content_toggle: false, brand_organic_toggle: false, content_posting_method: 'DIRECT_POST'};
 
 async function scenario(run: (s: {h: Harness; env: Env}) => Promise<void>) {
@@ -62,7 +62,8 @@ test('listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider', 
         maxTotalBytes: null, maxAlt: 0}, 'the media limits ruleBreak and storedFiles enforce, as data');
     assert.deepEqual(postizX.textRules, {max: 280, unit: 'weighted characters', maxWithMedia: null, maxBytes: null}, 'an X channel lists X\'s limit, not Postiz\'s');
     assert.ok(postizX.content.includes('"text": at most 280 weighted characters'), postizX.content);
-    assert.deepEqual(postiz.settingRules, {}, 'TikTok settings are checked for presence only');
+    assert.deepEqual(postiz.settingRules.duet, {type: 'boolean', values: null}, 'a TikTok toggle lists its JSON type');
+    assert.deepEqual(postiz.settingRules.content_posting_method, {type: 'string', values: ['DIRECT_POST', 'UPLOAD']}, 'a TikTok closed list is listed');
     assert.deepEqual(postizX.settingRules, {who_can_reply_post: {type: 'string', values: ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']}},
         'an X channel lists the reply setting\'s closed values');
     assert.ok(postizX.content.includes('"who_can_reply_post": one of "everyone" | "following" | "mentionedUsers" | "subscribers" | "verified"'), postizX.content);
