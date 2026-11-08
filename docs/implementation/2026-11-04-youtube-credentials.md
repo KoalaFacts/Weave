@@ -57,6 +57,24 @@ and marks the row revoked; a schema check keeps revoked rows secret-free.
 
 Uploading media is HTTP only; there is no MCP tool for binary bodies.
 
+### Refusals name the field (2026-11-09)
+
+Until this change every plan outside YouTube's limits was refused with one reason,
+`must be JSON {title, description, privacyStatus, mediaId, bytes, sha256} within
+YouTube limits`, so an app could not tell which field to fix. Propose now returns
+`400 invalid`, field `content`, with the first broken rule as the reason:
+`title must be a non-blank string`, `title must be at most 100 characters`, `title
+must not contain < or >`, `description must be a string`, `description must be at most
+5000 bytes`, `description must not contain < or >`, `privacyStatus must be one of
+"private", "unlisted", "public"`, or `must name your uploaded video with its exact bytes
+and sha256` (also used, as before, when the media is not the agent's stored video).
+Content that is not JSON or not exactly those six keys keeps the shape reason without
+the suffix. The rules themselves and what execute accepts are unchanged, so plans
+proposed before still execute. `test/youtube-upload.test.ts` checks each reason and
+that exactly 100 characters of title and 5000 bytes of description are accepted;
+moving either limit by one, accepting a blank title or dropping the description's `<`
+`>` check each fails it.
+
 ## Configuration for a real deployment (not done here)
 
 - Google Cloud project with the YouTube Data API v3 enabled; OAuth consent screen
