@@ -69,7 +69,7 @@ export const telegram: PublishingAdapter = {
     contractRevision: 'telegram-post-v1',
     rules: {
         text: {max: 4096, unit: 'characters', maxWithMedia: 1024},
-        media: {max: 10, types: {'image/jpeg': maxPhotoBytes, 'image/png': maxPhotoBytes, 'video/mp4': maxVideoBytes}, maxTotalBytes: maxVideoBytes},
+        media: {max: 10, types: {'image/jpeg': maxPhotoBytes, 'image/png': maxPhotoBytes, 'video/mp4': maxVideoBytes}, maxTotalBytes: maxVideoBytes, maxAlt: 0},
         schedule: null,
         note: 'Text is sent as plain text; two or more files are posted as one album.'
     },

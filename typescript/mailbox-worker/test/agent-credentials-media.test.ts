@@ -58,7 +58,7 @@ test('listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider', 
     assert.deepEqual(postiz.textRules, {max: 7000, unit: 'characters', maxWithMedia: null, maxBytes: null}, 'the limits ruleBreak enforces, as data');
     const postizBytes = 100 * 1024 * 1024;
     assert.deepEqual(postiz.mediaRules, {max: 10, types: {'image/jpeg': postizBytes, 'image/png': postizBytes, 'image/gif': postizBytes, 'image/webp': postizBytes, 'video/mp4': postizBytes},
-        maxTotalBytes: null, maxAlt: null}, 'the media limits ruleBreak and storedFiles enforce, as data');
+        maxTotalBytes: null, maxAlt: 0}, 'the media limits ruleBreak and storedFiles enforce, as data');
     assert.deepEqual([youtube.operations, youtube.content, youtube.textRules, youtube.mediaRules], [[], null, null, null]);
     // The HTTP API returns the same listing for a key-authenticated agent.
     assert.deepEqual(await h.ok('/v1/external-credentials', agent), listed.body);
