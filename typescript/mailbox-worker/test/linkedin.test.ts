@@ -155,115 +155,17 @@ test('connectLinkedIn_TokenUpToLinkedInsPlannedLength_StoredWhole', () => scenar
 }));
 
 test('connectLinkedIn_OwnerHtmlPattern_VModeWorksAndCountsPadding', () => {
-    // HTML input pattern attributes use UnicodeSets ('v') semantics: '/' must be escaped inside the class.
+    // HTML pattern uses UnicodeSets ('v') mode: '/' needs escaping inside the character class.
     const pattern = linkedin.connector.fields.find(field => field.name === 'accessToken')?.pattern;
     assert.ok(pattern);
-    const html = new RegExp('^(?:' + pattern + ')
-    assert.equal(littleText('Hi @team (see #launch) *now* a_b ~ [x] {y} <z> | \\'),
-        'Hi \\@team \\(see \\#launch\\) \\*now\\* a\\_b \\~ \\[x\\] \\{y\\} \\<z\\> \\| \\\\');
-    assert.equal(littleText('plain text, 你好 🎧!'), 'plain text, 你好 🎧!', 'everything else is sent as written');
-    assert.equal(linkedinLength('#a'), 3);
-    assert.equal(linkedinLength('a'.repeat(10)), 10);
-});
-
-test('linkedinRules_Limits_TextImagesNoSchedule', async () => {
-    const check = (post: unknown) => publishingProvider(linkedin).checkContent!(undefined as never, {accountId: '', operation: 'publish_post', content: JSON.stringify(post), targetAccount: author});
-    const file = (bytes = 1000) => ({mediaId: crypto.randomUUID(), bytes, sha256: 'a'.repeat(64)});
-    assert.equal(await check({text: 'a'.repeat(3000), media: []}), null);
-    const cases: [unknown, RegExp][] = [[{text: 'a'.repeat(3001), media: []}, /at most 3000 weighted characters/],
-        [{text: 'a'.repeat(2999) + '#', media: []}, /at most 3000 weighted characters/],
-        [{text: 'x', media: Array.from({length: 10}, () => file())}, /at most 9 media/],
-        [{text: 'x', media: [], publishAt: new Date(Date.now() + 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z')}, /publishAt is not supported/],
-        [{text: 'x', media: [], settings: {visibility: 'CONNECTIONS'}}, /settings are not taken/], [{text: '', media: []}, /text or media is required/]];
-    for (const [post, reason] of cases) assert.match((await check(post)) ?? '', reason, JSON.stringify(post).slice(0, 70));
-    assert.ok(publishingProvider(linkedin).describeContent(author).includes('at most 3000 weighted characters'));
-});
-
-test('executeLinkedInPost_Text_EscapedVersionedAndPostedOnce', () => scenario(async ({h, fake, env}) => {
-    const {agent, actionId} = await approvedPost(h, env, fake, {text: 'Launch day #1 (finally) @everyone', media: []});
-    assert.deepEqual(posts(fake), [], 'approval alone posts nothing');
-    const first = await execute(h, agent, actionId), again = await execute(h, agent, actionId);
-    assert.deepEqual([first.status, first.receipt, again.receipt], ['completed', 'urn:li:share:6844785523593134080', 'urn:li:share:6844785523593134080']);
-    assert.equal(posts(fake).length, 1, 'posted exactly once');
-    const [call] = posts(fake);
-    assert.deepEqual([call.bearer, call.version, call.restli], [true, '202610', '2.0.0']);
-    assert.deepEqual(call.json, {author, commentary: 'Launch day \\#1 \\(finally\\) \\@everyone', ...feed}, 'the approved text is sent as plain text, never as markup');
-}));
-
-test('executeLinkedInPost_Images_UploadExactBytesThenAttachWithAlt', () => scenario(async ({h, fake, env}) => {
-    const png = randomBytes(4000), jpeg = randomBytes(6000);
-    const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) =>
-        ({text: '', media: [{...await upload(h, agent, png, 'image/png'), alt: 'A drum machine'}, {...await upload(h, agent, jpeg, 'image/jpeg'), alt: ''}]}));
-    assert.equal((await execute(h, agent, actionId)).status, 'completed');
-    const inits = fake.calls.filter(call => call.url.pathname === '/rest/images');
-    assert.deepEqual(inits.map(call => call.json), [{initializeUploadRequest: {owner: author}}, {initializeUploadRequest: {owner: author}}]);
-    const puts = fake.calls.filter(call => call.method === 'PUT');
-    assert.deepEqual(puts.map(call => [call.bearer, call.type]), [[true, 'image/png'], [true, 'image/jpeg']]);
-    assert.ok(puts[0].bytes!.equals(png) && puts[1].bytes!.equals(jpeg), 'the exact stored bytes are uploaded');
-    assert.deepEqual(posts(fake)[0].json, {author, commentary: '', ...feed,
-        content: {multiImage: {images: [{id: 'urn:li:image:C4E10AQ00001', altText: 'A drum machine'}, {id: 'urn:li:image:C4E10AQ00002'}]}}}, 'an empty alt text is not sent');
-}));
-
-test('executeLinkedInPost_OneImage_SentAsMedia', () => scenario(async ({h, fake, env}) => {
-    const gif = randomBytes(3000);
-    const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) => ({text: 'One', media: [{...await upload(h, agent, gif, 'image/gif'), alt: 'Loop'}]}));
-    assert.equal((await execute(h, agent, actionId)).status, 'completed');
-    assert.deepEqual(posts(fake)[0].json.content, {media: {id: 'urn:li:image:C4E10AQ00001', altText: 'Loop'}});
-}));
-
-test('executeLinkedInPost_UploadFailures_RejectedWithNothingPosted', () => scenario(async ({h, fake, env}) => {
-    const cases: [string, Partial<Fake>][] = [
-        ['a refused initialisation', {init: () => Response.json({status: 403}, {status: 403})}],
-        ['an upload address off LinkedIn', {init: () => Response.json({value: {uploadUrl: 'https://evil.example/dms-uploads/x', image: 'urn:li:image:C1'}})}],
-        ['a plain-HTTP upload address', {init: () => Response.json({value: {uploadUrl: 'http://www.linkedin.com/dms-uploads/x', image: 'urn:li:image:C1'}})}],
-        ['a look-alike host', {init: () => Response.json({value: {uploadUrl: 'https://www.linkedin.com.evil.example/dms-uploads/x', image: 'urn:li:image:C1'}})}],
-        ['an answer without an image', {init: () => Response.json({value: {uploadUrl: 'https://www.linkedin.com/dms-uploads/x'}})}],
-        ['an answer naming something other than an image', {init: () => Response.json({value: {uploadUrl: 'https://www.linkedin.com/dms-uploads/x', image: 'urn:li:share:1'}})}],
-        ['a refused upload', {put: () => new Response('no', {status: 400})}],
-        ['a redirected upload, which is not followed', {put: () => new Response(null, {status: 307, headers: {location: 'https://evil.example/dms-uploads/x'}})}],
-        ['a dropped upload connection', {put: () => { throw new TypeError('network connection lost'); }}]];
-    for (const [name, override] of cases) {
-        fake.init = override.init; fake.put = override.put;
-        const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) => ({text: 'x', media: [await upload(h, agent, randomBytes(500), 'image/png')]}));
-        const outcome = await execute(h, agent, actionId);
-        assert.deepEqual([outcome.status, outcome.failure], ['failed', 'provider-rejected: media-upload-refused'], name);
-        assert.deepEqual(posts(fake), [], name + ': nothing is posted');
-        assert.ok(!fake.calls.some(call => call.url.hostname.endsWith('evil.example') || call.url.protocol !== 'https:'), name + ': the token never leaves LinkedIn\'s HTTPS hosts');
-        assert.ok(!fake.calls.some(call => call.method === 'PUT' && call.url.pathname === '/dms-uploads/x'), name + ': nothing is uploaded to a refused address');
-    }
-}));
-
-test('executeLinkedInPost_DefinitePostRefusals_Rejected', () => scenario(async ({h, fake, env}) => {
-    for (const status of [400, 401, 403, 422, 426, 429]) {
-        fake.answer = () => Response.json({status}, {status});
-        const {agent, actionId} = await approvedPost(h, env, fake, {text: 'refused ' + status, media: []});
-        const outcome = await execute(h, agent, actionId);
-        assert.deepEqual([outcome.status, outcome.failure], ['failed', 'provider-rejected: linkedin-refused-' + status]);
-    }
-}));
-
-test('executeLinkedInPost_UncertainPostOutcomes_UnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
-    for (const [name, answer] of [['a server error', () => new Response('oops', {status: 500})],
-        ['a 201 without an id', () => new Response(null, {status: 201})],
-        ['a redirect, which is not followed', () => new Response(null, {status: 302, headers: {location: 'https://www.linkedin.com/feed/'}})],
-        ['a dropped connection', () => { throw new TypeError('network connection lost'); }],
-        ['a 201 with another kind of id', () => new Response(null, {status: 201, headers: {'x-restli-id': 'urn:li:image:C1'}})]] as const) {
-        fake.answer = answer;
-        const {agent, actionId} = await approvedPost(h, env, fake, {text: name, media: []});
-        assert.equal((await execute(h, agent, actionId)).status, 'unknown', name);
-        const sent = posts(fake).length;
-        assert.equal((await execute(h, agent, actionId)).status, 'unknown', name + ': stays unknown');
-        assert.equal(posts(fake).length, sent, name + ': never sent again');
-    }
-}));
-, 'v');
+    const html = new RegExp('^(?:' + pattern + ')$', 'v');
     for (const length of [1000, 2000]) {
         const value = 'AQV' + 'a'.repeat(length - 5) + '==';
-        assert.equal(html.test(value), true, 'allow a valid padded token of total length ' + length);
+        assert.equal(html.test(value), true, 'allow padded token total length ' + length);
     }
     for (const length of [2001, 2002]) {
         const value = 'AQV' + 'a'.repeat(length - 5) + '==';
-        assert.equal(html.test(value), false, 'reject padded token of total length ' + length);
+        assert.equal(html.test(value), false, 'reject padded token total length ' + length);
     }
 });
 
