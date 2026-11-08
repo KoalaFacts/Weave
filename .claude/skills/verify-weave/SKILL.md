@@ -12,9 +12,9 @@ Use this with [verification-first](../verification-first/SKILL.md). Repository r
 - Node 24.22 or later (`node --version`). Under Node 24.11 some suites fail on `node:sqlite`. When the machine has an older Node, unpack the official `node-v24.*-linux-x64.tar.xz` into a scratch folder and put its `bin` first on `PATH`.
 - `typescript/mailbox-worker`: `npm ci`, then `npm run build`. The build writes `dist/index.js`, which the auth-worker workerd tests load. **Rebuild the mailbox worker after every mailbox change before running auth-worker tests**, or they test the previous bundle.
 - `typescript/auth-worker`: `npm ci`, then `npm run build`. Each workerd test loads both `auth-worker/dist/index.js` and `../mailbox-worker/dist/index.js`, so both builds must be current. The workerd tests start the real auth worker and mailbox worker in Miniflare/workerd, with service bindings between them, a local D1, a fake GitHub and a fake external-action provider (`EXTERNAL_ACTION_TEST_ENDPOINT`, test config only; never put it in deployed config).
-- One mailbox-worker test file: from `typescript/mailbox-worker`, after `npm run build`:
-  `node --require ./test/local-miniflare.ts --test --test-concurrency=1 test/<name>.test.ts`.
-  The `--require` preload is needed; without it Miniflare's keep-alive sockets make runs flaky.
+- Some mailbox-worker test files: from `typescript/mailbox-worker`, `npm run test:files -- test/<name>.test.ts [more files]`.
+  It rebuilds `dist/` first (the tests run the bundle, not `src/`) and adds the `--require ./test/local-miniflare.ts`
+  preload, without which Miniflare's keep-alive sockets make runs flaky.
 - One auth-worker workerd file: from `typescript/auth-worker`, after both builds: `node --test test/workerd-<name>.test.ts`.
 - .NET: the .NET 11 SDK (preview until GA) plus the .NET 10 runtime, then the commands in AGENTS.md "Build and verification".
 - Two checkouts can run tests at the same time, but two runs in one checkout race on `dist/`. Use `git worktree add` for a second checkout.
@@ -47,6 +47,7 @@ For C# changes add AGENTS.md's restore, locked restore, build and test commands.
 
 ## Traps
 
+- mailbox-worker tests also run `dist/index.js` (`test/harness.ts`), not `src/`: a mutation or fix in `src/` tested without a rebuild seems to survive or pass for the old code. Use `npm run test:files`, which rebuilds.
 - auth-worker workerd tests load `dist/index.js` from both workers: a stale or missing bundle makes them pass or fail for the previous code, or fail with ENOENT.
 - A passing provider test proves the fake platform's view. Check that the fake asserts the request body and that a refusal and an uncertain answer each have a test; never point a test at a real platform.
 - A guard is verified only when a mutation (remove or invert it) makes a named test fail. List each mutation and the failing test in the PR.
