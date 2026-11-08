@@ -46,7 +46,8 @@ An adapter's `rules` declare:
   (X, Telegram, Postiz), so an owner never approves a description that is not sent;
 - the scheduling horizon, or none;
 - for each account, the settings it requires: fixed values (Postiz's `__type`) and
-  required names.
+  required names, plus, for settings whose values the platform documents, the value's
+  JSON type and closed list of values.
 
 Where the platform has no use for something, the router refuses it: a `publishAt` for
 a platform that posts immediately only, or settings for an adapter that takes none.
@@ -79,6 +80,23 @@ subscription tier. `textRules` and the description are computed per credential f
 same rule. The contract revision stays `postiz-post-v1`, since what is sent is unchanged:
 a plan within the new limit dispatches as approved, and a longer plan approved before
 the deploy is refused at execute (`plan-unreadable`) with no storage read or call.
+
+Settings values (Envoylet request `postiz-setting-values`, 2026-11-08, first step):
+each listed credential carries `settingRules: {<name>: {type, values}}` (null exactly
+when `textRules` is; `{}` when no setting is checked beyond presence). `type` is
+`string`, `boolean` or `number`; `values` is the closed list, or null when any value of
+the type is accepted. A present setting of the wrong JSON type is refused with
+"settings.<name> must be a <type>", and one outside the list with "settings.<name>
+must be one of ...". The description names the allowed values. So far only Postiz X
+`who_can_reply_post` is listed (`everyone`, `following`, `mentionedUsers`,
+`subscribers`, `verified`, from docs.postiz.com/public-api/providers/x); other Postiz
+settings are checked for presence only. Not yet listed although the same Postiz page
+documents them: X `post_type` (`post`, `article`), `article_status` (`draft`,
+`published`) and the booleans `made_with_ai` and `paid_partnership`; values for the other
+channels are still to be sourced from Postiz's documentation.
+The contract revision stays `postiz-post-v1`: a plan approved before the deploy with a
+value outside the list, which Postiz would refuse, is refused at execute
+(`plan-unreadable`) before any env read or provider call.
 
 At dispatch the router re-reads the files, and a file gone or changed since approval
 sends nothing. The adapter receives the parsed post with each file's stored type.
@@ -145,6 +163,16 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   limit; Threads and Mastodon keep 7000.
   `execute_PostizTextApprovedBeforeThePlatformLimit_RejectedWithoutSending`: an X
   channel plan over 280 is refused at execute before any read or send.
+  `postizSettingRules_XReplySetting_OnlyDocumentedValuesAccepted`: the five X reply
+  values are accepted; other strings (case, blank, padded) and non-strings are refused;
+  Instagram `post_type` stays presence-only and `constructor/...` lists `{}`.
+  `execute_PostizSettingApprovedBeforeValuesWereChecked_RejectedWithoutSending`: an
+  approved X plan with `who_can_reply_post: "anyone"` is refused before any read or send.
+  `agent-credentials-media` lists `settingRules` per credential (TikTok `{}`, X the
+  reply list, null for the unavailable YouTube credential) and the description names
+  the values. Mutations killed: dropping the type check; dropping the values check.
+  Equivalent (survived, harmless): `Object.hasOwn` → `in` on the channel table and on
+  the posted settings, since inherited names carry no entries.
 - `test/postiz.test.ts` and `test/bluesky.test.ts` run their connect, plan and
   dispatch tests through the router. Bluesky's limits are checked through the router,
   and so is the exact-field rule.

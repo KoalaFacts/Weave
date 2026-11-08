@@ -62,7 +62,11 @@ test('listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider', 
         maxTotalBytes: null, maxAlt: 0}, 'the media limits ruleBreak and storedFiles enforce, as data');
     assert.deepEqual(postizX.textRules, {max: 280, unit: 'weighted characters', maxWithMedia: null, maxBytes: null}, 'an X channel lists X\'s limit, not Postiz\'s');
     assert.ok(postizX.content.includes('"text": at most 280 weighted characters'), postizX.content);
-    assert.deepEqual([youtube.operations, youtube.content, youtube.textRules, youtube.mediaRules], [[], null, null, null]);
+    assert.deepEqual(postiz.settingRules, {}, 'TikTok settings are checked for presence only');
+    assert.deepEqual(postizX.settingRules, {who_can_reply_post: {type: 'string', values: ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']}},
+        'an X channel lists the reply setting\'s closed values');
+    assert.ok(postizX.content.includes('"who_can_reply_post": one of "everyone" | "following" | "mentionedUsers" | "subscribers" | "verified"'), postizX.content);
+    assert.deepEqual([youtube.operations, youtube.content, youtube.textRules, youtube.mediaRules, youtube.settingRules], [[], null, null, null, null]);
     // The HTTP API returns the same listing for a key-authenticated agent.
     assert.deepEqual(await h.ok('/v1/external-credentials', agent), listed.body);
     assert.equal((await mcp(env, agent.accountId, grantId, 'list_my_credentials', {extra: 1})).status, 400);

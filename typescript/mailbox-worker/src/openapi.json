@@ -6096,7 +6096,8 @@
           "operations",
           "content",
           "textRules",
-          "mediaRules"
+          "mediaRules",
+          "settingRules"
         ],
         "properties": {
           "credentialRef": {
@@ -6230,6 +6231,47 @@
               }
             ],
             "description": "The media limits the router enforces when a post is proposed, as data; the same limits content describes. null exactly when textRules is null."
+          },
+          "settingRules": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "values"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "string",
+                        "boolean",
+                        "number"
+                      ],
+                      "description": "The JSON type the setting's value must have."
+                    },
+                    "values": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "The only values accepted, when the platform has a closed list; null when any value of the type is accepted."
+                    }
+                  }
+                },
+                "description": "Each setting checked beyond presence, by name."
+              }
+            ],
+            "description": "The setting types and values the router enforces when a post is proposed for this account, as data; settings not listed here are only checked for presence (content names the required ones). {} when none is checked; null exactly when textRules is null."
           }
         }
       }

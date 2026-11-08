@@ -86,6 +86,29 @@ test('execute_PostizTextApprovedBeforeThePlatformLimit_RejectedWithoutSending', 
     assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0]);
 });
 
+test('postizSettingRules_XReplySetting_OnlyDocumentedValuesAccepted', async () => {
+    // A value Postiz does not take would be approved and then fail at Postiz; it is refused at propose instead.
+    const target = 'x/cm4', provider = publishingProvider(postiz);
+    const post = (who_can_reply_post: unknown) => ({text: 'x', media: [], settings: {__type: 'x', who_can_reply_post}});
+    for (const value of ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']) assert.equal(await check(postiz, post(value), target), null, value);
+    for (const value of ['Everyone', 'anyone', '', ' everyone']) assert.match((await check(postiz, post(value), target)) ?? '', /settings\.who_can_reply_post must be one of "everyone", /, value);
+    for (const value of [true, 1, null, ['everyone']]) assert.match((await check(postiz, post(value), target)) ?? '', /settings\.who_can_reply_post must be a string/, JSON.stringify(value));
+    assert.deepEqual(provider.settingRules?.(target), {who_can_reply_post: {type: 'string', values: ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']}});
+    // Channels without a documented list keep presence-only checks; inherited names never match.
+    assert.equal(await check(postiz, {text: 'x', media: [], settings: {__type: 'instagram', post_type: 'anything'}}, 'instagram/cm4'), null);
+    assert.deepEqual([provider.settingRules?.('instagram/cm4'), provider.settingRules?.('constructor/cm4')], [{}, {}]);
+});
+
+test('execute_PostizSettingApprovedBeforeValuesWereChecked_RejectedWithoutSending', async () => {
+    let sent = 0, envReads = 0;
+    const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
+    const provider = publishingProvider({...postiz, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
+    const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+        content: JSON.stringify({text: 'x', media: [], settings: {__type: 'x', who_can_reply_post: 'anyone'}}), targetAccount: 'x/cm4', secret: 'token'})
+        .catch((error: unknown) => ({thrown: String(error)}));
+    assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0]);
+});
+
 test('postizRules_SettingsTypeRequiredNamesAndScheduleHorizon', async () => {
     const tiktok = 'tiktok/cm4';
     assert.match((await check(postiz, {text: 'x', media: []}, tiktok))!, /settings\.__type must be "tiktok"/);
