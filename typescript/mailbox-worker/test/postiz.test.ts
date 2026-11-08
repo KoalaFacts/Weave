@@ -65,7 +65,7 @@ async function connected(h: Harness, env: Env) {
     });
     return {agent, humanId};
 }
-const tiktok = {__type: 'tiktok', privacy_level: 'PUBLIC_TO_EVERYONE', duet: false, stitch: false, comment: true, autoAddMusic: false,
+const tiktok = {__type: 'tiktok', privacy_level: 'PUBLIC_TO_EVERYONE', duet: false, stitch: false, comment: true, autoAddMusic: 'no',
     brand_content_toggle: false, brand_organic_toggle: false, content_posting_method: 'DIRECT_POST'};
 const propose = (h: Harness, agent: any, credentialRef: string, content: unknown) =>
     h.request('/v1/external-actions', agent, 'POST', {credentialRef, operation: 'publish_post', content: JSON.stringify(content)});
