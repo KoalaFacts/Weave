@@ -68,22 +68,32 @@ const instant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 const maxAlt = 2000;
 type Parsed = Omit<Post, 'media'> & {media: Omit<PostFile, 'contentType'>[]};
 
-/** The shape of any post, before platform rules; null when it is not exactly `{text, media, settings?, publishAt?}`. */
-export function parsePost(content: string): Parsed | null {
+const postShape = 'must be JSON {text, media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}';
+
+/** The shape of any post, before platform rules; otherwise why it is not exactly `{text, media, settings?, publishAt?}`, naming the field. */
+export function parsePost(content: string): Parsed | string {
     let value: unknown;
-    try { value = JSON.parse(content); } catch { return null; }
+    try { value = JSON.parse(content); } catch { return postShape; }
     const post = value as Record<string, unknown>;
-    if (!post || typeof post !== 'object' || Array.isArray(post)) return null;
-    if (Object.keys(post).some(key => !['text', 'media', 'settings', 'publishAt'].includes(key))) return null;
+    if (!post || typeof post !== 'object' || Array.isArray(post)) return postShape;
+    // Keys are not echoed: a reason is plain text an app may show, and a key is whatever the agent sent.
+    if (Object.keys(post).some(key => !['text', 'media', 'settings', 'publishAt'].includes(key))) return `${postShape}; no other keys are taken`;
     const {text, media, settings = {}, publishAt = null} = post;
-    if (typeof text !== 'string' || !Array.isArray(media) || !settings || typeof settings !== 'object' || Array.isArray(settings)) return null;
-    if (publishAt !== null && (typeof publishAt !== 'string' || !instant.test(publishAt) || Number.isNaN(Date.parse(publishAt)))) return null;
+    if (typeof text !== 'string') return 'text must be a string';
+    if (!Array.isArray(media)) return 'media must be an array of {mediaId, bytes, sha256, alt?}; use [] for none';
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return 'settings must be an object';
+    if (publishAt !== null && (typeof publishAt !== 'string' || !instant.test(publishAt) || Number.isNaN(Date.parse(publishAt))))
+        return 'publishAt must be a UTC time such as 2026-01-31T09:00:00Z';
     const files: Parsed['media'] = [];
-    for (const file of media as Record<string, unknown>[]) {
-        if (!file || typeof file !== 'object' || Array.isArray(file) || Object.keys(file).some(key => !['mediaId', 'bytes', 'sha256', 'alt'].includes(key))) return null;
+    for (const [index, file] of (media as Record<string, unknown>[]).entries()) {
+        const at = `media[${index}]`;
+        if (!file || typeof file !== 'object' || Array.isArray(file)) return `${at} must be {mediaId, bytes, sha256, alt?}`;
+        if (Object.keys(file).some(key => !['mediaId', 'bytes', 'sha256', 'alt'].includes(key))) return `${at} must be {mediaId, bytes, sha256, alt?}; no other keys are taken`;
         const {mediaId, bytes, sha256, alt = null} = file;
         if (typeof mediaId !== 'string' || !uuid.test(mediaId) || typeof sha256 !== 'string' || !sha.test(sha256)
-            || typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1 || (alt !== null && (typeof alt !== 'string' || alt.length > maxAlt))) return null;
+            || typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1) return `${at} must name your uploaded file with its exact mediaId, bytes and sha256`;
+        if (alt !== null && typeof alt !== 'string') return `${at}.alt must be a string`;
+        if (alt !== null && alt.length > maxAlt) return `${at}.alt must be at most ${maxAlt} characters`;
         files.push({mediaId, bytes, sha256, alt: alt as string | null});
     }
     return {text, media: files, settings: settings as Record<string, unknown>, publishAt: publishAt as string | null};
@@ -180,7 +190,7 @@ export function publishingProvider(adapter: PublishingAdapter): ExternalProvider
         mediaRules: {max: adapter.rules.media.max, types: {...adapter.rules.media.types}, maxTotalBytes: adapter.rules.media.maxTotalBytes ?? null, maxAlt: adapter.rules.media.maxAlt ?? null},
         async checkContent(tx, {accountId, content, targetAccount}) {
             const post = parsePost(content);
-            if (!post) return 'must be JSON {text, media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}';
+            if (typeof post === 'string') return post;
             const broken = ruleBreak(post, adapter.rules, targetAccount, Date.now());
             if (broken) return broken;
             const files = await storedFiles(tx, accountId, post, adapter.rules);
@@ -188,7 +198,7 @@ export function publishingProvider(adapter: PublishingAdapter): ExternalProvider
         },
         async execute(env, call) {
             const parsed = parsePost(call.content);
-            if (!parsed || call.secret === null || ruleBreak(parsed, adapter.rules, call.targetAccount, null)) return {status: 'rejected', reason: 'plan-unreadable'};
+            if (typeof parsed === 'string' || call.secret === null || ruleBreak(parsed, adapter.rules, call.targetAccount, null)) return {status: 'rejected', reason: 'plan-unreadable'};
             // An approved schedule that has already passed is not silently turned into an immediate post.
             if (parsed.publishAt !== null && Date.parse(parsed.publishAt) <= Date.now()) return {status: 'rejected', reason: 'schedule-passed'};
             const files = await atomic(env.db, tx => storedFiles(tx, call.accountId, parsed, adapter.rules));

@@ -14,12 +14,12 @@ const check = (adapter: PublishingAdapter, post: unknown, targetAccount = 'x/1')
 test('parsePost_OneFormat_OptionalAltSettingsAndSchedule', () => {
     assert.deepEqual(parsePost(JSON.stringify({text: 'hi', media: []})), {text: 'hi', media: [], settings: {}, publishAt: null});
     const media = file({alt: 'A cover'});
-    assert.deepEqual(parsePost(JSON.stringify({text: '', media: [media], settings: {a: 1}, publishAt: '2030-01-01T00:00:00Z'}))!.media, [media]);
-    assert.equal(parsePost(JSON.stringify({text: 'x', media: [file()]}))!.media[0].alt, null, 'alt is optional');
+    assert.deepEqual((parsePost(JSON.stringify({text: '', media: [media], settings: {a: 1}, publishAt: '2030-01-01T00:00:00Z'})) as {media: unknown[]}).media, [media]);
+    assert.equal((parsePost(JSON.stringify({text: 'x', media: [file()]})) as {media: {alt: unknown}[]}).media[0].alt, null, 'alt is optional');
     for (const post of [{text: 'x'}, {text: 'x', media: [], langs: ['en']}, {text: 'x', media: [file({extra: 1})]}, {text: 'x', media: [file({bytes: 0})]},
         {text: 'x', media: [file({alt: 'x'.repeat(2001)})]}, {text: 'x', media: [], settings: []}, {text: 'x', media: [], publishAt: 'tomorrow'}, {text: 1, media: []}])
-        assert.equal(parsePost(JSON.stringify(post)), null, JSON.stringify(post).slice(0, 60));
-    assert.equal(parsePost('not json'), null);
+        assert.equal(typeof parsePost(JSON.stringify(post)), 'string', JSON.stringify(post).slice(0, 60));
+    assert.equal(parsePost('not json'), 'must be JSON {text, media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}');
 });
 
 test('altRules_AdaptersThatSendNoAlt_RefuseAltBeforeApproval', async () => {
@@ -45,6 +45,18 @@ test('execute_AltApprovedBeforeAltWasRefused_RejectedWithoutSending', async () =
         const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
             content: JSON.stringify(post), targetAccount: target, secret: 'token'}).catch((error: unknown) => ({thrown: String(error)}));
         assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0], adapter.name);
+    }
+});
+
+test('execute_PlanOutsideThePostFormat_RejectedWithoutSending', async () => {
+    // parsePost returns a reason for a plan outside the format; execute must still answer plan-unreadable before any storage read or send, never throw.
+    for (const content of ['not json', JSON.stringify({text: 1, media: []}), JSON.stringify({text: 'x'}), JSON.stringify({text: 'x', media: [file({alt: 3})]})]) {
+        let sent = 0, envReads = 0;
+        const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
+        const provider = publishingProvider({...telegram, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
+        const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+            content, targetAccount: '-100123', secret: 'token'}).catch((error: unknown) => ({thrown: String(error)}));
+        assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0], content);
     }
 });
 
