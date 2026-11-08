@@ -39,7 +39,9 @@ export async function readOwnerAction(key:string,request:Request,session:HumanSe
   return verifiedAction(key,fields[0][1],session,now);
 }
 
-const fieldName=/^[A-Za-z][A-Za-z0-9]{0,31}$/,maxConnectFields=4,maxFieldValue=512;
+const fieldName=/^[A-Za-z][A-Za-z0-9]{0,31}$/,maxConnectFields=4,maxFieldValue=2048;
+// Four values of 2048 characters, each character possibly percent-encoded, plus the signed token.
+const maxConnectBodyBytes=4*3*maxFieldValue+4096;
 /**
  * A Connect form for any publishing platform: its signed connect-account token, then the fields the owner typed. The values,
  * secrets among them, are only passed on to the mailbox, which accepts exactly the platform's fields; this worker never
@@ -47,7 +49,7 @@ const fieldName=/^[A-Za-z][A-Za-z0-9]{0,31}$/,maxConnectFields=4,maxFieldValue=5
  */
 export async function readConnectForm(key:string,request:Request,session:HumanSession,now:number):
     Promise<{agentId:string;provider:string;fields:Record<string,string>}|"expired"|null>{
-  const form=await readBoundedForm(request,maxBodyBytes);
+  const form=await readBoundedForm(request,maxConnectBodyBytes);
   const entries=form?[...form]:[];
   if(entries.length<2||entries.length>maxConnectFields+1||entries[0][0]!=="action")return null;
   const fields:Record<string,string>={};

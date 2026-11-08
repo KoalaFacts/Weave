@@ -20,12 +20,12 @@ const connectLinkedIn = (env: Env, {fields = {accessToken}, ...owner}: {humanId:
 
 type Call = {method: string; url: URL; bearer: boolean; version: string | null; restli: string | null; json?: any; bytes?: Buffer; type?: string | null};
 /** A LinkedIn API fake: the member's userinfo, image upload initialisation, the upload host and posts. */
-type Fake = {calls: Call[]; me?: () => Response; init?: (call: Call) => Response; put?: (call: Call) => Response; answer?: (call: Call) => Response};
+type Fake = {calls: Call[]; token?: string; me?: () => Response; init?: (call: Call) => Response; put?: (call: Call) => Response; answer?: (call: Call) => Response};
 function linkedinApi(fake: Fake) {
     let image = 0;
     return async (request: Request): Promise<Response> => {
         const url = new URL(request.url);
-        const call: Call = {method: request.method, url, bearer: request.headers.get('Authorization') === 'Bearer ' + accessToken,
+        const call: Call = {method: request.method, url, bearer: request.headers.get('Authorization') === 'Bearer ' + (fake.token ?? accessToken),
             version: request.headers.get('LinkedIn-Version'), restli: request.headers.get('X-Restli-Protocol-Version')};
         fake.calls.push(call);
         if (!call.bearer) return Response.json({status: 401, serviceErrorCode: 65600}, {status: 401});
@@ -121,6 +121,53 @@ test('connectLinkedIn_MalformedOrRefusedToken_NothingStored', () => scenario(asy
     });
     assert.equal(await h.db.prepare('SELECT count(*) n FROM external_credentials').first<number>('n'), 0);
 }));
+
+test('connectLinkedIn_TokenUpToLinkedInsPlannedLength_StoredWhole', () => scenario(async ({h, fake, env}) => {
+    // LinkedIn: tokens are ~500 characters; apps should handle at least 1000 for future expansion.
+    for (const length of [1000, 2000]) {
+        const agent = await h.register(), humanId = await h.claim(agent), long = 'AQV' + 'a1B2-c3_D4.e5~'.repeat(200).slice(0, length - 3);
+        fake.token = long;
+        await withLinkedIn(fake, async () => {
+            assert.deepEqual(await connectLinkedIn(env, {humanId, authAt: Date.now(), agentId: agent.accountId, fields: {accessToken: long}}), {ok: true, accounts: ['HSC Beats']}, String(length));
+        });
+        const row = (await h.db.prepare('SELECT revision,secret FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<any>())!;
+        const sealed = row.secret instanceof ArrayBuffer ? new Uint8Array(row.secret) : Uint8Array.from(row.secret);
+        assert.equal(await openSecret(key, {accountId: agent.accountId, credentialRef: ref, provider: 'linkedin', revision: row.revision}, sealed), long, 'the whole token is sealed');
+    }
+    const agent = await h.register(), humanId = await h.claim(agent);
+    fake.calls.length = 0;
+    await withLinkedIn(fake, async () => {
+        assert.notEqual((await connectLinkedIn(env, {humanId, authAt: Date.now(), agentId: agent.accountId, fields: {accessToken: 'AQV' + 'a'.repeat(1998)}})).ok, true, 'over 2000 characters');
+        assert.deepEqual(await connectLinkedIn(env, {humanId, authAt: Date.now(), agentId: agent.accountId, fields: {accessToken: 'a'.repeat(2049)}}),
+            {ok: false, reason: 'not-found'}, 'the router takes field values of at most 2048 characters');
+    });
+    // The two optional '=' padding characters count toward the 2000-character total limit.
+    for (const length of [2001, 2002]) {
+        const padded = 'AQV' + 'a'.repeat(length - 5) + '==';
+        assert.equal(padded.length, length);
+        fake.token = padded;
+        await withLinkedIn(fake, async () => {
+            assert.notEqual((await connectLinkedIn(env, {humanId, authAt: Date.now(), agentId: agent.accountId,
+                fields: {accessToken: padded}})).ok, true, 'reject the padded ' + length + '-character token');
+        });
+    }
+    assert.equal(fake.calls.length, 0, 'an overlong value is never sent to LinkedIn');
+}));
+
+test('connectLinkedIn_OwnerHtmlPattern_VModeWorksAndCountsPadding', () => {
+    // HTML pattern uses UnicodeSets ('v') mode: '/' needs escaping inside the character class.
+    const pattern = linkedin.connector.fields.find(field => field.name === 'accessToken')?.pattern;
+    assert.ok(pattern);
+    const html = new RegExp('^(?:' + pattern + ')$', 'v');
+    for (const length of [1000, 2000]) {
+        const value = 'AQV' + 'a'.repeat(length - 5) + '==';
+        assert.equal(html.test(value), true, 'allow padded token total length ' + length);
+    }
+    for (const length of [2001, 2002]) {
+        const value = 'AQV' + 'a'.repeat(length - 5) + '==';
+        assert.equal(html.test(value), false, 'reject padded token total length ' + length);
+    }
+});
 
 test('littleText_ReservedCharacters_EscapedAndCountedTwice', () => {
     assert.equal(littleText('Hi @team (see #launch) *now* a_b ~ [x] {y} <z> | \\'),
