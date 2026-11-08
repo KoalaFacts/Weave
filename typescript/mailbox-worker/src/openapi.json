@@ -5802,7 +5802,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 8000,
-            "description": "The full content, shown to the owner verbatim. Must not be blank. For publish_text, the text. For upload_video, JSON {title, description, privacyStatus (private, unlisted or public), mediaId, bytes, sha256} naming media from PUT /v1/external-media with its exact size and SHA-256; a refusal's reason names the first field outside YouTube's limits (for example \"title must be at most 100 characters\"). For publish_post (Postiz channels), JSON {text, media: [{mediaId, bytes, sha256}], settings: {__type, ...}, publishAt?} where settings.__type is the channel type and publishAt a future UTC instant."
+            "description": "The full content, shown to the owner verbatim. Must not be blank. For publish_text, the text. For upload_video, JSON {title, description, privacyStatus (private, unlisted or public), mediaId, bytes, sha256} naming media from PUT /v1/external-media with its exact size and SHA-256; a refusal's reason names the first field outside YouTube's limits (for example \"title must be at most 100 characters\"). For publish_post (Postiz channels), JSON {text, media: [{mediaId, bytes, sha256}], settings: {__type, ...}, publishAt?} where settings.__type is the channel type and publishAt a future UTC instant. The same post format serves every publishing provider; a refusal's reason names the field it is about (for example \"text must be a string\", \"publishAt must be a UTC time such as 2026-01-31T09:00:00Z\" or \"media[0].alt must be at most 2000 characters\")."
           }
         }
       },

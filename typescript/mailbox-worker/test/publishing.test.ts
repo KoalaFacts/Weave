@@ -14,12 +14,12 @@ const check = (adapter: PublishingAdapter, post: unknown, targetAccount = 'x/1')
 test('parsePost_OneFormat_OptionalAltSettingsAndSchedule', () => {
     assert.deepEqual(parsePost(JSON.stringify({text: 'hi', media: []})), {text: 'hi', media: [], settings: {}, publishAt: null});
     const media = file({alt: 'A cover'});
-    assert.deepEqual(parsePost(JSON.stringify({text: '', media: [media], settings: {a: 1}, publishAt: '2030-01-01T00:00:00Z'}))!.media, [media]);
-    assert.equal(parsePost(JSON.stringify({text: 'x', media: [file()]}))!.media[0].alt, null, 'alt is optional');
+    assert.deepEqual((parsePost(JSON.stringify({text: '', media: [media], settings: {a: 1}, publishAt: '2030-01-01T00:00:00Z'})) as {media: unknown[]}).media, [media]);
+    assert.equal((parsePost(JSON.stringify({text: 'x', media: [file()]})) as {media: {alt: unknown}[]}).media[0].alt, null, 'alt is optional');
     for (const post of [{text: 'x'}, {text: 'x', media: [], langs: ['en']}, {text: 'x', media: [file({extra: 1})]}, {text: 'x', media: [file({bytes: 0})]},
         {text: 'x', media: [file({alt: 'x'.repeat(2001)})]}, {text: 'x', media: [], settings: []}, {text: 'x', media: [], publishAt: 'tomorrow'}, {text: 1, media: []}])
-        assert.equal(parsePost(JSON.stringify(post)), null, JSON.stringify(post).slice(0, 60));
-    assert.equal(parsePost('not json'), null);
+        assert.equal(typeof parsePost(JSON.stringify(post)), 'string', JSON.stringify(post).slice(0, 60));
+    assert.equal(parsePost('not json'), 'must be JSON {text, media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}');
 });
 
 test('altRules_AdaptersThatSendNoAlt_RefuseAltBeforeApproval', async () => {

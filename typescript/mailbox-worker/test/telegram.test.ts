@@ -86,6 +86,41 @@ const upload = async (h: Harness, agent: any, bytes: Buffer, type: string) => {
 };
 const sends = (fake: Fake) => fake.calls.filter(call => call.method.startsWith('send')).map(call => call.method);
 
+test('proposeExternalAction_PostOutsideTheFormat_NamesTheField', () => scenario(async ({h, fake, env}) => {
+    const {agent} = await connected(h, env, fake);
+    const media = (overrides: Record<string, unknown> = {}) => ({mediaId: crypto.randomUUID(), bytes: 10, sha256: 'a'.repeat(64), ...overrides});
+    const shape = 'must be JSON {text, media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}';
+    const pin = 'must name your uploaded file with its exact mediaId, bytes and sha256';
+    const cases: [unknown, string][] = [
+        ['not an object', shape],
+        [[], shape],
+        [{text: 'x', media: [], langs: ['en']}, shape + '; no other keys are taken'],
+        [{text: 7, media: []}, 'text must be a string'],
+        [{media: []}, 'text must be a string'],
+        [{text: 'x'}, 'media must be an array of {mediaId, bytes, sha256, alt?}; use [] for none'],
+        [{text: 'x', media: {}}, 'media must be an array of {mediaId, bytes, sha256, alt?}; use [] for none'],
+        [{text: 'x', media: [], settings: []}, 'settings must be an object'],
+        [{text: 'x', media: [], publishAt: 'tomorrow'}, 'publishAt must be a UTC time such as 2026-01-31T09:00:00Z'],
+        [{text: 'x', media: [], publishAt: '2030-01-31T09:00:00+10:00'}, 'publishAt must be a UTC time such as 2026-01-31T09:00:00Z'],
+        [{text: 'x', media: ['id']}, 'media[0] must be {mediaId, bytes, sha256, alt?}'],
+        [{text: 'x', media: [media(), media({url: 'https://example.com/a.png'})]}, 'media[1] must be {mediaId, bytes, sha256, alt?}; no other keys are taken'],
+        [{text: 'x', media: [media({mediaId: 'nope'})]}, 'media[0] ' + pin],
+        [{text: 'x', media: [media({bytes: 0})]}, 'media[0] ' + pin],
+        [{text: 'x', media: [media({sha256: 'A'.repeat(64)})]}, 'media[0] ' + pin],
+        [{text: 'x', media: [media({alt: 3})]}, 'media[0].alt must be a string'],
+        [{text: 'x', media: [media({alt: 'a'.repeat(2001)})]}, 'media[0].alt must be at most 2000 characters']];
+    for (const [content, reason] of cases) {
+        const response = await propose(h, agent, content);
+        assert.equal(response.status, 400, JSON.stringify(content).slice(0, 80));
+        const problem = await response.json() as {code: string; field: string; reason: string};
+        assert.deepEqual({code: problem.code, field: problem.field, reason: problem.reason}, {code: 'invalid', field: 'content', reason}, JSON.stringify(content).slice(0, 80));
+    }
+    // The format's own limits still pass parsing and meet the platform's rules: Telegram takes no alt, so 2000 characters of alt is refused by the adapter rule, not the shape.
+    const atShapeLimit = await (await propose(h, agent, {text: 'x', media: [media({alt: 'a'.repeat(2000)})]})).json() as {reason: string};
+    assert.equal(atShapeLimit.reason, 'alt is not supported here; omit it');
+    assert.equal(fake.calls.length, 0, 'nothing reaches Telegram at propose');
+}));
+
 test('connectTelegram_AdminBot_StoresChatAndSealedToken', () => scenario(async ({h, fake, env}) => {
     const {agent} = await connected(h, env, fake);
     const row = (await h.db.prepare('SELECT credential_ref,provider,revision,target_account,target_display,secret FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<any>())!;

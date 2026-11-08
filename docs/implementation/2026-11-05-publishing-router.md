@@ -52,6 +52,21 @@ An adapter's `rules` declare:
 Where the platform has no use for something, the router refuses it: a `publishAt` for
 a platform that posts immediately only, or settings for an adapter that takes none.
 
+Since 2026-11-09 a post outside the format itself is refused at propose with a reason
+that names the field, like the platform rules already did: `text must be a string`,
+`media must be an array of {mediaId, bytes, sha256, alt?}; use [] for none`,
+`settings must be an object`, `publishAt must be a UTC time such as
+2026-01-31T09:00:00Z`, and for the file at index *i* `media[i] must be {mediaId, bytes,
+sha256, alt?}`, `media[i] must name your uploaded file with its exact mediaId, bytes and
+sha256`, `media[i].alt must be a string` or `media[i].alt must be at most 2000
+characters`. Content that is not a JSON object keeps the general `must be JSON {text,
+media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}`, with `; no other keys
+are taken` when it carries an extra key. Keys an agent sent are never echoed into a
+reason. The accepted format is unchanged, so plans approved before still execute;
+`proposeExternalAction_PostOutsideTheFormat_NamesTheField` (Telegram, through the
+Worker) covers each reason, and five mutations (alt limit, UTC pattern, file index,
+array settings, zero bytes) each fail it.
+
 The router derives the description `list_my_credentials` returns from the same rules,
 so what agents read and what is enforced cannot drift apart. Since 2026-11-06
 (Envoylet request `credential-text-rules`) each listed credential also carries
