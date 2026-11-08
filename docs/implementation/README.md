@@ -126,8 +126,8 @@ Last docs housekeeping: 2026-11-06, `weave/docs-housekeeping-2026-11-06` (adds t
 | --- | --- |
 | `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | blocked (#366; owner decision `schema-366` on #365: approve or reject the additive `external_action_keys` table. No further schema work until then) |
 | Status-change notification for apps (shared plan step 4) | 1/2 done (#369, `0d2d22e`, deployed 2026-11-05 21:37 UTC): external-action notices on the inbox. 2/2, a push webhook, is blocked: storing a callback address is a schema change and needs an owner decision first |
-| Native X adapter (shared plan step 4) | 1/2 (#370): text and up to 4 images over OAuth 1.0a user context. 2/2 in progress (`weave/x-alt-text`): alt text through `POST /2/media/metadata`, verified from X's docs on 2026-11-06 |
-| Native LinkedIn adapter (shared plan step 4) | in progress (`weave/linkedin-adapter`, stacked on #372): text and up to 9 images on the owner's member feed with their own member access token; Posts and Images APIs checked against LinkedIn's docs on 2026-11-06 |
+| Native X adapter (shared plan step 4) | 1/2 (#370): text and up to 4 images over OAuth 1.0a user context. 2/2 (#372): up to 1000 characters of alt text per image through `POST /2/media/metadata`, verified from X's docs on 2026-11-06 |
+| Native LinkedIn adapter (shared plan step 4) | in progress (#373): text and up to 9 images with alt text on the owner's member feed with their own member access token; Posts and Images APIs checked against LinkedIn's docs on 2026-11-06 |
 | `submit-nuget` check (NETSDK1045) | blocked: it is GitHub's Automatic Dependency Submission, not a workflow in this repository, so no repository change fixes it. Owner decision: turn it off, or change its .NET setup, in Code Security settings |
 
 ### Run log

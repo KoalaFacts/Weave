@@ -4,9 +4,10 @@
  * record. Endpoints are fixed, never configuration. The API key stays in these functions and the vault.
  */
 import type { PublicationState } from './external-providers.ts';
-import { replaceInvisible } from './visible-text.ts';
+import { visibleExcerpt } from './visible-text.ts';
 import { maxMediaBytes, signedMediaUrl } from './external-media.ts';
-import type { PublishingAdapter } from './publishing.ts';
+import type { PublishingAdapter, SettingRules, TextRule } from './publishing.ts';
+import { xLength } from './x-provider.ts';
 
 const api = 'https://api.postiz.com/public/v1';
 const timeoutMs = 15_000, mediaTimeoutMs = 5 * 60_000, maxJsonBytes = 256 * 1024;
@@ -16,6 +17,29 @@ export const postizChannels: Readonly<Record<string, readonly string[]>> = {
     x: ['who_can_reply_post'], linkedin: [], 'linkedin-page': [], facebook: [], instagram: ['post_type'], 'instagram-standalone': ['post_type'],
     threads: [], bluesky: [], mastodon: [], telegram: [], youtube: ['title', 'type'], pinterest: ['board'], reddit: ['subreddit'], discord: ['channel'],
     tiktok: ['privacy_level', 'duet', 'stitch', 'comment', 'autoAddMusic', 'brand_content_toggle', 'brand_organic_toggle', 'content_posting_method'],
+};
+/**
+ * Postiz takes 7000 characters, but the platform behind a channel refuses longer text after the owner approved it. Where the
+ * platform's limit is smaller and countable here, it is the channel's limit: X and Bluesky as their native adapters count,
+ * LinkedIn's 3000 and Instagram's 2200 caption characters. Threads is left out: Meta counts an emoji as its UTF-8 bytes,
+ * which none of these units does.
+ */
+const postizText: TextRule = {max: 7000, unit: 'characters'};
+const channelText: Readonly<Record<string, TextRule>> = {
+    x: {max: 280, unit: 'weighted characters', weigh: xLength}, bluesky: {max: 300, unit: 'graphemes', maxBytes: 3000},
+    linkedin: {max: 3000, unit: 'characters'}, 'linkedin-page': {max: 3000, unit: 'characters'},
+    instagram: {max: 2200, unit: 'characters'}, 'instagram-standalone': {max: 2200, unit: 'characters'},
+};
+/** Required setting types and closed values as Postiz documents them (docs.postiz.com/public-api/providers/<channel>); other settings are checked for presence only. */
+const instagramSettings: SettingRules = {post_type: {type: 'string', values: ['post', 'story']}};
+const toggle = {type: 'boolean', values: null} as const;
+const channelSettings: Readonly<Record<string, SettingRules>> = {
+    x: {who_can_reply_post: {type: 'string', values: ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']}},
+    instagram: instagramSettings, 'instagram-standalone': instagramSettings,
+    youtube: {title: {type: 'string', values: null}, type: {type: 'string', values: ['public', 'unlisted', 'private']}},
+    tiktok: {privacy_level: {type: 'string', values: ['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY']},
+        duet: toggle, stitch: toggle, comment: toggle, autoAddMusic: {type: 'string', values: ['yes', 'no']},
+        brand_content_toggle: toggle, brand_organic_toggle: toggle, content_posting_method: {type: 'string', values: ['DIRECT_POST', 'UPLOAD']}},
 };
 const integrationId = /^[A-Za-z0-9_-]{1,64}$/, apiKeyPattern = /^[\x21-\x7e]{16,512}$/;
 
@@ -62,12 +86,16 @@ export const postiz: PublishingAdapter = {
     name: 'postiz',
     contractRevision: 'postiz-post-v1',
     rules: {
-        text: {max: 7000, unit: 'characters'},
-        media: {max: 10, types: Object.fromEntries(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4'].map(type => [type, maxMediaBytes]))},
+        text: targetAccount => {
+            const identifier = targetAccount.split('/')[0];
+            return Object.hasOwn(channelText, identifier) ? channelText[identifier] : postizText;
+        },
+        media: {max: 10, types: Object.fromEntries(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4'].map(type => [type, maxMediaBytes])), maxAlt: 0},
         schedule: 90 * 24 * 3600_000,
         settings: targetAccount => {
             const identifier = targetAccount.split('/')[0];
-            return {fixed: {__type: identifier}, required: postizChannels[identifier] ?? [], documented: `with values as Postiz documents them for ${identifier}`};
+            return {fixed: {__type: identifier}, required: postizChannels[identifier] ?? [], documented: `with values as Postiz documents them for ${identifier}`,
+                rules: Object.hasOwn(channelSettings, identifier) ? channelSettings[identifier] : {}};
         }
     },
     connector: {
@@ -132,7 +160,7 @@ function publicationState(post: Record<string, unknown>): PublicationState {
         return {state: 'published', url, error: null};
     }
     if (post.state === 'ERROR') {
-        const text = typeof post.error === 'string' ? replaceInvisible(post.error, ' ').replace(/\s+/g, ' ').trim().slice(0, maxError) : '';
+        const text = typeof post.error === 'string' ? visibleExcerpt(post.error, maxError) : '';
         return {state: 'failed', url: null, error: text || null};
     }
     return {state: 'queued', url: null, error: null};

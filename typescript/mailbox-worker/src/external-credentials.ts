@@ -7,9 +7,9 @@ import { writesRefused } from './humans.ts';
 import { reauthFutureSkewMs, reauthWindowMs, type OwnerDecision } from './owner-actions.ts';
 import { sealSecret } from './credential-vault.ts';
 import { connectYoutube, youtubeConfigured, type ConnectRefusal } from './youtube-provider.ts';
-import { publishingAdapter } from './external-providers.ts';
+import { provider, publishingAdapter, type MediaRules, type SettingRules, type TextRules } from './external-providers.ts';
 import { apiTime, nowUtc } from './time.ts';
-import { provider } from './external-providers.ts';
+import { hasVisibleCharacter, visibleExcerpt } from './visible-text.ts';
 import type { ActionCaller } from './external-actions.ts';
 
 export type ConnectProvider = 'youtube';
@@ -52,8 +52,9 @@ export async function connectExternalCredential(env: Env, input: ConnectCredenti
     try {
         const before = await atomic(env.db, tx => ownership(tx, input.humanId, input.agentId), clock);
         if (before !== 'ok') return {ok: false, reason: before};
-        const connected = await connectYoutube(env, input);
-        if (typeof connected === 'string') return {ok: false, reason: connected};
+        const verified = await connectYoutube(env, input);
+        if (typeof verified === 'string') return {ok: false, reason: verified};
+        const connected = {...verified, targetDisplay: shownName(verified)};
         const credentialRef = referenceFor(input.provider), revision = crypto.randomUUID();
         const sealed = await sealSecret(env.EXTERNAL_CREDENTIAL_KEY, {accountId: input.agentId, credentialRef, provider: input.provider, revision}, connected.secret);
         return await atomic(env.db, async tx => {
@@ -84,7 +85,8 @@ export async function ownedCredentials(tx: Transaction, agentIds: string[]): Pro
 }
 
 /** A live credential as its agent sees it: what to pass as credentialRef, which operations work now and the content they take. */
-export type AgentCredential = {credentialRef: string; provider: string; targetAccount: string; targetDisplay: string; operations: string[]; content: string | null};
+export type AgentCredential = {credentialRef: string; provider: string; targetAccount: string; targetDisplay: string; operations: string[]; content: string | null;
+    textRules: TextRules | null; mediaRules: MediaRules | null; settingRules: SettingRules | null};
 
 /** GET /v1/external-credentials: the agent's live credentials. A provider this deployment cannot use lists no operations. */
 export async function listAgentCredentials(env: Env, caller: ActionCaller): Promise<{items: AgentCredential[]}> {
@@ -96,7 +98,9 @@ export async function listAgentCredentials(env: Env, caller: ActionCaller): Prom
         return {items: rows.map(row => {
             const usable = provider(env, row.provider);
             return {credentialRef: row.credential_ref, provider: row.provider, targetAccount: row.target_account, targetDisplay: row.target_display,
-                operations: usable ? [...usable.operations] : [], content: usable ? usable.describeContent(row.target_account) : null};
+                operations: usable ? [...usable.operations] : [], content: usable ? usable.describeContent(row.target_account) : null,
+                textRules: usable?.textRules?.(row.target_account) ?? null, mediaRules: usable?.mediaRules ?? null,
+                settingRules: usable?.settingRules?.(row.target_account) ?? null};
         })};
     });
 }
@@ -152,7 +156,7 @@ export async function connectAccount(env: Env, input: ConnectAccountInput, clock
         const rows = await Promise.all(accounts.map(async account => {
             const credentialRef = provider + ':' + account.ref, revision = crypto.randomUUID();
             const sealed = await sealSecret(env.EXTERNAL_CREDENTIAL_KEY, {accountId: input.agentId, credentialRef, provider, revision}, secret);
-            return {...account, credentialRef, revision, sealed};
+            return {...account, targetDisplay: shownName(account), credentialRef, revision, sealed};
         }));
         return await atomic(env.db, async tx => {
             const now = await ownership(tx, input.humanId, input.agentId);
@@ -174,4 +178,15 @@ export async function connectAccount(env: Env, input: ConnectAccountInput, clock
         console.error('external-credential: connect failed');
         return {ok: false, reason: 'unavailable'};
     }
+}
+
+/**
+ * The account name a provider sent back, as stored and shown on owner and approval pages: invisible, control and bidi
+ * characters removed, whitespace collapsed, well formed and at most 400 UTF-16 units (the published bound). A name with
+ * no visible character left (only whitespace or default-ignorable characters) reads as the provider-verified account
+ * id instead.
+ */
+function shownName(account: {targetAccount: string; targetDisplay: string}): string {
+    const name = visibleExcerpt(account.targetDisplay, 400);
+    return hasVisibleCharacter(name) ? name : visibleExcerpt(account.targetAccount, 400);
 }

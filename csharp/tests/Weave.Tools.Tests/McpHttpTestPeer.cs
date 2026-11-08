@@ -82,9 +82,17 @@ internal sealed class McpHttpTestPeer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Cancel and drain the loop before stopping the listener: stopping first races a loop that has
+        // just passed its cancellation check, whose next accept then throws "Not listening".
         await _shutdown.CancelAsync();
-        _listener.Stop();
-        await _loop;
-        _shutdown.Dispose();
+        try
+        {
+            await _loop;
+        }
+        finally
+        {
+            _listener.Stop();
+            _shutdown.Dispose();
+        }
     }
 }

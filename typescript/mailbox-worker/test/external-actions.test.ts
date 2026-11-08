@@ -188,6 +188,29 @@ test('executeExternalAction_ApprovalExpired_DoesNotSend', () => scenario(async (
     assert.equal(provider.calls.length, 0);
 }));
 
+// Each stored field the digest binds, changed after the owner confirmed it. Only the dispatch re-check can catch these.
+const planEdits = {
+    content: `content='Episode 13 is live.'`,
+    operation: `operation='publish_other'`,
+    contractRevision: `contract_revision='test-http-v0'`,
+    expiryExtended: `expires_at=expires_at+10000`,
+} as const;
+
+for (const [field, assignment] of Object.entries(planEdits))
+    test(`executeExternalAction_PlanEditedAfterApproval_${field}_FailsPlanChangedWithoutSending`, () => scenario(async ({h, provider}) => {
+        const {agent, actionId} = await approved(h);
+        await h.db.prepare(`UPDATE external_actions SET ${assignment} WHERE action_id=?`).bind(actionId).run();
+
+        const result = await execute(h, agent, actionId);
+        const again = await execute(h, agent, actionId);
+
+        assert.equal(result.status, 'failed');
+        assert.equal(result.failure, 'plan-changed');
+        assert.equal(result.dispatchedAt, null);
+        assert.equal(again.status, 'failed');
+        assert.equal(provider.calls.length, 0);
+    }));
+
 test('executeExternalAction_Rejected_NeverSends', () => scenario(async ({h, provider}) => {
     const {agent, humanId} = await ownedAgent(h);
     const action = await (await propose(h, agent)).json() as {actionId: string};
@@ -219,6 +242,18 @@ test('executeExternalAction_ProviderConfirmedRejection_Failed', () => scenario(a
     assert.equal(result.failure, 'provider-rejected: duplicate content');
     assert.notEqual(result.dispatchedAt, null);
     assert.equal(provider.calls.length, 1);
+}));
+
+test('executeExternalAction_RejectionReasonWithControlsAndSplitPair_StoredVisibleAndWellFormed', () => scenario(async ({h, provider}) => {
+    const {agent, actionId} = await approved(h);
+    provider.respond = () => Response.json({reason: 'Bad\u0000 \u202etoken\ud800 ' + 'x'.repeat(240) + '\u{1F600}'.repeat(10)}, {status: 422});
+    const result = await execute(h, agent, actionId);
+    assert.equal(result.status, 'failed');
+    const reason = result.failure.slice('provider-rejected: '.length);
+    assert.ok(result.failure.startsWith('provider-rejected: Bad token\uFFFD x'), result.failure);
+    assert.ok(reason.isWellFormed(), 'no half surrogate pair is stored');
+    assert.ok(reason.length <= 256 && reason.length >= 255, String(reason.length));
+    assert.doesNotMatch(reason, /[\u0000-\u001f\u202e]/u);
 }));
 
 test('executeExternalAction_ConcurrentExecutes_SendOnce', () => scenario(async ({h, provider}) => {
