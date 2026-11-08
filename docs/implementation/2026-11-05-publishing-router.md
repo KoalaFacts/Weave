@@ -131,6 +131,11 @@ values to `connectAccount`, which accepts exactly the adapter's field names with
 printable values up to 512 characters. The authorization server never stores, logs or
 renders the values.
 
+Each value is trimmed before it is checked, verified with the platform and sealed (2026-11-08): a token pasted with a
+space before or after it connects, and only the trimmed value is sent and stored; a value of only spaces is missing.
+`connectTelegram_ValuesPastedWithSurroundingSpaces_ConnectsAndSealsTrimmedToken` covers it. Mutation checks, each
+failing it: the values checked untrimmed; the untrimmed secret sealed.
+
 The account name each platform sends back (a Telegram chat title, a Discord webhook
 name, a Postiz channel name, a YouTube channel title) is stored as `targetDisplay` only
 after `shownName` in `src/external-credentials.ts` passes it through `visibleExcerpt`
