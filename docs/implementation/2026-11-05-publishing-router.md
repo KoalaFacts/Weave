@@ -90,7 +90,10 @@ the type is accepted. A present setting of the wrong JSON type is refused with
 must be one of ...". The description names the allowed values. So far only Postiz X
 `who_can_reply_post` is listed (`everyone`, `following`, `mentionedUsers`,
 `subscribers`, `verified`, from docs.postiz.com/public-api/providers/x); other Postiz
-settings are checked for presence only until their documented values are sourced.
+settings are checked for presence only. Not yet listed although the same Postiz page
+documents them: X `post_type` (`post`, `article`), `article_status` (`draft`,
+`published`) and the booleans `made_with_ai` and `paid_partnership`; values for the other
+channels are still to be sourced from Postiz's documentation.
 The contract revision stays `postiz-post-v1`: a plan approved before the deploy with a
 value outside the list, which Postiz would refuse, is refused at execute
 (`plan-unreadable`) before any env read or provider call.
