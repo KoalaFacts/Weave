@@ -45,20 +45,23 @@ test('listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider', 
     const {agent, grantId} = await owned(h), other = await owned(h);
     await credential(h, agent.accountId, 'postiz:cm4tiktok', 'postiz', 'tiktok/cm4tiktok');
     await credential(h, agent.accountId, 'postiz:cm4old', 'postiz', 'x/cm4old', true);
+    await credential(h, agent.accountId, 'postiz:cm4x', 'postiz', 'x/cm4x');
     // Google is not configured here, so the YouTube credential cannot be used and says so.
     await credential(h, agent.accountId, 'youtube', 'youtube', 'UC' + 'a'.repeat(22));
     await credential(h, other.agent.accountId, 'postiz:cm4theirs', 'postiz', 'x/cm4theirs');
 
     const listed = await mcp(env, agent.accountId, grantId, 'list_my_credentials');
     assert.equal(listed.status, 200, JSON.stringify(listed.body));
-    const [postiz, youtube] = listed.body.items;
-    assert.deepEqual(listed.body.items.map((item: any) => item.credentialRef), ['postiz:cm4tiktok', 'youtube'], 'revoked and other agents\' credentials are not listed');
+    const [postiz, postizX, youtube] = listed.body.items;
+    assert.deepEqual(listed.body.items.map((item: any) => item.credentialRef), ['postiz:cm4tiktok', 'postiz:cm4x', 'youtube'], 'revoked and other agents\' credentials are not listed');
     assert.deepEqual([postiz.provider, postiz.targetAccount, postiz.targetDisplay, postiz.operations], ['postiz', 'tiktok/cm4tiktok', 'Display postiz:cm4tiktok', ['publish_post']]);
     for (const setting of Object.keys(tiktok)) assert.ok(postiz.content.includes(`"${setting}"`), setting + ' is named in the content format');
     assert.deepEqual(postiz.textRules, {max: 7000, unit: 'characters', maxWithMedia: null, maxBytes: null}, 'the limits ruleBreak enforces, as data');
     const postizBytes = 100 * 1024 * 1024;
     assert.deepEqual(postiz.mediaRules, {max: 10, types: {'image/jpeg': postizBytes, 'image/png': postizBytes, 'image/gif': postizBytes, 'image/webp': postizBytes, 'video/mp4': postizBytes},
         maxTotalBytes: null, maxAlt: 0}, 'the media limits ruleBreak and storedFiles enforce, as data');
+    assert.deepEqual(postizX.textRules, {max: 280, unit: 'weighted characters', maxWithMedia: null, maxBytes: null}, 'an X channel lists X\'s limit, not Postiz\'s');
+    assert.ok(postizX.content.includes('"text": at most 280 weighted characters'), postizX.content);
     assert.deepEqual([youtube.operations, youtube.content, youtube.textRules, youtube.mediaRules], [[], null, null, null]);
     // The HTTP API returns the same listing for a key-authenticated agent.
     assert.deepEqual(await h.ok('/v1/external-credentials', agent), listed.body);

@@ -29,7 +29,10 @@ discord, tiktok.
 
 Content is JSON `{text, media: [{mediaId, bytes, sha256}], settings, publishAt?}`:
 
-- `text` (≤ 7000 characters) or at least one media item; at most 10 media.
+- `text` (≤ 7000 characters, or the channel platform's smaller limit: X 280 weighted
+  characters, Bluesky 300 graphemes and 3000 bytes, LinkedIn 3000 characters,
+  Instagram 2200 characters; see the [publishing router](2026-11-05-publishing-router.md))
+  or at least one media item; at most 10 media.
 - `settings.__type` must equal the channel's type and include the fields Postiz
   requires for it (for example YouTube `title` and `type`; TikTok
   `privacy_level`, `duet`, `stitch`, `comment`, `autoAddMusic`,

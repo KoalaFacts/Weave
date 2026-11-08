@@ -65,6 +65,21 @@ in bytes, the total-bytes cap or null, and `maxAlt` (0: the platform takes no al
 null: only the post format's 2000-character limit). It is null exactly when
 `textRules` is. The router still decides at proposal.
 
+An adapter's text limit may depend on the account (Envoylet request
+`postiz-channel-text-rules`, 2026-11-08): a Postiz channel takes the smaller of
+Postiz's 7000 characters and its platform's limit, so text the platform would refuse
+after approval is refused at proposal instead. X channels count 280 weighted
+characters with the native X adapter's `xLength`; Bluesky 300 graphemes and 3000
+bytes; `linkedin` and `linkedin-page` 3000 characters; `instagram` and
+`instagram-standalone` 2200 characters. Threads keeps 7000: Meta counts an emoji as
+its UTF-8 bytes, which no listed unit expresses, so Weave does not claim a Threads
+limit. Limit: X Premium accounts, which X lets post longer text, are held to 280
+through Postiz as through the native adapter: Weave does not read an account's
+subscription tier. `textRules` and the description are computed per credential from the
+same rule. The contract revision stays `postiz-post-v1`, since what is sent is unchanged:
+a plan within the new limit dispatches as approved, and a longer plan approved before
+the deploy is refused at execute (`plan-unreadable`) with no storage read or call.
+
 At dispatch the router re-reads the files, and a file gone or changed since approval
 sends nothing. The adapter receives the parsed post with each file's stored type.
 
@@ -124,6 +139,12 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   unchanged, so approved plans without alt still dispatch, and a plan with alt
   approved before the deploy is refused at execute (`plan-unreadable`) without a
   provider call (`execute_AltApprovedBeforeAltWasRefused_RejectedWithoutSending`).
+  `postizTextRules_ChannelWithAStricterPlatform_RefusedAtProposeAndListed`: each
+  Postiz channel type accepts text at its limit, refuses one unit over (X with CJK
+  weighting, Bluesky by graphemes and by bytes), and lists and describes the same
+  limit; Threads and Mastodon keep 7000.
+  `execute_PostizTextApprovedBeforeThePlatformLimit_RejectedWithoutSending`: an X
+  channel plan over 280 is refused at execute before any read or send.
 - `test/postiz.test.ts` and `test/bluesky.test.ts` run their connect, plan and
   dispatch tests through the router. Bluesky's limits are checked through the router,
   and so is the exact-field rule.

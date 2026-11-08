@@ -6180,7 +6180,7 @@
                 }
               }
             ],
-            "description": "The text limits the router enforces when a post is proposed, as data; the same limits content describes. null when no operation is available or the content is not a post."
+            "description": "The text limits the router enforces when a post is proposed for this account (for a Postiz channel, the smaller of Postiz's and its platform's), as data; the same limits content describes. null when no operation is available or the content is not a post."
           },
           "mediaRules": {
             "oneOf": [

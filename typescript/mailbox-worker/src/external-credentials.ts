@@ -99,7 +99,7 @@ export async function listAgentCredentials(env: Env, caller: ActionCaller): Prom
             const usable = provider(env, row.provider);
             return {credentialRef: row.credential_ref, provider: row.provider, targetAccount: row.target_account, targetDisplay: row.target_display,
                 operations: usable ? [...usable.operations] : [], content: usable ? usable.describeContent(row.target_account) : null,
-                textRules: usable?.textRules ?? null, mediaRules: usable?.mediaRules ?? null};
+                textRules: usable?.textRules?.(row.target_account) ?? null, mediaRules: usable?.mediaRules ?? null};
         })};
     });
 }

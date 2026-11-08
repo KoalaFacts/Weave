@@ -35,8 +35,8 @@ export type ExternalProvider = {
     operations: readonly string[];
     /** What `content` must be for this credential's account, for the agent composing a plan. */
     describeContent(targetAccount: string): string;
-    /** The post text limits `checkContent` enforces, as data for apps; absent when the content is not a post. */
-    textRules?: TextRules;
+    /** The post text limits `checkContent` enforces for one account, as data for apps; absent when the content is not a post. */
+    textRules?(targetAccount: string): TextRules;
     /** The post media limits `checkContent` enforces, as data for apps; present exactly when `textRules` is. */
     mediaRules?: MediaRules;
     /** Provider-specific content rules checked when the plan is proposed; the reason it is invalid, or null. */
