@@ -97,7 +97,10 @@ and only for settings Postiz requires: X `who_can_reply_post` (`everyone`, `foll
 `content_posting_method` (`DIRECT_POST`, `UPLOAD`) and the booleans `duet`, `stitch`,
 `comment`, `brand_content_toggle` and `brand_organic_toggle`. Other settings (Pinterest
 `board`, Reddit `subreddit`, Discord `channel`, and optional ones) are checked for presence
-only. Not yet listed although Postiz documents them: X `post_type` (`post`, `article`;
+only. A required setting that is null or a string of only whitespace is refused at propose with
+"settings.<name> must not be blank" (2026-11-08): Postiz would refuse it after approval. A
+typed setting refuses null as the wrong type first; a structured value (an array or object)
+is still only checked for presence. Not yet listed although Postiz documents them: X `post_type` (`post`, `article`;
 article mode changes the text format and limit), `article_status` and the optional
 booleans.
 The contract revision stays `postiz-post-v1`: a plan approved before the deploy with a
@@ -154,6 +157,10 @@ Neither the authorization server, the owner page nor the RPC surface changes.
 - mailbox-worker `test/publishing.test.ts`:
   - the post shape;
   - Postiz settings and schedule rules, and their description;
+  - `postizSettings_RequiredSettingBlankOrNull_RefusedBeforeApproval` (Pinterest, Reddit,
+    Discord, YouTube title) and `execute_PostizBlankSettingApprovedBeforeItWasRefused_RejectedWithoutSending`
+    (no env read, no provider call). Mutations killed: null not refused, spaces not trimmed,
+    the refusal not returned, required names not checked;
   - a test-only adapter is validated, gets the parsed post and stored files, and is
     not called when a file disappeared after approval.
 - `textRules` on `GET /v1/external-credentials` and `list_my_credentials`:
@@ -226,8 +233,8 @@ Neither the authorization server, the owner page nor the RPC surface changes.
 
 ## Limits
 
-- Settings are checked for presence and fixed values, not for each platform's value
-  rules; the platform still refuses invalid values at dispatch.
+- Settings without listed `settingRules` are checked for presence and fixed values only, and
+  a required one also for blankness; the platform still refuses other invalid values at dispatch.
 - Account names stored before this change is deployed keep their text until the owner reconnects
   that account; HTML pages escape them either way.
 - One secret field per connector. A platform that needs an OAuth redirect (YouTube)

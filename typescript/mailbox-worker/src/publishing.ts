@@ -122,7 +122,9 @@ function ruleBreak(post: Parsed, rules: PostRules, targetAccount: string, now: n
         if (typeof value !== rule.type) return `settings.${name} must be a ${rule.type}`;
         if (rule.values && !rule.values.includes(value as string)) return `settings.${name} must be one of ${rule.values.map(allowed => `"${allowed}"`).join(', ')}`;
     }
-    return null;
+    // A required setting that is null or only spaces names nothing; the platform would refuse it after approval.
+    const blank = expected.required.find(name => { const value = post.settings[name]; return value === null || typeof value === 'string' && !value.trim(); });
+    return blank ? `settings.${blank} must not be blank` : null;
 }
 
 const typeNames = (types: Readonly<Record<string, number>>) =>

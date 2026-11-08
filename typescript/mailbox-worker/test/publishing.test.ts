@@ -99,6 +99,34 @@ test('postizSettingRules_XReplySetting_OnlyDocumentedValuesAccepted', async () =
     assert.deepEqual([provider.settingRules?.('pinterest/cm4'), provider.settingRules?.('constructor/cm4')], [{}, {}]);
 });
 
+test('postizSettings_RequiredSettingBlankOrNull_RefusedBeforeApproval', async () => {
+    // A blank board, subreddit, channel or YouTube title is present but names nothing; Postiz refuses it after the owner approved it.
+    for (const [target, settings, name] of [['pinterest/cm4', {__type: 'pinterest'}, 'board'], ['reddit/cm4', {__type: 'reddit'}, 'subreddit'],
+        ['discord/cm4', {__type: 'discord'}, 'channel'], ['youtube/cm4', {__type: 'youtube', type: 'public'}, 'title']] as const) {
+        // A typed setting (the YouTube title) refuses null as the wrong type first.
+        for (const value of name === 'title' ? ['', '   ', '\t\n'] : ['', '   ', '\t\n', null]) {
+            const post = {text: 'x', media: [], settings: {...settings, [name]: value}};
+            assert.match((await check(postiz, post, target)) ?? '', new RegExp(`settings\\.${name} must not be blank`), `${target} ${JSON.stringify(value)}`);
+        }
+        assert.equal(await check(postiz, {text: 'x', media: [], settings: {...settings, [name]: ' a '}}, target), null, target);
+    }
+    // Structured values Postiz documents for some channels (Reddit's subreddit list) are still checked for presence only.
+    for (const subreddit of [[{value: {subreddit: 'a'}}], []])
+        assert.equal(await check(postiz, {text: 'x', media: [], settings: {__type: 'reddit', subreddit}}, 'reddit/cm4'), null, JSON.stringify(subreddit));
+    // Only required settings are refused when blank; an optional one is passed on as sent.
+    assert.equal(await check(postiz, {text: 'x', media: [], settings: {__type: 'pinterest', board: 'b', title: ' '}}, 'pinterest/cm4'), null);
+});
+
+test('execute_PostizBlankSettingApprovedBeforeItWasRefused_RejectedWithoutSending', async () => {
+    let sent = 0, envReads = 0;
+    const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
+    const provider = publishingProvider({...postiz, publish: async () => { sent++; return {status: 'completed', receipt: 'r'}; }});
+    const result = await provider.execute(env, {accountId: 'a', actionId: crypto.randomUUID(), operation: 'publish_post',
+        content: JSON.stringify({text: 'x', media: [], settings: {__type: 'pinterest', board: ' '}}), targetAccount: 'pinterest/cm4', secret: 'token'})
+        .catch((error: unknown) => ({thrown: String(error)}));
+    assert.deepEqual([result, envReads, sent], [{status: 'rejected', reason: 'plan-unreadable'}, 0, 0]);
+});
+
 test('execute_PostizSettingApprovedBeforeValuesWereChecked_RejectedWithoutSending', async () => {
     let sent = 0, envReads = 0;
     const env = new Proxy({}, {get: () => { envReads++; return undefined; }}) as Env;
