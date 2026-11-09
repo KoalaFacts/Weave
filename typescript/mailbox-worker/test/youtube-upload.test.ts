@@ -126,15 +126,18 @@ test('proposeExternalAction_UploadPlanNotPinnedToStoredMedia_Rejected', () => sc
     const media = await (await upload(h, agent, randomBytes(1000))).json() as {mediaId: string; bytes: number; sha256: string};
     const foreign = await (await upload(h, other.agent, randomBytes(1000))).json() as {mediaId: string; bytes: number; sha256: string};
     const image = await (await upload(h, agent, randomBytes(1000), 'image/png')).json() as {mediaId: string; bytes: number; sha256: string};
+    const foreignImage = await (await upload(h, other.agent, randomBytes(1000), 'image/png')).json() as {mediaId: string; bytes: number; sha256: string};
     // A well-formed reference to media this agent has not stored, as given, keeps the reason apps match to upload again.
     const notStored = 'must name your uploaded video with its exact bytes and sha256';
     const cases: [string, string][] = [[plan({...media, sha256: 'f'.repeat(64)}), notStored], [plan({...media, bytes: media.bytes + 1}), notStored],
         [plan(foreign), notStored], [plan({...media, mediaId: crypto.randomUUID()}), notStored],
-        [plan(image), 'mediaId must name a video, not an image'], [plan({...image, bytes: image.bytes + 1}), notStored]];
+        [plan(image), 'mediaId must name a video, not an image'], [plan({...image, bytes: image.bytes + 1}), notStored],
+        [plan(foreignImage), notStored]];
     for (const [content, reason] of cases) {
         const response = await propose(h, agent, content);
         assert.equal(response.status, 400, content.slice(0, 80));
-        assert.equal((await response.json() as {reason: string}).reason, reason, content.slice(0, 80));
+        const problem = await response.json() as {code: string; field: string; reason: string};
+        assert.deepEqual({code: problem.code, field: problem.field, reason: problem.reason}, {code: 'invalid', field: 'content', reason}, content.slice(0, 80));
     }
     for (const content of [plan(media, {privacyStatus: 'everyone'}), plan(media, {title: ''}), plan(media, {extra: 1}), 'not json'])
         assert.equal((await propose(h, agent, content)).status, 400, content.slice(0, 80));
