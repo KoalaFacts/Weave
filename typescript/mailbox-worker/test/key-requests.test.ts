@@ -5,7 +5,7 @@ import { start, type AgentCredential } from './harness.ts';
 import { agentKey, clientAssertion, dpopProof, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { issueRecoveryCode, recoverAgentKey } from '../src/recovery-codes.ts';
-import { nowUtc } from '../src/time.ts';
+import { epochSeconds, nowUtc } from '../src/time.ts';
 import { Problem } from '../src/wire.ts';
 import type { Env } from '../src/database.ts';
 
@@ -290,9 +290,16 @@ test('recovery_KidOfAnotherAgent_409KeyInUseCodeKept', async () => {
     } finally { await h.close(); }
 });
 
+/** The worker counts recovery attempts in fixed UTC hours from the real clock; start a test that spans attempts clear of an hour's end. */
+async function clearOfUtcHourEnd(marginSeconds: number): Promise<void> {
+    const left = 3600 - Math.floor(Date.now() / 1000) % 3600;
+    if (left <= marginSeconds) await new Promise(resolve => setTimeout(resolve, (left + 1) * 1000));
+}
+
 test('recovery_TwentyFirstAttemptFromOneSource_429', async () => {
     const h = await start();
     try {
+        await clearOfUtcHourEnd(60);
         const agent = await owned(h), code = await issued(h, agent), source = {'CF-Connecting-IP': '198.51.100.1'};
         for (let i = 0; i < 20; i++) await problem(await recover(h, agentKey(), {agentId: agent.agentId, code: 'A'.repeat(43)}, {headers: source}), 404, {code: 'unavailable'});
         const limited = await recover(h, agentKey(), {agentId: agent.agentId, code}, {headers: source});
@@ -301,6 +308,35 @@ test('recovery_TwentyFirstAttemptFromOneSource_429', async () => {
         assert.ok(retryAfter >= 1 && retryAfter <= 3600, String(retryAfter));
         assert.equal(await codeUsed(h, agent.agentId), 0);
         await view(await recover(h, agentKey(), {agentId: agent.agentId, code}, {headers: {'CF-Connecting-IP': '198.51.100.2'}}), 200);
+    } finally { await h.close(); }
+});
+
+test('recovery_LimitedSourceNextUtcHour_AdmittedAgain', async () => {
+    const h = await start();
+    try {
+        // Half past a fixed UTC hour, so the window and Retry-After are exact whatever the wall clock says.
+        const hour = 36_000_000_000n, limitedAt = nowUtc() / hour * hour + hour / 2n, nextHourAt = limitedAt + hour / 2n;
+        const agent = await owned(h), code = await issued(h, agent, () => limitedAt);
+        const attempt = (at: bigint, body: unknown) => {
+            const key = agentKey(), seconds = epochSeconds(at);
+            return recoverAgentKey(env(h), new Request(recoveryUrl, {method: 'POST', headers: {'CF-Connecting-IP': '198.51.100.3',
+                DPoP: dpopProof(key, {method: 'POST', url: recoveryUrl, iat: seconds})}}), body, () => at);
+        };
+        const refusal = (outcome: Promise<unknown>) => outcome.then(() => assert.fail('expected a refusal'), (e: unknown) => {
+            assert.ok(e instanceof Problem, String(e));
+            return e;
+        });
+        for (let i = 0; i < 20; i++) assert.equal((await refusal(attempt(limitedAt, {agentId: agent.agentId, code: 'A'.repeat(43)}))).status, 404);
+        const limited = await refusal(attempt(limitedAt, {agentId: agent.agentId, code}));
+        assert.deepEqual([limited.status, limited.code, limited.retryAfter], [429, 'capacity', 1800]);
+        const lastTick = await refusal(attempt(nextHourAt - 1n, {agentId: agent.agentId, code}));
+        assert.deepEqual([lastTick.status, lastTick.retryAfter], [429, 1]);
+        assert.equal(await codeUsed(h, agent.agentId), 0);
+        // The next UTC hour starts a new count for the same source (a fresh code: the first one has expired by then).
+        const fresh = await issued(h, agent, () => nextHourAt);
+        const recovered = await attempt(nextHourAt, {agentId: agent.agentId, code: fresh});
+        assert.equal(typeof recovered.kid, 'string');
+        assert.equal(await codeUsed(h, agent.agentId), 1);
     } finally { await h.close(); }
 });
 
