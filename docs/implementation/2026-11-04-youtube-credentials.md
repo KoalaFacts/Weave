@@ -75,6 +75,22 @@ that exactly 100 characters of title and 5000 bytes of description are accepted;
 moving either limit by one, accepting a blank title or dropping the description's `<`
 `>` check each fails it.
 
+### Media reference refusals (2026-11-09)
+
+The section above used `must name your uploaded video with its exact bytes and sha256`
+both for a malformed media reference and for a well-formed one that is not stored, so
+an app that answers it by uploading again (Envoylet does) also did so for a plan it had
+built wrongly. A malformed reference is now named by field: `mediaId must be the ID that
+PUT /v1/external-media returned` (not a lowercase UUID string), `bytes must be a
+positive whole number` and `sha256 must be 64 lowercase hex characters`, checked in that
+order after `privacyStatus`. `must name your uploaded video with its exact bytes and
+sha256` is kept unchanged for a well-formed reference to media this agent has not
+stored with that size and SHA-256 (unknown, another agent's, or a different size or
+hash). A stored image named exactly is refused with `mediaId must name a video, not an
+image`, since uploading it again cannot help. The plans accepted and what execute does
+are unchanged. `test/youtube-upload.test.ts` checks every reason; mutation checks are
+listed in the PR.
+
 ## Configuration for a real deployment (not done here)
 
 - Google Cloud project with the YouTube Data API v3 enabled; OAuth consent screen

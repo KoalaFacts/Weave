@@ -98,8 +98,10 @@ function videoPlan(content: string): VideoPlan | string {
     if (new TextEncoder().encode(description).byteLength > 5000) return 'description must be at most 5000 bytes';
     if (/[<>]/.test(description)) return 'description must not contain < or >';
     if (typeof privacyStatus !== 'string' || !privacyStatuses.has(privacyStatus)) return 'privacyStatus must be one of "private", "unlisted", "public"';
-    if (typeof mediaId !== 'string' || !uuid.test(mediaId) || typeof sha256 !== 'string' || !sha.test(sha256)
-        || typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1) return 'must name your uploaded video with its exact bytes and sha256';
+    // A malformed media reference is named by field; "must name your uploaded video …" is kept for a well-formed one that is not stored.
+    if (typeof mediaId !== 'string' || !uuid.test(mediaId)) return 'mediaId must be the ID that PUT /v1/external-media returned';
+    if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1) return 'bytes must be a positive whole number';
+    if (typeof sha256 !== 'string' || !sha.test(sha256)) return 'sha256 must be 64 lowercase hex characters';
     return {title, description, privacyStatus: privacyStatus as VideoPlan['privacyStatus'], mediaId, bytes, sha256};
 }
 
@@ -125,8 +127,9 @@ export const youtubeUpload: ExternalProvider & {available(env: Env): boolean} = 
         if (typeof plan === 'string') return plan;
         const media = await readMediaRecord(tx, accountId, plan.mediaId);
         // The plan must name the exact uploaded bytes, so the owner approves this file and no other.
-        if (!media || media.bytes !== plan.bytes || media.sha256 !== plan.sha256 || !media.contentType.startsWith('video/'))
-            return 'must name your uploaded video with its exact bytes and sha256';
+        if (!media || media.bytes !== plan.bytes || media.sha256 !== plan.sha256) return 'must name your uploaded video with its exact bytes and sha256';
+        // Uploading the same file again cannot help, so a stored image gets its own reason.
+        if (!media.contentType.startsWith('video/')) return 'mediaId must name a video, not an image';
         return null;
     },
     async execute(env, call) {
