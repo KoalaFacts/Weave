@@ -329,7 +329,7 @@ test('recovery_LimitedSourceNextUtcHour_AdmittedAgain', async () => {
         for (let i = 0; i < 20; i++) assert.equal((await refusal(attempt(limitedAt, {agentId: agent.agentId, code: 'A'.repeat(43)}))).status, 404);
         const limited = await refusal(attempt(limitedAt, {agentId: agent.agentId, code}));
         assert.deepEqual([limited.status, limited.code, limited.retryAfter], [429, 'capacity', 1800]);
-        // Retry-After rounds a part second up, and is at least 1.
+        // Retry-After rounds a part second up.
         const lastSeconds = await refusal(attempt(nextHourAt - 15_000_000n, {agentId: agent.agentId, code}));
         assert.deepEqual([lastSeconds.status, lastSeconds.retryAfter], [429, 2]);
         const lastTick = await refusal(attempt(nextHourAt - 1n, {agentId: agent.agentId, code}));
