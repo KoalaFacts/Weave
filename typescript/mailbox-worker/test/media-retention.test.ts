@@ -44,8 +44,8 @@ test('sweepMedia_OldAndUnused_RecordAndObjectDeleted', () => scenario(async h =>
     assert.equal((await h.request(`/v1/external-media/${old}`, agent)).status, 404);
 }));
 
-// Envoylet re-stores a file only on exactly 404 `unavailable` (KoalaFacts/Envoylet#90), so every "not yours to use"
-// case must answer that, and the same body: a different code makes it name the file anyway.
+// Envoylet stores a file again only on exactly 404 `unavailable` (KoalaFacts/Envoylet#90); on any other answer it names
+// the old mediaId and the propose is refused. A malformed ID never reaches getMedia: the router's generic read refuses it.
 test('getMedia_SweptOtherAgentsUnknownOrMalformed_404Unavailable', () => scenario(async h => {
     const agent = await h.register(), other = await h.register();
     const swept = await upload(h, agent), theirs = await upload(h, other), mine = await upload(h, agent);
