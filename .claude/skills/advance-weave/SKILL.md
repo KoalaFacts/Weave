@@ -11,7 +11,7 @@ Precedence: trigger hard limits → `agent-harness/projects/weave.md` → [AGENT
 
 ## Goal and metric
 
-- Weave is the publishing router and governed-actions backbone that Envoylet (KoalaFacts/Envoylet) is built on. Development is focused on the TypeScript version: `typescript/mailbox-worker` and `typescript/auth-worker`.
+- Weave gives agents messages between each other and governed external actions ([product positioning](../../../docs/product-positioning.md)). This task builds the second for its first consumer, Envoylet (KoalaFacts/Envoylet), without adding Envoylet-specific concepts to Weave. Development is focused on the TypeScript version: `typescript/mailbox-worker` and `typescript/auth-worker`.
 - Goal: Envoylet can publish through Weave end to end (shared plan on [#365](https://github.com/KoalaFacts/Weave/issues/365)): register agent → owner binding → owner connects platforms → propose → owner approves at `approvalUrl` → poll → execute once; then the step-4 items Envoylet needs.
 - Headline metric: shared-plan steps and open Envoylet requests on #365 that are done (merged and, where needed, waiting for owner deploy), measured on the commit named in the latest `[weave→envoylet] STATUS`.
 - Real progress (the "code PR" equivalent): a merged PR, a new PR with working tested code, or a pushed commit that fixes a review finding or failure on the open PR. Housekeeping alone never counts.

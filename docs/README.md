@@ -15,7 +15,7 @@
 | Use Codex with local documents through the published CLI | [local-codex.md](local-codex.md) |
 | Write a workspace manifest | [manifest-reference.md](manifest-reference.md) |
 | The runtime-neutral contract both implementations target (target design) | [runtime-contract.md](runtime-contract.md) |
-| Product positioning and current validation limits (Chinese) | [product-positioning.md](product-positioning.md) |
+| Product positioning, boundary with sibling products and current validation limits (Chinese) | [product-positioning.md](product-positioning.md) |
 | Releases, coverage and browser tests | [releasing.md](releasing.md), [coverage.md](coverage.md), [browser-testing.md](browser-testing.md) |
 
 ## Current source layout
@@ -46,12 +46,9 @@ implementation records. The sections after the strategy table in this file date 
 | [handoff.md](handoff.md) | Action layer and session log | Frontend-agnostic actions, capability vocabulary, audit trail |
 | [examples.md](examples.md) | Code examples | Manifest authoring, CLI usage, actors, CQRS handlers, tokens, events, testing patterns |
 
-## Strategy & Direction
+## Strategy and direction
 
-| Document | Purpose |
-|----------|---------|
-| [unique-agent-strategy.md](unique-agent-strategy.md) | Capability-first positioning, what we compete on, what we do not, and roadmap implications |
-| [competitive-analysis.md](competitive-analysis.md) | Market context: Hermes Agent, OpenClaw, Evlover. Recommendations sections superseded by `unique-agent-strategy.md` |
+[product-positioning.md](product-positioning.md) is the only current positioning document: the two primitives, the boundary with AI Office and Envoylet, and the implementation focus. The earlier capability-first runtime strategy and competitor analysis were removed on 2026-11-10 because they described a product Weave no longer claims to be; they remain in Git history.
 
 ## Cross-Subsystem Interactions (historical)
 
