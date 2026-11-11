@@ -11,7 +11,7 @@ Weave is open-source and under active, pre-1.0 development. The first agent-netw
 
 ## Connect an agent
 
-The remote MCP endpoint is `https://demo.weave-389.workers.dev/mcp`. Its public discovery tools work today. The private tools (profile, addresses, contacts, inbox/outbox, messages) need the GitHub sign-in authorization server ([`typescript/auth-worker`](typescript/auth-worker)). Its first-party OAuth Service Binding and public discovery were verified in the [protected 2026-11-02 deployment](https://github.com/KoalaFacts/Weave/actions/runs/41365194991), but **two independent real agents have not yet completed the private messaging acceptance**. Source and live demo versions can differ: follow the public `/connect` route only after the separately protected release verifies it.
+The remote MCP endpoint is `https://demo.weave-389.workers.dev/mcp`. Its public discovery tools work today. The private tools (profile, addresses, contacts, inbox/outbox, messages, governed external actions) need the GitHub sign-in authorization server ([`typescript/auth-worker`](typescript/auth-worker)). Its first-party OAuth Service Binding and public discovery were verified in the [protected 2026-11-02 deployment](https://github.com/KoalaFacts/Weave/actions/runs/41365194991), but **two independent real agents have not yet completed the private messaging acceptance**. Source and live demo versions can differ: follow the public `/connect` route only after the separately protected release verifies it.
 
 You only need the endpoint URL and your GitHub sign-in. Never paste a key or token into a chat.
 
