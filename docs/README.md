@@ -113,13 +113,9 @@ The action layer is the shared seam between the silo HTTP API and the frontends 
 | `ActionResult<T>` + `ActionFailure` | typed success-or-failure envelope; reasons enumerated for stable UX branching | `Weave.Actions/Context/` |
 | Per-feature action class | takes typed `HttpClient` via DI; owns its wire DTO + `JsonSerializerContext` | `Weave.Actions/<Verb>/` |
 | `AddSiloActions(...)` | composition extension; registers `HttpClient<TAction>` per verb | `Weave.Actions/SiloActionsServiceCollectionExtensions.cs` |
-| Frontend bindings | `ConsoleActionPrompter`/`ConsoleActionReporter` (CLI); future Web UI bindings | `Weave.Cli/ActionContext/` |
+| Frontend bindings | `ConsoleActionPrompter`/`ConsoleActionReporter` (CLI) | `csharp/extensions/Weave.Cli.Shell/` |
 
-**Migration status (see [handoff.md](handoff.md) for Phase 1 plan):**
-- **Phase 0 ✓** — Foundation + `GetSystemInfoAction` pilot wired through `weave system`.
-- **Phase 1 first verb ✓** — `ListAgentsAction` consumed by both `weave agents` (new CLI command) and the migrated TUI `/agents` slash via a shared `AgentsRenderer`.
-- **Phase 1 verbs 2-7** (pending) — `ListToolsAction`, `ListTasksAction`, `GetWorkspaceStatusAction`, `GetConfigAction`, `DashboardAction`, `ValidateWorkspaceAction`. Each follows the same template.
-- **Legacy paths** — unmigrated CLI/TUI surfaces still go through `WorkspaceApiClient` (in `Weave.Cli`); these drain as their consumers migrate.
+The planned Phase 0 and Phase 1 verbs and the later ones (channels, skills, templates, marketplace, audit, workspace start/stop/watch) are actions under `csharp/extensions/Weave.Actions/`; the old `WorkspaceApiClient` path is gone.
 
 ## Key Patterns
 
