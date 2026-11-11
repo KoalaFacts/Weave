@@ -79,6 +79,11 @@ export async function start({ persist, migrate = true, bindings = {}, scriptPath
         throw error;
     }
 }
+/** Hourly agent limits count in fixed UTC hours from the real clock; start a test that relies on one hour's count clear of that hour's end. */
+export async function clearOfUtcHourEnd(marginSeconds = 60): Promise<void> {
+    const left = 3600 - Math.floor(Date.now() / 1000) % 3600;
+    if (left <= marginSeconds) await new Promise(resolve => setTimeout(resolve, (left + 1) * 1000));
+}
 export function payload(bytes = 'hello', now = Date.now()) {
     const hex = now.toString(16).padStart(12,'0');
     return { messageId: hex.slice(0,8) + '-' + hex.slice(8) + '-7' + randomBytes(2).toString('hex').slice(1) + '-8' + randomBytes(2).toString('hex').slice(1) + '-' + randomBytes(6).toString('hex'),

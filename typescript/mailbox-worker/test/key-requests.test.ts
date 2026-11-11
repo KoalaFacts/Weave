@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
-import { start, type AgentCredential } from './harness.ts';
+import { clearOfUtcHourEnd, start, type AgentCredential } from './harness.ts';
 import { agentKey, clientAssertion, dpopProof, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { issueRecoveryCode, recoverAgentKey } from '../src/recovery-codes.ts';
@@ -289,12 +289,6 @@ test('recovery_KidOfAnotherAgent_409KeyInUseCodeKept', async () => {
         await view(await recover(h, agentKey(), {agentId: agent.agentId, code}), 200);
     } finally { await h.close(); }
 });
-
-/** The worker counts recovery attempts in fixed UTC hours from the real clock; start a test that spans attempts clear of an hour's end. */
-async function clearOfUtcHourEnd(marginSeconds: number): Promise<void> {
-    const left = 3600 - Math.floor(Date.now() / 1000) % 3600;
-    if (left <= marginSeconds) await new Promise(resolve => setTimeout(resolve, (left + 1) * 1000));
-}
 
 test('recovery_TwentyFirstAttemptFromOneSource_429', async () => {
     const h = await start();

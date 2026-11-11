@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { test } from 'node:test';
-import { payload, start, type AgentCredential } from './harness.ts';
+import { clearOfUtcHourEnd, payload, start, type AgentCredential } from './harness.ts';
 import { agentKey, clientAssertion, dpopProof, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { issueRecoveryCode } from '../src/recovery-codes.ts';
@@ -84,6 +84,7 @@ async function revokedRows(h: Harness, accountId: string, count: number, created
 test('send_UnclaimedThirtyFirstInHour_429WithRetryAfter', async () => {
     const h = await start({bindings});
     try {
+        await clearOfUtcHourEnd();
         const c = await connect(h);
         for (let n = 0; n < 30; n++) assert.equal((await sendMessage(h, c, envelope(c))).status, 200);
         const before = await h.db.prepare('SELECT count(*) n FROM mailbox_records').first('n');
@@ -95,6 +96,7 @@ test('send_UnclaimedThirtyFirstInHour_429WithRetryAfter', async () => {
 test('send_RetrySameMessageIdAtLimit_ReturnsOriginalReceipt', async () => {
     const h = await start({bindings});
     try {
+        await clearOfUtcHourEnd();
         const c = await connect(h), first = envelope(c);
         const original = await (await sendMessage(h, c, first)).json();
         for (let n = 1; n < 30; n++) assert.equal((await sendMessage(h, c, envelope(c))).status, 200);
@@ -117,6 +119,7 @@ test('send_ClaimedAgent_AllowsMoreThanUnclaimed', async () => {
 test('contactRequest_UnclaimedEleventh_429', async () => {
     const h = await start({bindings});
     try {
+        await clearOfUtcHourEnd();
         const a = await participant(h), inputs = [];
         for (let n = 0; n < 11; n++) inputs.push(contactRequest(a, await participant(h)));
         for (const input of inputs.slice(0, 10)) assert.equal((await h.request('/v1/contacts/requests', a, 'POST', input)).status, 200);
@@ -177,6 +180,7 @@ test('address_ClaimedFifthPublic_200SixthPublic429', async () => {
 test('token_UnclaimedThirtyFirstInHour_429TemporarilyUnavailable', async () => {
     const h = await start({bindings});
     try {
+        await clearOfUtcHourEnd();
         const a = await h.register();
         for (let n = 0; n < 30; n++) assert.equal((await tokenRequest(h, a.key, a.accountId)).status, 200, 'token ' + (n + 1));
         const refused = await tokenRequest(h, a.key, a.accountId);
@@ -200,6 +204,7 @@ test('token_InvalidAssertionsDoNotConsume', async () => {
 test('hourlyWindow_PreviousHourCounter_Ignored', async () => {
     const h = await start({bindings});
     try {
+        await clearOfUtcHourEnd();
         const a = await h.register();
         const hour = nowTicks() / ticksPerHour;
         await h.db.batch([h.db.prepare("UPDATE counters SET value=value+1 WHERE name='record-seq'"),
@@ -276,6 +281,7 @@ test('addKey_ConfirmedKeyRequestCountsOnceAgainstDailyAdditions', async () => {
 test('contactRequest_ClaimedSixtyFirst_429WithRetryAfter', async () => {
     const h = await start({bindings});
     try {
+        await clearOfUtcHourEnd();
         const a = await participant(h);
         await h.claim(a);
         const inputs = [];
@@ -289,6 +295,7 @@ test('contactRequest_ClaimedSixtyFirst_429WithRetryAfter', async () => {
 test('token_ClaimedHundredTwentyFirst_429WithRetryAfter', async () => {
     const h = await start({bindings});
     try {
+        await clearOfUtcHourEnd();
         const a = await h.register();
         await h.claim(a);
         for (let n = 0; n < 120; n++) assert.equal((await tokenRequest(h, a.key, a.accountId)).status, 200, 'token ' + (n + 1));
