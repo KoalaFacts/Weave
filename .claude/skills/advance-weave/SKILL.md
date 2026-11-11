@@ -34,6 +34,8 @@ Run on the final source of every PR (after main is merged in):
 
 Before blaming an advisory for a `Vulnerability Audit` or `Code Quality` failure, check the committed `packages.lock.json` versions against NuGet's feed (`https://api.nuget.org/v3/vulnerabilities/index.json`); on 2026-11-10 those jobs failed on a Markdown-only PR (#402) while no locked version was in an advisory range, so the cause was elsewhere. Name the package from the run's `security-audit` artifact before claiming a cause.
 
+NuGet upgrades: regenerate lockfiles with `dotnet restore csharp/Weave.slnx --force-evaluate` **and** `dotnet restore csharp/tools/DevTool/DevTool.csproj --force-evaluate`; DevTool is outside the solution, and a missed lockfile there fails the coverage step with `NU1004` (#405). Keep each upgrade PR small: `Dependency Review` fails closed with `comparison-change-limit` above 10,000 dependency-graph records, which a broad .NET servicing bump across both target frameworks can exceed; split by package family rather than raising the limit.
+
 Known CI exception: `submit-nuget` fails on every PR and on main with NETSDK1045; comment once per PR that it is not the PR's and do not count it. A job cancelled by runner infrastructure (for example an apt/Playwright install timeout) may be re-run once.
 
 ## Verification boundary
