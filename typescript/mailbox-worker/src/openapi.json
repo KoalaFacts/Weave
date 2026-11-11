@@ -444,7 +444,7 @@
       "post": {
         "operationId": "proposeExternalAction",
         "summary": "Propose a governed external action",
-        "description": "Records a pending plan for the agent's human owner to approve on the account page. Nothing is sent to the provider. The owner confirms the exact plan: provider and contract revision, operation, full content, credential reference and revision, and the verified target account. The plan expires 1 hour after creation, for approval and execution together. At most 20 pending or approved actions per agent (429 capacity). Retrying creates another pending plan, which still needs its own approval.",
+        "description": "Records a pending plan for the agent's human owner to approve on the account page. Nothing is sent to the provider. The owner confirms the exact plan: provider and contract revision, operation, full content, credential reference and revision, and the verified target account. The plan expires 1 hour after creation, for approval and execution together. At most 20 pending or approved actions per agent (429 capacity, without Retry-After): an approved action counts until it is executed or expires, and executing, rejecting or expiring one frees its place. Retrying creates another pending plan, which still needs its own approval.",
         "requestBody": {
           "required": true,
           "content": {
