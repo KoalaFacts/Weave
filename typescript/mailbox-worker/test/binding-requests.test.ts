@@ -174,8 +174,49 @@ test('createBinding_SixthInADay_429', async () => {
             const view = await created(h, cred, 'github:4242');
             assert.equal((await cancel(h, cred, view.requestId)).status, 200);
         }
-        await problem(await requestBinding(h, cred, 'github:4242'), 429, {code: 'capacity'});
+        const refused = await requestBinding(h, cred, 'github:4242');
+        const retryAfter = Number(refused.headers.get('Retry-After'));
+        assert.ok(Number.isInteger(retryAfter) && retryAfter > 86400 - 300 && retryAfter <= 86400, 'Retry-After ' + refused.headers.get('Retry-After'));
+        await problem(refused, 429, {code: 'capacity'});
         assert.equal(await rows(h, cred.accountId), 5);
+    } finally { await h.close(); }
+});
+
+test('createBinding_DailyLimit_RetryAfterIsWhenTheWindowFreesARequest', async () => {
+    const h = await start();
+    try {
+        const cred = await h.register();
+        const second = 10_000_000n, hour = 3600n * second, now = BigInt(Math.floor(Date.now() / 1000)) * second, clock = () => now;
+        const seed = (ageTicks: bigint) => h.db.prepare(`INSERT INTO binding_requests (request_id,account_id,target_subject,kid,status,created_at,expires_at,updated_at,decided_at)
+            VALUES (?,?,'4242',?,'cancelled',CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER))`)
+            .bind(crypto.randomUUID(), cred.accountId, cred.key.kid, (now - ageTicks).toString(), (now - ageTicks + 24n * hour).toString(),
+                (now - ageTicks).toString(), (now - ageTicks).toString()).run();
+        const direct = () => createBindingRequest(env(h), new Request(audience, {method: 'POST'}), {accountId: cred.accountId, kid: cred.key.kid},
+            {request: bindingRequest(cred.key, {accountId: cred.accountId, audience, human: 'github:4242', iat: Number(now / second)})}, clock);
+        const refusedAfter = async () => {
+            const error = await direct().then(() => null, (e: unknown) => e);
+            assert.ok(error instanceof Problem && error.status === 429 && error.code === 'capacity', String(error));
+            return error.retryAfter;
+        };
+        // A request exactly 24 h old has left the window and is not counted, so five are in it.
+        for (const age of [24n * hour, 23n * hour, 20n * hour, 10n * hour, 5n * hour, hour]) await seed(age);
+        assert.equal(await refusedAfter(), 3600, 'five in the window: the oldest (23 h) frees room in one hour');
+        await seed(23n * hour + 1n);
+        assert.equal(await refusedAfter(), 3600, 'six in the window: room opens only when the second oldest leaves');
+        await seed(23n * hour + 30n * 60n * second);
+        assert.equal(await refusedAfter(), 3600, 'seven in the window: the third oldest (23 h) still decides');
+        assert.equal(await rows(h, cred.accountId), 8, 'nothing was written by a refusal');
+        // One tick left rounds up to a whole second, never 0.
+        const tight = await start();
+        try {
+            const other = await tight.register();
+            for (const age of [24n * hour - 1n, hour, hour, hour, hour]) await tight.db.prepare(`INSERT INTO binding_requests (request_id,account_id,target_subject,kid,status,created_at,expires_at,updated_at,decided_at)
+                VALUES (?,?,'1',?,'cancelled',CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER))`)
+                .bind(crypto.randomUUID(), other.accountId, other.key.kid, (now - age).toString(), (now - age + 24n * hour).toString(), (now - age).toString(), (now - age).toString()).run();
+            const error = await createBindingRequest(env(tight), new Request(audience, {method: 'POST'}), {accountId: other.accountId, kid: other.key.kid},
+                {request: bindingRequest(other.key, {accountId: other.accountId, audience, human: 'github:1', iat: Number(now / second)})}, clock).then(() => null, (e: unknown) => e);
+            assert.ok(error instanceof Problem && error.status === 429 && error.retryAfter === 1, String((error as Problem)?.retryAfter));
+        } finally { await tight.close(); }
     } finally { await h.close(); }
 });
 
