@@ -257,6 +257,15 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   cleaning removed from the YouTube connect; the fallback tested on an empty string
   instead of on a visible character (2026-11-07). Raising the 400-unit bound survives:
   every current adapter cuts its name shorter, so the bound only guards future adapters.
+- Old actions stay readable: no sweep deletes or rewrites an `external_actions` row, and
+  Envoylet #95 relies on that (it forgets a remembered plan only on `404`).
+  `external-actions` `getExternalAction_OldActionsAfterCronSweeps_StillReadWithTheirOutcome`
+  ages a completed, an `unknown`, a failed, a rejected and a pending action by 400 days, runs
+  the real cron, and reads each with `GET /v1/external-actions/{id}`: `200`, the same status
+  (the pending one `expired`), content, receipt and failure, and nothing sent. Mutations in the
+  message sweep, each killed: deleting old terminal actions; clearing old receipts; deleting
+  expired pending plans (2026-11-11). Adding any retention for actions must change this test
+  and be announced on #365 first.
 
 ## Limits
 

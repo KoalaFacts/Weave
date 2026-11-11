@@ -271,3 +271,40 @@ test('getExternalAction_AnotherAgent_Unavailable', () => scenario(async ({h, pro
     assert.equal((await h.request(`/v1/external-actions/${actionId}/execute`, stranger, 'POST', {})).status, 404);
     assert.equal(provider.calls.length, 0);
 }));
+
+// Envoylet #95 reads remembered plans by ID long after its notices window and forgets one only on 404, so an action must
+// stay readable, with its status, receipt and failure, after every retention sweep the cron runs (KoalaFacts/Weave#365).
+test('getExternalAction_OldActionsAfterCronSweeps_StillReadWithTheirOutcome', () => scenario(async ({h, provider}) => {
+    const done = await approved(h);
+    await execute(h, done.agent, done.actionId);
+    const lost = await approved(h);
+    provider.respond = () => new Response('{}', {status: 502});
+    await execute(h, lost.agent, lost.actionId);
+    provider.respond = () => Response.json({reason: 'duplicate content'}, {status: 422});
+    const refused = await approved(h);
+    await execute(h, refused.agent, refused.actionId);
+    const {agent, humanId} = await ownedAgent(h);
+    const rejected = (await (await propose(h, agent)).json() as {actionId: string}).actionId;
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: rejected}), {ok: true});
+    const waiting = (await (await propose(h, agent)).json() as {actionId: string}).actionId;
+    const cases = [[done.agent, done.actionId, 'completed'], [lost.agent, lost.actionId, 'unknown'], [refused.agent, refused.actionId, 'failed'],
+        [agent, rejected, 'rejected'], [agent, waiting, 'expired']] as const;
+    const before = new Map<string, Record<string, unknown>>();
+    for (const [as, actionId] of cases) before.set(actionId, await h.ok(`/v1/external-actions/${actionId}`, as));
+    assert.equal(before.get(done.actionId)!.receipt, 'post-' + done.actionId, 'positive control: the receipt is recorded');
+
+    const shift = (BigInt(400 * 24 * 3600_000) * 10000n).toString();
+    await h.db.prepare(`UPDATE external_actions SET created_at=created_at-CAST(?1 AS INTEGER),expires_at=expires_at-CAST(?1 AS INTEGER),
+        updated_at=updated_at-CAST(?1 AS INTEGER),decided_at=decided_at-CAST(?1 AS INTEGER),dispatched_at=dispatched_at-CAST(?1 AS INTEGER),
+        completed_at=completed_at-CAST(?1 AS INTEGER)`).bind(shift).run();
+    assert.equal((await (await h.mf.getWorker()).scheduled({cron: '*/5 * * * *', scheduledTime: Date.now()})).outcome, 'ok');
+
+    for (const [as, actionId, status] of cases) {
+        const response = await h.request(`/v1/external-actions/${actionId}`, as);
+        assert.equal(response.status, 200, `${status} action still reads`);
+        const now = await response.json() as Record<string, unknown>, then = before.get(actionId)!;
+        assert.equal(now.status, status);
+        for (const field of ['actionId', 'content', 'receipt', 'failure', 'targetAccount']) assert.equal(now[field], then[field], `${status} ${field}`);
+    }
+    assert.equal(provider.calls.length, 3, 'reading old actions sends nothing');
+}));
