@@ -811,4 +811,9 @@ test("ownerMedia_OnlyTheOwnerSeesFilesTheActionNames",{timeout:90_000},async()=>
   const thawed=await preview(human,mediaId);
   assert.equal(thawed.status,200,"the same owner sees the file again once unfrozen");
   assert.ok(Buffer.from(await thawed.arrayBuffer()).equals(bytes));
+  await bucket.delete(agent.accountId+"/"+mediaId);
+  assert.equal((await preview(human,mediaId)).status,404,"stored bytes gone: 404, not an error page");
+  await bucket.put(agent.accountId+"/"+mediaId,bytes);
+  await humans.prepare("DELETE FROM external_media WHERE media_id=?").bind(mediaId).run();
+  assert.equal((await preview(human,mediaId)).status,404,"media record gone: the object alone is not served");
 });
