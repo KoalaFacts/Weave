@@ -14,6 +14,7 @@ const maxImageBytes = 1_000_000;
 export const appPasswordPattern = /^[a-z0-9]{4}(?:-[a-z0-9]{4}){3}$/;
 const handlePattern = /^(?=.{3,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 const didPattern = /^did:(?:plc:[a-z2-7]{24}|web:[a-z0-9.-]{3,40})$/;
+const recordKey = /^(?!\.{1,2}$)[A-Za-z0-9._:~-]+$/;
 
 async function boundedJson(response: Response): Promise<Record<string, unknown> | null> {
     const reader = response.body?.getReader();
@@ -138,7 +139,9 @@ export const bluesky: PublishingAdapter = {
         }
         const created = response.ok ? await boundedJson(response) : null;
         const uri = created?.uri;
-        if (typeof uri !== 'string' || uri.length > 256 || !uri.startsWith('at://' + session.did + '/app.bsky.feed.post/')) throw Error('Unconfirmed Bluesky response.');
+        const prefix = 'at://' + session.did + '/app.bsky.feed.post/';
+        // The receipt must be one post's AT-URI with an atproto record key, so apps can link it.
+        if (typeof uri !== 'string' || uri.length > 256 || !uri.startsWith(prefix) || !recordKey.test(uri.slice(prefix.length))) throw Error('Unconfirmed Bluesky response.');
         return {status: 'completed', receipt: uri};
     }
 };
