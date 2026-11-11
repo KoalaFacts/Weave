@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {randomBytes} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {build} from 'esbuild';
 import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
 import {createServer} from 'node:http';
@@ -56,6 +57,19 @@ test('every MCP tool publishes a closed input schema and an object output schema
         for(const key of tool.inputSchema.required)assert.ok(tool.inputSchema.properties[key],tool.name+' requires a declared '+key);
         assert.equal(tool.outputSchema?.type,'object',tool.name+' must declare an output schema');
     }
+});
+
+test('the action failure descriptions in OpenAPI and MCP name every code execute refuses with before dispatch',async()=>{
+    // Apps decide whether anything was sent from these codes, so each one execute can return must be documented.
+    const codes=[...new Set([...(await readFile('src/external-actions.ts','utf8')).matchAll(/refuse\('([a-z-]+)'\)/g)].map(m=>m[1]))];
+    assert.ok(codes.includes('credential-unreadable')&&codes.length>=5,'positive control: found '+codes.join(', '));
+    const spec=JSON.parse(await readFile('src/openapi.json','utf8'));
+    const descriptions={
+        openapi:spec.components.schemas.ExternalActionView.properties.failure.description as string,
+        ...Object.fromEntries((privateMcpTools as Schema[]).filter(t=>t.outputSchema.properties?.failure).map(t=>[t.name,t.outputSchema.properties.failure.anyOf[0].description as string]))
+    };
+    assert.deepEqual(Object.keys(descriptions).sort(),['execute_external_action','get_external_action','openapi','propose_external_action']);
+    for(const [where,text] of Object.entries(descriptions))for(const code of codes)assert.match(text,new RegExp('\\b'+code+'\\b'),where+' must name '+code);
 });
 
 test('real D1 results of every private tool conform to their published output schemas',async()=>{
