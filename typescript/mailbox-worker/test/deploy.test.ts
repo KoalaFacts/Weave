@@ -645,27 +645,3 @@ for(const [label,bucket] of [['another bucket',{...mediaBucket,bucket_name:'some
         await assert.rejects(deploy(f.options),/Unexpected existing resource bindings/);
         assert.equal(f.commands.length,0);
     });
-
-
-test('approved external-action-key D1 release rejects unexpected additive DDL before maintenance', async()=>{
-    const f=fixture({extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:'maintain',WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA:'true'}});
-    f.options.planSchema=async()=>({statements:['CREATE TABLE "unexpected" ("value" text);'],preservedUnmanagedTables:[]});
-    await assert.rejects(deploy(f.options),/approved external_action_keys schema/i);
-    assert.equal(f.commands.length,0,'an unapproved DDL plan must never pause the existing live Worker');
-    assert.equal(f.closed,true);
-});
-
-
-test('approved external-action-key schema accepts exactly the reviewed generated table and index', async()=>{
-    const {latestSchemaStatements}=await import('../scripts/latest-schema.ts');
-    const statements=(await latestSchemaStatements()).filter(sql=>/^(?:CREATE TABLE [`"]external_action_keys[`"]|CREATE UNIQUE INDEX "external_action_keys_action")/.test(sql));
-    assert.equal(statements.length,2);
-    const {assertExternalActionKeysSchemaPlan}=await import('../scripts/approved-external-action-keys.ts');
-    assert.doesNotThrow(()=>assertExternalActionKeysSchemaPlan({statements,preservedUnmanagedTables:[]}));
-    for(const altered of [
-        [statements[0]],
-        [...statements,'CREATE TABLE "unrelated" (id integer);'],
-        [statements[0].replace('request_hash', 'unapproved_hash'),statements[1]],
-        [statements[0],statements[1].replace('UNIQUE ', '')]
-    ]) assert.throws(()=>assertExternalActionKeysSchemaPlan({statements:altered,preservedUnmanagedTables:[]}),/approved external_action_keys schema/i);
-});

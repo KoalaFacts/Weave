@@ -6,7 +6,6 @@ import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
 import { createMissingSchema, planLatestSchema, type StorageDatabase } from './latest-schema.ts';
 import { prepareCompletedDeployment } from './completed-deployment.ts';
-import { assertExternalActionKeysSchemaPlan } from './approved-external-action-keys.ts';
 import { verifyCompletedMigration } from './completed-migration.ts';
 
 interface WorkerConfig {
@@ -73,9 +72,6 @@ export async function buildArtifacts(root: string){
 }
 export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory,openDatabase=openRemoteDatabase,buildBundles=buildArtifacts,verifyMigration=verifyCompletedMigration,applySchema=createMissingSchema,planSchema=planLatestSchema}: DeployOptions={}){
     const databaseMode=env.WEAVE_DEPLOY_DATABASE_MODE??'maintain';
-    const approvedKeys=env.WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA;
-    if (approvedKeys!==undefined&&!['true','false'].includes(approvedKeys)) throw Error('Invalid approved external_action_keys schema intent.');
-    if (approvedKeys==='true'&&databaseMode!=='maintain') throw Error('Approved external_action_keys schema requires protected maintain mode.');
     if(databaseMode!=='maintain'&&databaseMode!=='completed-only')throw Error('Unknown database mode; use maintain or completed-only.');
     const base=JSON.parse(await readFile(join(root,'wrangler.jsonc'),'utf8'));
     const config: ReturnType<typeof deploymentConfig> & {
@@ -309,19 +305,13 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         const tables=(await connection.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all<{name:string}>()).results.map(row=>row.name);
         if(!tables.includes('mailbox_records')||!tables.includes('mailbox_revision')||!tables.includes('mailbox_guard'))throw Error('Expected existing mailbox storage; no mutation attempted.');
         const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,planSchema):undefined;
-        let approvedPreflight: string[]|undefined;
         // Read-only and before maintenance: an unconverted database never pauses the service.
         if(!completed){
             report.conversion=await verifyMigration(connection.db);
             // Reject incompatible existing D1 shape BEFORE uploading the maintenance
             // Worker. Plan again under maintenance before any schema application:
             // this read-only preflight does not replace the post-pause verification.
-            const preview=await planSchema(connection.db);
-            if (approvedKeys==='true'){
-                if(firstPartyBootstrap)throw Error('Approved external_action_keys schema cannot share an OAuth bootstrap.');
-                assertExternalActionKeysSchemaPlan(preview);
-                approvedPreflight=preview.statements;
-            }
+            await planSchema(connection.db);
             await save();
         }
         // Completed-only changes no schema or data, so the version already serving
@@ -339,16 +329,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             Object.assign(report,await completed.confirm());await save();
         }else{
             const plan=await planSchema(connection.db);report.schemaPlan=plan;await save();
-            if(approvedKeys==='true'){
-                assertExternalActionKeysSchemaPlan(plan);
-                if(JSON.stringify(plan.statements)!==JSON.stringify(approvedPreflight))
-                    throw Error('Approved external_action_keys DDL changed after maintenance preflight; no schema statements applied.');
-                // Execute the two preflighted statements, rather than replanning inside a generic schema applier.
-                // Any other pending schema work is refused before maintenance; no DML is permitted here.
-                const result=await connection.db.batch(plan.statements.map(sql=>connection!.db.prepare(sql)));
-                if(!Array.isArray(result)||result.length!==2||result.some(item=>item?.success!==true))
-                    throw Error('Approved external_action_keys schema batch not confirmed; maintenance retained.');
-            }else await applySchema(connection.db);
+            await applySchema(connection.db);
             if((await planSchema(connection.db)).statements.length)throw Error('Schema verification left unapplied statements; maintenance retained.');
         }
         phase='database validated; '+held+'; uploading recovery';await save();
