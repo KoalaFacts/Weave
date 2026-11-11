@@ -802,4 +802,13 @@ test("ownerMedia_OnlyTheOwnerSeesFilesTheActionNames",{timeout:90_000},async()=>
   assert.equal((await preview(other,mediaId)).status,404,"another human sees nothing");
   assert.equal((await preview(human,unnamed)).status,404,"media the action does not name is not served");
   assert.equal((await shared.mf.dispatchFetch(issuer+"/account/media/"+actionId+"/"+mediaId)).status,404,"no session, no file");
+  const humans=await db();
+  await humans.prepare("UPDATE humans SET frozen_at=updated_at WHERE human_id=?").bind(human.humanId).run();
+  try{
+    const frozen=await preview(human,mediaId);
+    assert.equal(frozen.status,404,"a frozen owner's still-signed session gets no file");
+  }finally{await humans.prepare("UPDATE humans SET frozen_at=NULL WHERE human_id=?").bind(human.humanId).run();}
+  const thawed=await preview(human,mediaId);
+  assert.equal(thawed.status,200,"the same owner sees the file again once unfrozen");
+  assert.ok(Buffer.from(await thawed.arrayBuffer()).equals(bytes));
 });

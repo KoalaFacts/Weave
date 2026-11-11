@@ -135,8 +135,9 @@ but not yet verified against a real account.
 - auth-worker page and form tests, and three two-Worker tests: connecting with a key
   stores and lists the channels without rendering the key; a stale session and the
   key-less `/account` form connect nothing; a preview is served only to the owner and
-  only for files the action names. Removing the "named by this action" check fails
-  that test.
+  only for files the action names, and not to that owner while frozen (served again
+  once unfrozen). Removing the "named by this action" check or the frozen-owner check
+  fails that test.
 
 - Publication tracking (`test/postiz.test.ts`, the sweep run in this process against a
   fake Postiz listing, plus one run of the Worker's own cron):
