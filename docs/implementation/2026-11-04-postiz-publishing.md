@@ -136,8 +136,9 @@ but not yet verified against a real account.
   stores and lists the channels without rendering the key; a stale session and the
   key-less `/account` form connect nothing; a preview is served only to the owner and
   only for files the action names, and not to that owner while frozen (served again
-  once unfrozen). Removing the "named by this action" check or the frozen-owner check
-  fails that test.
+  once unfrozen); a file whose stored bytes or media record are gone is 404. Removing
+  the "named by this action" check, the frozen-owner check, the missing-object check or
+  the missing-record check fails that test.
 
 - Publication tracking (`test/postiz.test.ts`, the sweep run in this process against a
   fake Postiz listing, plus one run of the Worker's own cron):
