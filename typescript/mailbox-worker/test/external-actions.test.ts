@@ -331,6 +331,11 @@ test('proposeExternalAction_TwentyWaiting_429UntilOneIsExecutedRejectedOrExpired
     };
     await refused('the 21st waiting plan');
     assert.equal(await stored(), 20, 'a refusal writes nothing');
+    const unknownCredential = await h.request('/v1/external-actions', agent, 'POST', {credentialRef: 'missing', operation: 'publish_text', content: 'Wrong account'});
+    assert.equal(unknownCredential.status, 400, 'a plan that could never be admitted is refused for its fields first, so the caller fixes it instead of waiting for a place');
+    assert.equal((await unknownCredential.json() as {field?: string}).field, 'credentialRef');
+    const blank = await propose(h, agent, '   ');
+    assert.equal(blank.status, 400, 'blank content is refused before the waiting-plan count');
 
     const other = await ownedAgent(h);
     assert.equal((await propose(h, other.agent)).status, 200, 'the limit is per agent');

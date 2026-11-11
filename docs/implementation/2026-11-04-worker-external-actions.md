@@ -109,3 +109,6 @@ GitHub with no effect; a credential rotated after the page was rendered is
   executed or expires; an expired one frees its place before the cleanup sweep. Pinned by
   `proposeExternalAction_TwentyWaiting_429UntilOneIsExecutedRejectedOrExpired` (2026-11-11);
   mutations killed: `approved` not counted, expiry ignored, `>` for `>=`, the count across agents.
+  Field and content checks run first: a full agent's plan with an unknown `credentialRef` or
+  blank content gets `400 invalid`, not `429`, so the caller fixes it rather than waiting
+  (mutation killed: the count moved before the field checks).
