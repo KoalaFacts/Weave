@@ -76,7 +76,7 @@ Miniflare's `outboundService`.
 
 ## Verification
 
-`test/external-actions.test.ts` (25 tests) runs against the built Worker and local
+`test/external-actions.test.ts` (30 tests) runs against the built Worker and local
 D1: exactly-once after approval with an idempotent re-execute; unowned agent;
 missing provider; invalid input including a caller-supplied account; wrong digest
 and credential rotation before confirmation; stale owner authentication; another
@@ -90,6 +90,11 @@ Removing the digest re-check at execute fails the content, operation and expiry
 edits; the contract-revision edit fails only when both the contract-revision check
 and the digest re-check are removed, since the digest also covers the revision. The
 OpenAPI route test covers the three new paths.
+Added later (2026-11-12): the owner changing after approval (the agent moved to
+another human, or left unowned) fails with `owner-changed` and nothing sent, on the
+first and a repeated execute. No product path moves a bound agent today, so this pins
+the dispatch re-check itself. Dropping the approver comparison fails both cases;
+refusing only an unowned agent fails the other-human case.
 
 In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
 content in `<pre>`, verified account, credential revision, bound form tokens) and

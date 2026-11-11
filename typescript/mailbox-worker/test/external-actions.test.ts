@@ -181,7 +181,25 @@ test('executeExternalAction_OwnerFrozenAfterApproval_FailsWithoutSending', () =>
     assert.equal(provider.calls.length, 0);
 }));
 
-test('executeExternalAction_ApprovalExpired_DoesNotSend', () => scenario(async ({h, provider}) => {
+// No product path moves a bound agent today; the dispatch re-check is what keeps an approval from outliving its approver's ownership.
+for (const change of ['anotherHuman', 'unowned'] as const)
+    test(`executeExternalAction_OwnerChangedAfterApproval_${change}_FailsWithoutSending`, () => scenario(async ({h, provider}) => {
+        const {agent, actionId} = await approved(h);
+        const next = change === 'anotherHuman' ? (await ownedAgent(h)).humanId : null;
+        await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(next, agent.accountId).run();
+
+        const result = await execute(h, agent, actionId);
+        const again = await execute(h, agent, actionId);
+
+        assert.equal(result.status, 'failed');
+        assert.equal(result.failure, 'owner-changed');
+        assert.equal(result.dispatchedAt, null);
+        assert.equal(again.status, 'failed');
+        assert.equal(again.failure, 'owner-changed');
+        assert.equal(provider.calls.length, 0);
+    }));
+
+test('executeExternalAction_ApprovalExpired_DoesNotSend',() => scenario(async ({h, provider}) => {
     const {agent, actionId} = await approved(h);
     await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind((BigInt(ticks()) - 1n).toString(), actionId).run();
     assert.equal((await execute(h, agent, actionId)).status, 'expired');
