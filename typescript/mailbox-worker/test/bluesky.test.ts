@@ -144,8 +144,8 @@ test('executeBlueskyPost_Text_PostsOnceAsTheVerifiedAccount', () => scenario(asy
     assert.deepEqual(b.calls, [], 'approval alone sends nothing');
     const first = await execute(h, agent, actionId), again = await execute(h, agent, actionId);
     assert.equal(first.status, 'completed');
-    assert.match(first.receipt, new RegExp(`^at://${did}/app\\.bsky\\.feed\\.post/`));
-    assert.deepEqual(again.receipt, first.receipt);
+    assert.deepEqual([first.receipt, again.receipt], [`at://${did}/app.bsky.feed.post/3kabcde2`, `at://${did}/app.bsky.feed.post/3kabcde2`],
+        'the receipt is the created post\'s AT-URI, unchanged');
     assert.deepEqual(methods(b), ['com.atproto.server.createSession', 'com.atproto.repo.createRecord'], 'posted exactly once');
     const {repo, collection, record} = JSON.parse(b.calls[1].body.toString());
     assert.deepEqual([repo, collection, record.$type, record.text], [did, 'app.bsky.feed.post', 'app.bsky.feed.post', 'New beat out now https://hscbeats.example #HSC']);
@@ -201,6 +201,24 @@ test('executeBlueskyPost_MediaUploadRefused_FailedWithNoPost', () => scenario(as
     const result = await execute(h, agent, actionId);
     assert.deepEqual([result.status, result.failure], ['failed', 'provider-rejected: media-upload-refused']);
     assert.ok(!methods(b).includes('com.atproto.repo.createRecord'));
+}));
+
+test('executeBlueskyPost_CreatedUriNotOneRecordKey_UnknownAndNeverResent', async () => {
+    for (const rkey of ['', '3kabc/extra', '3kabc?x=1', '3kabc#x', '.', '..', 'a b', 'a'.repeat(300)]) await scenario(async ({h, b, env}) => {
+        b.create = () => Response.json({uri: `at://${did}/app.bsky.feed.post/${rkey}`, cid: 'bafyrei'});
+        const {agent, actionId} = await approvedPost(h, env, {text: 'x', media: []});
+        assert.equal((await execute(h, agent, actionId)).status, 'unknown', `record key ${JSON.stringify(rkey)} does not confirm a post`);
+        assert.equal((await execute(h, agent, actionId)).status, 'unknown');
+        assert.equal(methods(b).filter(m => m === 'com.atproto.repo.createRecord').length, 1);
+    });
+});
+
+test('executeBlueskyPost_CreatedUriWithRecordKeyPunctuation_Completed', () => scenario(async ({h, b, env}) => {
+    const uri = `at://${did}/app.bsky.feed.post/self.v1:a~b_c-d`;
+    b.create = () => Response.json({uri, cid: 'bafyrei'});
+    const {agent, actionId} = await approvedPost(h, env, {text: 'x', media: []});
+    const result = await execute(h, agent, actionId);
+    assert.deepEqual([result.status, result.receipt], ['completed', uri]);
 }));
 
 test('executeBlueskyPost_ServerErrorAtCreate_UnknownAndNeverResent', () => scenario(async ({h, b, env}) => {

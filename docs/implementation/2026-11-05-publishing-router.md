@@ -217,6 +217,18 @@ Neither the authorization server, the owner page nor the RPC surface changes.
 - `test/postiz.test.ts` and `test/bluesky.test.ts` run their connect, plan and
   dispatch tests through the router. Bluesky's limits are checked through the router,
   and so is the exact-field rule.
+- Bluesky receipts (2026-11-11): a created post counts as completed only when the returned
+  URI is `at://<the session DID>/app.bsky.feed.post/<record key>`, where the record key uses
+  atproto record-key syntax (`A-Z a-z 0-9 . _ : ~ -`, not `.` or `..`) and the URI is at most 256
+  characters. Before, any URI with that prefix was recorded, including an empty key or one with
+  a further path, query or fragment. Anything else after a 200 is `unknown` and never sent again.
+  Apps such as Envoylet build post links from the receipts of the native adapters, so their shapes
+  are a contract: `bluesky` `executeBlueskyPost_Text_PostsOnceAsTheVerifiedAccount` pins the exact
+  receipt, `executeBlueskyPost_CreatedUriNotOneRecordKey_UnknownAndNeverResent` the refusals and
+  `executeBlueskyPost_CreatedUriWithRecordKeyPunctuation_Completed` the allowed punctuation. X,
+  LinkedIn, Telegram and YouTube receipts were already pinned exactly. Mutations, each killed:
+  dropping the `.`/`..` lookahead, narrowing it to only `.` or only `..`, dropping the 256 bound,
+  widening the pattern to `/ ? #`, or letting it match an empty key.
 - auth-worker portable tests:
   - the generic form reader takes the token and then the fields, and refuses: empty,
     misplaced, duplicate or badly named fields; too many fields; another form's token;
