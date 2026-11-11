@@ -118,7 +118,7 @@ The scheduled Weave task (publishing router and governed actions, `typescript/ma
 [issue #365](https://github.com/KoalaFacts/Weave/issues/365), the channel with Envoylet. This section holds its run
 log. Records above stay the evidence for what each change delivered.
 
-Last docs housekeeping: 2026-11-08, #381 (`7763791`).
+Last docs housekeeping: 2026-11-12 (Sydney), this PR.
 
 ### Items
 
@@ -142,7 +142,7 @@ Last docs housekeeping: 2026-11-08, #381 (`7763791`).
 | An agent at its 5-per-24-hours binding-request limit got `429` with no `Retry-After`, so Envoylet's owner-binding panel (#70) could not say how long to wait | done (#412, `de7acdb`): the `429` sets `Retry-After` to the seconds until one request leaves the rolling window |
 | An agent at its 10-per-24-hours key-addition limit got `429` with no `Retry-After` | done (#413, `2d94b8a`): the `429` sets `Retry-After` to the seconds until one addition leaves the window; the 1000-row total sets none |
 | Seven hourly-limit tests in `agent-limits.test.ts` (unclaimed and claimed send, contact-request and token counts, the previous-hour window) could fail when they spanned the end of a UTC hour, as #394's recovery test did | done (#414, test only): they wait out the last minute of an hour first, through the `clearOfUtcHourEnd` helper now shared from `test/harness.ts` |
-| `submit-nuget` check (NETSDK1045) | open: GitHub's Automatic Dependency Submission (not a workflow in this repository) still fails with NETSDK1045. A repository-side candidate exists and is unverified: [#372's diagnosis](https://github.com/KoalaFacts/Weave/pull/372#issuecomment-6717426980) traces the automatic setup reading `global.json` (`10.0.400`, `rollForward: latestMajor`) as an empty version and installing .NET 10, so selecting a compatible SDK explicitly in `global.json` might fix it; that must be verified in both the automatic submission and the locked restore/build/tests. Turning it off in Code Security settings is the owner's other route; target frameworks and gates stay |
+| `submit-nuget` check (NETSDK1045) | open: GitHub's Automatic Dependency Submission (not a workflow here) fails with NETSDK1045. Unverified repository-side candidate ([#372's diagnosis](https://github.com/KoalaFacts/Weave/pull/372#issuecomment-6717426980)): the automatic setup reads `global.json` (`10.0.400`, `rollForward: latestMajor`) as an empty version and installs .NET 10, so selecting a compatible SDK explicitly in `global.json` might fix it; verify it in the automatic submission and the locked restore/build/tests. Otherwise the owner turns it off in Code Security settings; target frameworks and gates stay |
 
 ### Run log
 
