@@ -237,7 +237,7 @@ test('addKey_DailyAdditionsLimit_RetryAfterIsWhenTheWindowFreesAnAddition', asyn
             const refused = await problem(await addKey(h, a, agentKey()), 429, 'capacity');
             return Number(refused.headers.get('Retry-After'));
         };
-        // The registration key (now), a row exactly 24 h old (not counted) and eight rows 30 min from leaving the window.
+        // The registration key (now), a row 26 h old (not counted) and eight rows 30 min from leaving the window.
         const now = nowTicks();
         await revokedRows(h, a.accountId, 1, now - dayTicks - 2n * ticksPerHour);
         await revokedRows(h, a.accountId, 8, now - dayTicks + 30n * minute);
