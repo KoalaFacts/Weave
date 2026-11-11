@@ -19,7 +19,7 @@ Precedence: trigger hard limits → `agent-harness/projects/weave.md` → [AGENT
 
 ## Setup
 
-- Node 24+ (the default image may carry Node 22: download the official Node 24 tarball, check its SHA-256 against `SHASUMS256.txt`, and put it first on `PATH` in the scratchpad). .NET 11 SDK and .NET 10 runtime only for C# changes.
+- Node 24+ (the default image may carry Node 22: use `/opt/node24/bin` when present (2026-11 image), otherwise download the official Node 24 tarball, check its SHA-256 against `SHASUMS256.txt`, and put it first on `PATH` in the scratchpad). .NET 11 SDK and .NET 10 runtime only for C# changes. In the cloud sandbox the SDK hosts (`dot.net`, `builds.dotnet.microsoft.com`) were refused by the egress proxy on 2026-11-11 while `api.nuget.org` worked: a C# change made there cannot pass gate step 3, so leave it to a run that has the SDK rather than pushing it unbuilt.
 - Read: AGENTS.md (binding), ARCHITECTURE.md, `typescript/mailbox-worker/README.md`, the records under `docs/implementation/` for the area (start with `2026-11-05-publishing-router.md` and `2026-11-05-action-approval-page.md`), and [check-rules](../check-rules/SKILL.md) and [adversarial-review](../adversarial-review/SKILL.md) (apply both before committing).
 - Focused mailbox-worker runs: `npm run test:files -- <files>` rebuilds `dist/` first; never test a mutation against a stale bundle.
 
@@ -31,6 +31,8 @@ Run on the final source of every PR (after main is merged in):
 2. `typescript/auth-worker`: `npm ci`, `npm run build`, `npm run typecheck`, `npm run test:portable`, `npm run test:workerd`.
 3. C# changes: AGENTS.md's build/test commands (`python3 -m unittest discover -s scripts/tests -v`, `dotnet restore csharp/Weave.slnx --locked-mode`, `dotnet build csharp/Weave.slnx --no-restore -c Release`, `dotnet test --solution csharp/Weave.slnx --no-build -c Release`).
 4. Docs checker: `cd scripts/docs && npm ci && npm run typecheck && npm test && npm run check`.
+
+Before blaming an advisory for a `Vulnerability Audit` or `Code Quality` failure, check the committed `packages.lock.json` versions against NuGet's feed (`https://api.nuget.org/v3/vulnerabilities/index.json`); on 2026-11-10 those jobs failed on a Markdown-only PR (#402) while no locked version was in an advisory range, so the cause was elsewhere. Name the package from the run's `security-audit` artifact before claiming a cause.
 
 Known CI exception: `submit-nuget` fails on every PR and on main with NETSDK1045; comment once per PR that it is not the PR's and do not count it. A job cancelled by runner infrastructure (for example an apt/Playwright install timeout) may be re-run once.
 
