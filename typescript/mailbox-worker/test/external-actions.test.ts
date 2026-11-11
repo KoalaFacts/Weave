@@ -308,3 +308,46 @@ test('getExternalAction_OldActionsAfterCronSweeps_StillReadWithTheirOutcome', ()
     }
     assert.equal(provider.calls.length, 3, 'reading old actions sends nothing');
 }));
+
+test('proposeExternalAction_TwentyWaiting_429UntilOneIsExecutedRejectedOrExpired', () => scenario(async ({h, provider}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const ids: string[] = [];
+    for (let i = 0; i < 20; i++) {
+        const response = await propose(h, agent, `Post ${i}`);
+        assert.equal(response.status, 200, `proposal ${i} is admitted`);
+        ids.push((await response.json() as {actionId: string}).actionId);
+    }
+    const stored = async () => (await h.db.prepare('SELECT count(*) n FROM external_actions WHERE account_id=?').bind(agent.accountId).first<number>('n'));
+    const refused = async (why: string) => {
+        const response = await propose(h, agent, 'One too many');
+        assert.equal(response.status, 429, why);
+        assert.equal((await response.json() as {code: string}).code, 'capacity', why);
+        assert.equal(response.headers.get('Retry-After'), null, `${why}: a waiting plan can leave at any time, so no wait is promised`);
+    };
+    const admitted = async (why: string) => {
+        const response = await propose(h, agent, 'Room again');
+        assert.equal(response.status, 200, why);
+        return (await response.json() as {actionId: string}).actionId;
+    };
+    await refused('the 21st waiting plan');
+    assert.equal(await stored(), 20, 'a refusal writes nothing');
+
+    const other = await ownedAgent(h);
+    assert.equal((await propose(h, other.agent)).status, 200, 'the limit is per agent');
+
+    const shown = (await pendingFor(h, humanId)).find(action => action.actionId === ids[0])!;
+    assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: ids[0], planDigest: shown.planDigest}), {ok: true});
+    await refused('an approved plan that has not been executed still waits');
+    assert.equal((await execute(h, agent, ids[0])).status, 'completed');
+    const refill = await admitted('an executed plan frees its place');
+    await refused('full again');
+
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: ids[1]}), {ok: true});
+    await admitted('a rejected plan frees its place');
+    await refused('full again');
+
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind(ticks(), refill).run();
+    await admitted('an expired plan frees its place, without the cleanup sweep');
+    await refused('full again');
+    assert.equal(provider.calls.length, 1);
+}));

@@ -104,3 +104,8 @@ GitHub with no effect; a credential rotated after the page was rendered is
 - The Worker is the trusted execution path; a real provider will receive a
   decrypted credential there.
 - No notification tells the owner an action is waiting (#277); they must open `/account`.
+- An agent can have at most 20 actions `pending` or `approved` and unexpired (`429 capacity`,
+  no `Retry-After`, because a plan can leave at any time). An approved plan counts until it is
+  executed or expires; an expired one frees its place before the cleanup sweep. Pinned by
+  `proposeExternalAction_TwentyWaiting_429UntilOneIsExecutedRejectedOrExpired` (2026-11-11);
+  mutations killed: `approved` not counted, expiry ignored, `>` for `>=`, the count across agents.
