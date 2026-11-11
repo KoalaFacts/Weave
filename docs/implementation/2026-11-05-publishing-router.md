@@ -169,6 +169,10 @@ Neither the authorization server, the owner page nor the RPC surface changes.
 
 ## Verification
 
+- mailbox-worker `test/mcp-tool-contract.test.ts`: the `failure` description of `ExternalActionView` in OpenAPI and of
+  the three external-action MCP tools names every code `execute` refuses with before dispatch, read from
+  `src/external-actions.ts` (`credential-changed`, `credential-unreadable`, `owner-changed`, `owner-frozen`,
+  `plan-changed`). `credential-unreadable` was missing from both. Mutations killed: either description without it.
 - mailbox-worker `test/publishing.test.ts`:
   - the post shape;
   - Postiz settings and schedule rules, and their description;
