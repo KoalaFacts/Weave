@@ -14,9 +14,9 @@ inputs:
     required: false
     default: '11.x'
   dotnet-next-quality:
-    description: 'SDK quality channel for the .NET 11 SDK until it reaches GA'
+    description: 'SDK quality channel for the .NET 11 SDK (GA since 2026-11)'
     required: false
-    default: 'preview'
+    default: 'ga'
   cache:
     description: 'Enable NuGet package caching'
     required: false
