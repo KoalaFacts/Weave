@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { build } from 'esbuild';
 import { start, testGrant } from './harness.ts';
-import { createMediaUpload, uploadUrlLifetimeMs } from '../src/external-media.ts';
+import { createMediaUpload, mediaUrlLifetimeMs, signedMediaUrl, uploadUrlLifetimeMs } from '../src/external-media.ts';
 import type { Env } from '../src/database.ts';
 // Evaluate the bundled production module, as the other private-tool tests do.
 const built = await build({entryPoints: ['src/remote-private.ts'], bundle: true, write: false, platform: 'node', format: 'esm', logLevel: 'silent'});
@@ -123,6 +123,37 @@ test('signedUpload_TamperedExpiredOrMismatched_NothingStored', () => scenario(as
     assert.equal(await objects(h), 0);
     assert.equal(await h.db.prepare('SELECT count(*) n FROM external_media').first<number>('n'), 0);
     assert.equal((await mcp(env, agent.accountId, grantId, 'create_media_upload', {contentType: 'image/png', bytes: 1})).status, 401);
+}));
+
+test('signedMediaUrl_ExpiredAlteredOrExtraParameter_404', () => scenario(async ({h, env}) => {
+    // The download URL Postiz fetches serves the bytes only while its signature, agent, media ID and
+    // expiry all match, and nothing else is accepted in the query.
+    const {agent, grantId} = await owned(h);
+    const file = randomBytes(2048);
+    const minted = (await mcp(env, agent.accountId, grantId, 'create_media_upload', {contentType: 'image/png', bytes: file.length})).body;
+    assert.equal((await put(h, minted.uploadUrl, file, 'image/png')).status, 200);
+    const url = await signedMediaUrl(env, agent.accountId, minted.mediaId, Date.now());
+    const served = await h.mf.dispatchFetch(url);
+    assert.equal(served.status, 200, 'positive control');
+    assert.deepEqual([served.headers.get('Content-Type'), served.headers.get('Cache-Control'), served.headers.get('Content-Disposition')],
+        ['image/png', 'no-store', 'attachment']);
+    assert.ok(Buffer.from(await served.arrayBuffer()).equals(file));
+
+    const with_ = (name: string, value: string) => { const changed = new URL(url); changed.searchParams.set(name, value); return changed.href; };
+    const without = (name: string) => { const changed = new URL(url); changed.searchParams.delete(name); return changed.href; };
+    const expired = await signedMediaUrl(env, agent.accountId, minted.mediaId, Date.now() - mediaUrlLifetimeMs - 1000);
+    const later = String(Number(new URL(url).searchParams.get('expires')) + 60_000);
+    const otherMedia = url.replace(/external-media\/[0-9a-f-]{36}/, 'external-media/' + crypto.randomUUID());
+    for (const [name, target] of [['expired', expired], ['expiry extended', with_('expires', later)], ['other media', otherMedia],
+        ['no signature', without('signature')], ['no account', without('account')], ['extra parameter', url + '&x=1']] as const) {
+        const response = await h.mf.dispatchFetch(target);
+        assert.equal(response.status, 404, name);
+        assert.equal((await response.json() as {code: string}).code, 'unavailable', name);
+    }
+
+    // A file no longer recorded is not served, even through a URL that is still valid.
+    await h.db.prepare('DELETE FROM external_media WHERE media_id=?').bind(minted.mediaId).run();
+    assert.equal((await h.mf.dispatchFetch(url)).status, 404, 'deleted record');
 }));
 
 test('createMediaUpload_InvalidArguments_Refused', () => scenario(async ({h, env}) => {

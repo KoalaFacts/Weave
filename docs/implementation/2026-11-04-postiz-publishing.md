@@ -127,6 +127,11 @@ but not yet verified against a real account.
   post; a 502, a lost response and a malformed body are `unknown` and never re-sent.
   Dropping the channel-type check, the signature check or the unknown handling fails
   five tests.
+- `test/agent-credentials-media.test.ts` `signedMediaUrl_ExpiredAlteredOrExtraParameter_404`:
+  a valid signed URL serves the exact bytes `no-store` as an attachment; an expired
+  URL, an extended expiry, another media ID, a missing signature or agent, an extra
+  query parameter and a deleted media record are each `404 unavailable`. Ignoring the
+  expiry, the parameter count or the signature fails it.
 - auth-worker page and form tests, and three two-Worker tests: connecting with a key
   stores and lists the channels without rendering the key; a stale session and the
   key-less `/account` form connect nothing; a preview is served only to the owner and
