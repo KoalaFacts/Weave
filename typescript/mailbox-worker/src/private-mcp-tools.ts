@@ -197,7 +197,8 @@ export const privateMcpTools = [
     tool('get_my_media', 'Read one of your uploaded media records, including the sha256 that content must name.',
         'weave:actions.read', {mediaId:id('mediaId from create_media_upload.')}, ['mediaId'], media, {readOnly:true}),
     tool('propose_external_action', 'Propose one action, such as a post, through one of your credentials. Nothing is sent: your human owner reviews the exact content and the verified account on their Weave account page (approvalUrl links straight to this action) and approves or rejects it. '
-        + 'Only an agent with an owner can propose. The plan expires after 1 hour. Retrying creates another plan that needs its own approval.',
+        + 'Only an agent with an owner can propose. The plan expires after 1 hour. Retrying creates another plan that needs its own approval. '
+        + 'At most 20 of your plans can be pending or approved at once (429 capacity); one leaves when it is executed, rejected or expires.',
         'weave:actions.write', {credentialRef:{...str(64, 'One of your live credentials.'), minLength:1, pattern:'^[A-Za-z0-9._:-]{1,64}$'},
             operation:{...str(64, "An operation the credential's provider supports, e.g. publish_text."), minLength:1},
             content:{...str(8000, 'The full content to publish, at most 8000 characters, shown to your owner verbatim.'), minLength:1}},
