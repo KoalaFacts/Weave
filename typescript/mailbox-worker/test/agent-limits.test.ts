@@ -228,6 +228,34 @@ test('addKey_EleventhKeyRowInDay_429', async () => {
     } finally { await h.close(); }
 });
 
+test('addKey_DailyAdditionsLimit_RetryAfterIsWhenTheWindowFreesAnAddition', async () => {
+    const h = await start({bindings});
+    try {
+        const a = await h.register();
+        const second = 10_000_000n, minute = 60n * second;
+        const retryAfter = async () => {
+            const refused = await problem(await addKey(h, a, agentKey()), 429, 'capacity');
+            return Number(refused.headers.get('Retry-After'));
+        };
+        // The registration key (now), a row exactly 24 h old (not counted) and eight rows 30 min from leaving the window.
+        const now = nowTicks();
+        await revokedRows(h, a.accountId, 1, now - dayTicks - 2n * ticksPerHour);
+        await revokedRows(h, a.accountId, 8, now - dayTicks + 30n * minute);
+        // One counted key request created 10 min before the rows is the oldest addition, so it decides.
+        const key = agentKey(), stamp = (now - dayTicks + 20n * minute).toString();
+        await h.db.prepare(`INSERT INTO key_requests(request_id,account_id,kid,public_jwk,endorsed_by,status,created_at,expires_at,updated_at,decided_at)
+            VALUES(?,?,?,?,?,'rejected',CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER))`)
+            .bind(crypto.randomUUID(), a.accountId, key.kid, JSON.stringify(key.publicJwk), a.key.kid, stamp, (BigInt(stamp) + dayTicks).toString(), stamp, stamp).run();
+        const first = await retryAfter();
+        assert.ok(first > 1170 && first <= 1200, 'ten counted, the key request (20 min left) frees room: ' + first);
+        // Eleven counted: room opens only when the second oldest (a row, 30 min left) leaves.
+        await revokedRows(h, a.accountId, 1, now - 60n * second);
+        const next = await retryAfter();
+        assert.ok(next > 1770 && next <= 1800, 'eleven counted: ' + next);
+        assert.equal(await keyRows(h, a.accountId), 11, 'a refusal writes no key row');
+    } finally { await h.close(); }
+});
+
 test('addKey_ConfirmedKeyRequestCountsOnceAgainstDailyAdditions', async () => {
     const h = await start({bindings});
     try {
@@ -278,7 +306,8 @@ test('addKey_ThousandKeyRows_429', async () => {
         const a = await h.register();
         await revokedRows(h, a.accountId, 999, nowTicks() - dayTicks - ticksPerHour);
         assert.equal(await keyRows(h, a.accountId), 1000);
-        await problem(await addKey(h, a, agentKey()), 429, 'capacity');
+        const refused = await problem(await addKey(h, a, agentKey()), 429, 'capacity');
+        assert.equal(refused.headers.get('Retry-After'), null, 'the row total is not time-bound');
         assert.equal(await keyRows(h, a.accountId), 1000);
     } finally { await h.close(); }
 });

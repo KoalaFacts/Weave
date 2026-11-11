@@ -81,6 +81,15 @@ It is not repeated here. The preceding slice is the
   boundary, newest instead of oldest, floor instead of ceiling, no header. The
   20-pending-per-human limit still sets none: a pending request can leave
   earlier than its expiry.
+  The 10-key-additions limit sets it the same way (2026-11-11): the oldest
+  counted addition, key row or unconfirmed key request, whose leaving brings the
+  count under 10. An owner confirming a counted request first moves it to its
+  new key row, so the value is the earliest time and a retry may get another
+  `429`. The 1000-key-row total is not time-bound and sets none.
+  `addKey_DailyAdditionsLimit_RetryAfterIsWhenTheWindowFreesAnAddition` pins it
+  (a key request as the oldest, ten and eleven counted, a row exactly 24 hours
+  old not counted); mutations killed: key requests left out of the order,
+  `OFFSET 0`, a header on the row-total refusal.
 - **Re-authentication for destructive owner actions.** Confirming a request,
   revoking a key and issuing a recovery code need a GitHub sign-in from the last
   10 minutes, recorded in the human session and signed into each action token;

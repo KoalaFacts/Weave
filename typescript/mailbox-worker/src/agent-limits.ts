@@ -60,5 +60,17 @@ export async function requireKeyChurnRoom(tx: Transaction, accountId: string, {c
         + CASE WHEN ?3 THEN (SELECT count(*) FROM key_requests WHERE account_id=?1 AND status<>'confirmed' AND created_at>CAST(?2 AS INTEGER)) ELSE 0 END recent`)
         .bind(accountId, since, countRequests ? 1 : 0).first<{total: number; recent: number}>();
     if (!counts) fail(503, 'storage');
-    if (counts.total >= keyRowsPerAgent || counts.recent >= keyAdditionsPerDay) fail(429, 'capacity');
+    // The row total is not time-bound, so its refusal carries no Retry-After.
+    if (counts.total >= keyRowsPerAgent) fail(429, 'capacity');
+    if (counts.recent >= keyAdditionsPerDay) {
+        // Rolling 24 h: room opens when the addition that brings the count back under the limit leaves the window. An owner
+        // confirming a counted key request first moves it to its new key row, so a retry then may be refused again.
+        const freeing = await tx.db.prepare(`SELECT CAST(created_at AS TEXT) created_at FROM (
+            SELECT created_at FROM agent_keys WHERE account_id=?1 AND created_at>CAST(?2 AS INTEGER)
+            UNION ALL SELECT created_at FROM key_requests WHERE ?3 AND account_id=?1 AND status<>'confirmed' AND created_at>CAST(?2 AS INTEGER))
+            ORDER BY created_at LIMIT 1 OFFSET ?4`).bind(accountId, since, countRequests ? 1 : 0, counts.recent - keyAdditionsPerDay).first<string>('created_at');
+        if (freeing === null) fail(503, 'storage');
+        // Counted rows are newer than the window's start, so at least one tick remains and the ceiling is at least 1 s.
+        fail(429, 'capacity', Number((BigInt(freeing) + dayTicks - tx.store.now + ticksPerSecond - 1n) / ticksPerSecond));
+    }
 }

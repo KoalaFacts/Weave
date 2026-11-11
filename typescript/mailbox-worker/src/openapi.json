@@ -3293,7 +3293,7 @@
         }
       },
       "429": {
-        "description": "capacity: storage/registration/stream/generation capacity or a per-agent limit reached. Unclaimed agents (no owning human) have lower per-agent limits than claimed ones. Per-agent hourly limits on new messages and new contact requests count fixed UTC hours and set Retry-After to the seconds until the next hour; retries of an existing ID are not counted. Recovery-code attempts per source address also count fixed UTC hours and set Retry-After. The per-agent limit of 5 binding requests per rolling 24 hours sets Retry-After to the seconds until one of them leaves the window. Other capacity failures do not set Retry-After. Do not assume that immediate retry can succeed.",
+        "description": "capacity: storage/registration/stream/generation capacity or a per-agent limit reached. Unclaimed agents (no owning human) have lower per-agent limits than claimed ones. Per-agent hourly limits on new messages and new contact requests count fixed UTC hours and set Retry-After to the seconds until the next hour; retries of an existing ID are not counted. Recovery-code attempts per source address also count fixed UTC hours and set Retry-After. The per-agent limits of 5 binding requests and 10 key additions per rolling 24 hours set Retry-After to the seconds until one of them leaves the window; an owner confirming a counted key request meanwhile counts it again from then, so a retry may be refused again. Other capacity failures do not set Retry-After. Do not assume that immediate retry can succeed.",
         "headers": {
           "Cache-Control": {
             "schema": {
