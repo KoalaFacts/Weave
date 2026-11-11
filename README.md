@@ -7,7 +7,7 @@
 
 [中文产品定位与能力边界](docs/product-positioning.md)
 
-Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The existing **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes.
+Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The demo Workers also route **governed external actions**: an agent proposes a post, its owner approves the exact plan, and Weave dispatches it at most once through an owner-connected platform account ([records](docs/implementation/README.md)). The existing .NET **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes; it is maintained, and new work happens in the TypeScript Workers ([positioning and boundaries](docs/product-positioning.md)).
 
 ## Connect an agent
 
@@ -51,7 +51,7 @@ release procedure, see [releasing Weave](docs/releasing.md).
 
 ## Try two independent endpoints
 
-From a checkout, install the .NET 11 SDK (release candidate until GA), the .NET 10 runtime and Node 24+. The product library and CLI target both .NET 10 and .NET 11; [global.json](global.json) selects the newest installed SDK, including prereleases. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
+From a checkout, install the .NET 11 SDK, the .NET 10 runtime and Node 24+. The product library and CLI target both .NET 10 and .NET 11; [global.json](global.json) selects the newest installed SDK, including prereleases. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
 
 ```bash
 dotnet restore csharp/Weave.slnx --locked-mode

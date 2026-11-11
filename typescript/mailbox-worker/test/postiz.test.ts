@@ -65,7 +65,7 @@ async function connected(h: Harness, env: Env) {
     });
     return {agent, humanId};
 }
-const tiktok = {__type: 'tiktok', privacy_level: 'PUBLIC_TO_EVERYONE', duet: false, stitch: false, comment: true, autoAddMusic: false,
+const tiktok = {__type: 'tiktok', privacy_level: 'PUBLIC_TO_EVERYONE', duet: false, stitch: false, comment: true, autoAddMusic: 'no',
     brand_content_toggle: false, brand_organic_toggle: false, content_posting_method: 'DIRECT_POST'};
 const propose = (h: Harness, agent: any, credentialRef: string, content: unknown) =>
     h.request('/v1/external-actions', agent, 'POST', {credentialRef, operation: 'publish_post', content: JSON.stringify(content)});
@@ -245,6 +245,17 @@ test('publication_PlatformRefuses_FailedWithBoundedVisibleError', () => scenario
     assert.equal(read.state, 'failed');
     assert.equal(read.url, null, 'a failed post has no URL');
     assert.ok(read.error.startsWith('Token expired x') && read.error.length === 300, read.error);
+}));
+
+test('publication_PlatformErrorCutInsideSurrogatePair_ErrorStaysWellFormed', () => scenario(async ({h, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    const due = ms((await publication(h, actionId)).due_at);
+    await sweepWith(env, listing([{id: 'post-1', state: 'ERROR', error: 'Lone \udc00 ' + 'x'.repeat(292) + '\u{1F600}'.repeat(5)}]), due + 1000);
+    const read = (await h.ok(`/v1/external-actions/${actionId}`, agent)).publication;
+    assert.equal(read.state, 'failed');
+    assert.ok(read.error.isWellFormed(), 'no half surrogate pair is stored');
+    assert.ok(read.error.startsWith('Lone \uFFFD x') && read.error.length === 299, String(read.error.length));
 }));
 
 test('publication_StillQueuedOrUnreachable_BacksOffWithoutChangingState', () => scenario(async ({h, env}) => {

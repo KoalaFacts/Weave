@@ -2,6 +2,7 @@
 
 > **Baseline:** Revision 2.1 — Vertical Slices, Explicit Composition, Flat Source Layout.
 > **Product:** Independent-agent network; separate Governed Tools capability. **Normative definition:** language-neutral protocols and conformance fixtures ([runtime-neutral contract](docs/runtime-contract.md)); C#/.NET is the current implementation. **Plugin ecosystem:** language-neutral.
+> **Scope:** This document owns the target semantics of the agent network and of the .NET Governed Tools capability, which is in maintenance. Governed external actions on the TypeScript Workers are described in their [implementation records](docs/implementation/README.md); the product boundary is in [product positioning](docs/product-positioning.md).
 > **Implementation:** The source migration is the first structural increment, not completion of this target. See [implementation record](docs/implementation/2026-09-19-flat-source-foundation.md). Existing actor keys, tool-level permissions and runtime behavior are deliberately retained until their own tested replacements are implemented.
 
 ## 1. Architectural decision

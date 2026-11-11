@@ -13,20 +13,26 @@ export type PostFile = {mediaId: string; bytes: number; sha256: string; alt: str
 /** The one post format: `{text, media, settings?, publishAt?}`, as Postiz takes it. */
 export type Post = {text: string; media: PostFile[]; settings: Record<string, unknown>; publishAt: string | null};
 
+/** A text limit. `weigh` counts the text when the platform weighs characters unequally; its unit is then 'weighted characters'. */
+export type TextRule = {max: number; maxBytes?: number; maxWithMedia?: number} & ({unit: 'characters' | 'graphemes'; weigh?: never} | {unit: 'weighted characters'; weigh: (text: string) => number});
+/** The type of a setting's value and, when the platform has a closed list, its allowed values. */
+export type SettingRule = {type: 'string' | 'boolean' | 'number'; values: readonly string[] | null};
+export type SettingRules = Readonly<Record<string, SettingRule>>;
 /** What one platform accepts. The router refuses anything else before the owner is asked. */
 export type PostRules = {
-    text: {max: number; unit: 'characters' | 'graphemes'; maxBytes?: number; maxWithMedia?: number};
-    /** Accepted media types and the largest file of each, in bytes; `maxAlt` when the platform takes less alt text than the post format. */
+    /** The text limit, or the limit for one account when it depends on where the account posts. */
+    text: TextRule | ((targetAccount: string) => TextRule);
+    /** Accepted media types and the largest file of each, in bytes; `maxAlt` when the platform takes less alt text than the post format (0: none). */
     media: {max: number; types: Readonly<Record<string, number>>; maxTotalBytes?: number; maxAlt?: number};
     /** How far ahead publishAt may be, in ms; null when the platform posts immediately only. */
     schedule: number | null;
-    /** Settings this account's posts must carry: fixed values and required names. Absent: the post takes no settings. */
-    settings?: (targetAccount: string) => {fixed: Readonly<Record<string, string>>; required: readonly string[]; documented: string};
+    /** Settings this account's posts must carry: fixed values, required names, and the type and values of the settings Weave can check. Absent: the post takes no settings. */
+    settings?: (targetAccount: string) => {fixed: Readonly<Record<string, string>>; required: readonly string[]; documented: string; rules?: SettingRules};
     /** A note for agents, for example which text becomes clickable. */
     note?: string;
 };
 
-/** A field an owner fills to connect: exactly one is the secret the adapter keeps. */
+/** A field an owner fills to connect: at least one is secret, and the adapter keeps only the secret ones. */
 export type ConnectField = {name: string; label: string; secret: boolean; pattern?: string; placeholder?: string};
 /** An account the secret acts as: `ref` completes the credential reference `<provider>:<ref>`. */
 export type ConnectedAccount = {ref: string; targetAccount: string; targetDisplay: string};
@@ -41,7 +47,10 @@ export type Connector = {
     verify(values: Readonly<Record<string, string>>): Promise<ConnectedAccount[] | null>;
 };
 
-/** What an adapter receives to send one approved post. `secret` never leaves it. */
+/**
+ * What an adapter receives to send one approved post. `secret` is its one secret field's value, or a JSON object of the
+ * values by field name when it has several; it never leaves the adapter.
+ */
 export type PublishCall = {env: Env; accountId: string; actionId: string; targetAccount: string; secret: string; post: Post};
 export type PublishingAdapter = {
     name: string;
@@ -59,33 +68,44 @@ const instant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 const maxAlt = 2000;
 type Parsed = Omit<Post, 'media'> & {media: Omit<PostFile, 'contentType'>[]};
 
-/** The shape of any post, before platform rules; null when it is not exactly `{text, media, settings?, publishAt?}`. */
-export function parsePost(content: string): Parsed | null {
+const postShape = 'must be JSON {text, media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}';
+
+/** The shape of any post, before platform rules; otherwise why it is not exactly `{text, media, settings?, publishAt?}`, naming the field. */
+export function parsePost(content: string): Parsed | string {
     let value: unknown;
-    try { value = JSON.parse(content); } catch { return null; }
+    try { value = JSON.parse(content); } catch { return postShape; }
     const post = value as Record<string, unknown>;
-    if (!post || typeof post !== 'object' || Array.isArray(post)) return null;
-    if (Object.keys(post).some(key => !['text', 'media', 'settings', 'publishAt'].includes(key))) return null;
+    if (!post || typeof post !== 'object' || Array.isArray(post)) return postShape;
+    // Keys are not echoed: a reason is plain text an app may show, and a key is whatever the agent sent.
+    if (Object.keys(post).some(key => !['text', 'media', 'settings', 'publishAt'].includes(key))) return `${postShape}; no other keys are taken`;
     const {text, media, settings = {}, publishAt = null} = post;
-    if (typeof text !== 'string' || !Array.isArray(media) || !settings || typeof settings !== 'object' || Array.isArray(settings)) return null;
-    if (publishAt !== null && (typeof publishAt !== 'string' || !instant.test(publishAt) || Number.isNaN(Date.parse(publishAt)))) return null;
+    if (typeof text !== 'string') return 'text must be a string';
+    if (!Array.isArray(media)) return 'media must be an array of {mediaId, bytes, sha256, alt?}; use [] for none';
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return 'settings must be an object';
+    if (publishAt !== null && (typeof publishAt !== 'string' || !instant.test(publishAt) || Number.isNaN(Date.parse(publishAt))))
+        return 'publishAt must be a UTC time such as 2026-01-31T09:00:00Z';
     const files: Parsed['media'] = [];
-    for (const file of media as Record<string, unknown>[]) {
-        if (!file || typeof file !== 'object' || Array.isArray(file) || Object.keys(file).some(key => !['mediaId', 'bytes', 'sha256', 'alt'].includes(key))) return null;
+    for (const [index, file] of (media as Record<string, unknown>[]).entries()) {
+        const at = `media[${index}]`;
+        if (!file || typeof file !== 'object' || Array.isArray(file)) return `${at} must be {mediaId, bytes, sha256, alt?}`;
+        if (Object.keys(file).some(key => !['mediaId', 'bytes', 'sha256', 'alt'].includes(key))) return `${at} must be {mediaId, bytes, sha256, alt?}; no other keys are taken`;
         const {mediaId, bytes, sha256, alt = null} = file;
         if (typeof mediaId !== 'string' || !uuid.test(mediaId) || typeof sha256 !== 'string' || !sha.test(sha256)
-            || typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1 || (alt !== null && (typeof alt !== 'string' || alt.length > maxAlt))) return null;
+            || typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1) return `${at} must name your uploaded file with its exact mediaId, bytes and sha256`;
+        if (alt !== null && typeof alt !== 'string') return `${at}.alt must be a string`;
+        if (alt !== null && alt.length > maxAlt) return `${at}.alt must be at most ${maxAlt} characters`;
         files.push({mediaId, bytes, sha256, alt: alt as string | null});
     }
     return {text, media: files, settings: settings as Record<string, unknown>, publishAt: publishAt as string | null};
 }
 
+const textRule = (rules: PostRules, targetAccount: string) => typeof rules.text === 'function' ? rules.text(targetAccount) : rules.text;
 const graphemes = (text: string) => [...new Intl.Segmenter(undefined, {granularity: 'grapheme'}).segment(text)].length;
 
 /** Why `post` breaks the rules, or null. With `now`, a publishAt must also be ahead within the platform's horizon. */
 function ruleBreak(post: Parsed, rules: PostRules, targetAccount: string, now: number | null): string | null {
-    const {text, media} = rules;
-    const length = text.unit === 'graphemes' ? graphemes(post.text) : post.text.length;
+    const {media} = rules, text = textRule(rules, targetAccount);
+    const length = text.weigh ? text.weigh(post.text) : text.unit === 'graphemes' ? graphemes(post.text) : post.text.length;
     const maxText = post.media.length && text.maxWithMedia !== undefined ? text.maxWithMedia : text.max;
     if (length > maxText) return `text must be at most ${maxText} ${text.unit}${post.media.length && text.maxWithMedia !== undefined ? ' with media' : ''}`;
     if (text.maxBytes !== undefined && new TextEncoder().encode(post.text).byteLength > text.maxBytes) return `text must be at most ${text.maxBytes} bytes`;
@@ -93,7 +113,7 @@ function ruleBreak(post: Parsed, rules: PostRules, targetAccount: string, now: n
     if (post.media.length > media.max) return `at most ${media.max} media`;
     // An approved description is sent as it is, never shortened, so a longer one is refused before approval.
     if (media.maxAlt !== undefined && post.media.some(file => file.alt !== null && file.alt.length > media.maxAlt!))
-        return `alt must be at most ${media.maxAlt} characters here`;
+        return media.maxAlt === 0 ? 'alt is not supported here; omit it' : `alt must be at most ${media.maxAlt} characters here`;
     if (media.maxTotalBytes !== undefined && post.media.reduce((total, file) => total + file.bytes, 0) > media.maxTotalBytes)
         return `media must be at most ${media.maxTotalBytes} bytes in all`;
     if (post.publishAt !== null) {
@@ -105,7 +125,16 @@ function ruleBreak(post: Parsed, rules: PostRules, targetAccount: string, now: n
     if (!expected) return Object.keys(post.settings).length ? 'settings are not taken here; omit them' : null;
     for (const [name, value] of Object.entries(expected.fixed)) if (post.settings[name] !== value) return `settings.${name} must be "${value}" for this account`;
     const missing = expected.required.filter(name => !Object.hasOwn(post.settings, name));
-    return missing.length ? 'settings must include ' + missing.join(', ') : null;
+    if (missing.length) return 'settings must include ' + missing.join(', ');
+    for (const [name, rule] of Object.entries(expected.rules ?? {})) {
+        if (!Object.hasOwn(post.settings, name)) continue;
+        const value = post.settings[name];
+        if (typeof value !== rule.type) return `settings.${name} must be a ${rule.type}`;
+        if (rule.values && !rule.values.includes(value as string)) return `settings.${name} must be one of ${rule.values.map(allowed => `"${allowed}"`).join(', ')}`;
+    }
+    // A required setting that is null or only spaces names nothing; the platform would refuse it after approval.
+    const blank = expected.required.find(name => { const value = post.settings[name]; return value === null || typeof value === 'string' && !value.trim(); });
+    return blank ? `settings.${blank} must not be blank` : null;
 }
 
 const typeNames = (types: Readonly<Record<string, number>>) =>
@@ -114,12 +143,17 @@ const typeNames = (types: Readonly<Record<string, number>>) =>
 /** The description agents read for one account: the post format and this platform's limits. */
 export function describePost(rules: PostRules, targetAccount: string): string {
     const expected = rules.settings?.(targetAccount);
-    const settings = expected ? `"settings": {${[...Object.entries(expected.fixed).map(([name, value]) => `"${name}": "${value}"`), ...expected.required.map(name => `"${name}"`)].join(', ')}} ${expected.documented}, ` : '';
+    const settings = expected ? `"settings": {${[...Object.entries(expected.fixed).map(([name, value]) => `"${name}": "${value}"`), ...expected.required.map(name => {
+        const rule = expected.rules?.[name];
+        if (rule?.type === 'boolean') return `"${name}": true | false`;
+        return rule?.values ? `"${name}": one of ${rule.values.map(value => `"${value}"`).join(' | ')}` : `"${name}"`;
+    })].join(', ')}} ${expected.documented}, ` : '';
     const schedule = rules.schedule === null ? '' : `"publishAt": optional future UTC time such as 2026-01-31T09:00:00Z, at most ${Math.round(rules.schedule / 86_400_000)} days ahead, `;
-    const caption = rules.text.maxWithMedia === undefined ? '' : ` (${rules.text.maxWithMedia} with media)`;
-    return `JSON {"text": at most ${rules.text.max} ${rules.text.unit}${caption}, "media": up to ${rules.media.max} of your uploaded files as {"mediaId", "bytes", "sha256", "alt"?} `
+    const text = textRule(rules, targetAccount);
+    const caption = text.maxWithMedia === undefined ? '' : ` (${text.maxWithMedia} with media)`;
+    return `JSON {"text": at most ${text.max} ${text.unit}${caption}, "media": up to ${rules.media.max} of your uploaded files as {"mediaId", "bytes", "sha256", "alt"?} `
         + `(${typeNames(rules.media.types)}${rules.media.maxTotalBytes === undefined ? '' : `, ${rules.media.maxTotalBytes} bytes in all`}; alt describes an image for people who cannot see it`
-        + `${rules.media.maxAlt === undefined ? '' : `, at most ${rules.media.maxAlt} characters`}), `
+        + `${rules.media.maxAlt === undefined ? '' : rules.media.maxAlt === 0 ? ', but this platform takes none' : `, at most ${rules.media.maxAlt} characters`}), `
         + settings + schedule + '}. Text or media is required.' + (rules.note ? ' ' + rules.note : '');
 }
 
@@ -145,9 +179,18 @@ export function publishingProvider(adapter: PublishingAdapter): ExternalProvider
         contractRevision: adapter.contractRevision,
         operations: ['publish_post'],
         describeContent: targetAccount => describePost(adapter.rules, targetAccount),
+        textRules: targetAccount => {
+            const text = textRule(adapter.rules, targetAccount);
+            return {max: text.max, unit: text.unit, maxWithMedia: text.maxWithMedia ?? null, maxBytes: text.maxBytes ?? null};
+        },
+        settingRules: targetAccount => {
+            const expected = adapter.rules.settings?.(targetAccount);
+            return expected ? Object.fromEntries(Object.entries(expected.rules ?? {}).map(([name, rule]) => [name, {type: rule.type, values: rule.values && [...rule.values]}])) : {};
+        },
+        mediaRules: {max: adapter.rules.media.max, types: {...adapter.rules.media.types}, maxTotalBytes: adapter.rules.media.maxTotalBytes ?? null, maxAlt: adapter.rules.media.maxAlt ?? null},
         async checkContent(tx, {accountId, content, targetAccount}) {
             const post = parsePost(content);
-            if (!post) return 'must be JSON {text, media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}';
+            if (typeof post === 'string') return post;
             const broken = ruleBreak(post, adapter.rules, targetAccount, Date.now());
             if (broken) return broken;
             const files = await storedFiles(tx, accountId, post, adapter.rules);
@@ -155,7 +198,7 @@ export function publishingProvider(adapter: PublishingAdapter): ExternalProvider
         },
         async execute(env, call) {
             const parsed = parsePost(call.content);
-            if (!parsed || call.secret === null || ruleBreak(parsed, adapter.rules, call.targetAccount, null)) return {status: 'rejected', reason: 'plan-unreadable'};
+            if (typeof parsed === 'string' || call.secret === null || ruleBreak(parsed, adapter.rules, call.targetAccount, null)) return {status: 'rejected', reason: 'plan-unreadable'};
             // An approved schedule that has already passed is not silently turned into an immediate post.
             if (parsed.publishAt !== null && Date.parse(parsed.publishAt) <= Date.now()) return {status: 'rejected', reason: 'schedule-passed'};
             const files = await atomic(env.db, tx => storedFiles(tx, call.accountId, parsed, adapter.rules));

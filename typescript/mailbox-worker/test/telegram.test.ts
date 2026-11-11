@@ -86,6 +86,41 @@ const upload = async (h: Harness, agent: any, bytes: Buffer, type: string) => {
 };
 const sends = (fake: Fake) => fake.calls.filter(call => call.method.startsWith('send')).map(call => call.method);
 
+test('proposeExternalAction_PostOutsideTheFormat_NamesTheField', () => scenario(async ({h, fake, env}) => {
+    const {agent} = await connected(h, env, fake);
+    const media = (overrides: Record<string, unknown> = {}) => ({mediaId: crypto.randomUUID(), bytes: 10, sha256: 'a'.repeat(64), ...overrides});
+    const shape = 'must be JSON {text, media: [{mediaId, bytes, sha256, alt?}], settings?, publishAt?}';
+    const pin = 'must name your uploaded file with its exact mediaId, bytes and sha256';
+    const cases: [unknown, string][] = [
+        ['not an object', shape],
+        [[], shape],
+        [{text: 'x', media: [], langs: ['en']}, shape + '; no other keys are taken'],
+        [{text: 7, media: []}, 'text must be a string'],
+        [{media: []}, 'text must be a string'],
+        [{text: 'x'}, 'media must be an array of {mediaId, bytes, sha256, alt?}; use [] for none'],
+        [{text: 'x', media: {}}, 'media must be an array of {mediaId, bytes, sha256, alt?}; use [] for none'],
+        [{text: 'x', media: [], settings: []}, 'settings must be an object'],
+        [{text: 'x', media: [], publishAt: 'tomorrow'}, 'publishAt must be a UTC time such as 2026-01-31T09:00:00Z'],
+        [{text: 'x', media: [], publishAt: '2030-01-31T09:00:00+10:00'}, 'publishAt must be a UTC time such as 2026-01-31T09:00:00Z'],
+        [{text: 'x', media: ['id']}, 'media[0] must be {mediaId, bytes, sha256, alt?}'],
+        [{text: 'x', media: [media(), media({url: 'https://example.com/a.png'})]}, 'media[1] must be {mediaId, bytes, sha256, alt?}; no other keys are taken'],
+        [{text: 'x', media: [media({mediaId: 'nope'})]}, 'media[0] ' + pin],
+        [{text: 'x', media: [media({bytes: 0})]}, 'media[0] ' + pin],
+        [{text: 'x', media: [media({sha256: 'A'.repeat(64)})]}, 'media[0] ' + pin],
+        [{text: 'x', media: [media({alt: 3})]}, 'media[0].alt must be a string'],
+        [{text: 'x', media: [media({alt: 'a'.repeat(2001)})]}, 'media[0].alt must be at most 2000 characters']];
+    for (const [content, reason] of cases) {
+        const response = await propose(h, agent, content);
+        assert.equal(response.status, 400, JSON.stringify(content).slice(0, 80));
+        const problem = await response.json() as {code: string; field: string; reason: string};
+        assert.deepEqual({code: problem.code, field: problem.field, reason: problem.reason}, {code: 'invalid', field: 'content', reason}, JSON.stringify(content).slice(0, 80));
+    }
+    // The format's own limits still pass parsing and meet the platform's rules: Telegram takes no alt, so 2000 characters of alt is refused by the adapter rule, not the shape.
+    const atShapeLimit = await (await propose(h, agent, {text: 'x', media: [media({alt: 'a'.repeat(2000)})]})).json() as {reason: string};
+    assert.equal(atShapeLimit.reason, 'alt is not supported here; omit it');
+    assert.equal(fake.calls.length, 0, 'nothing reaches Telegram at propose');
+}));
+
 test('connectTelegram_AdminBot_StoresChatAndSealedToken', () => scenario(async ({h, fake, env}) => {
     const {agent} = await connected(h, env, fake);
     const row = (await h.db.prepare('SELECT credential_ref,provider,revision,target_account,target_display,secret FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<any>())!;
@@ -93,9 +128,60 @@ test('connectTelegram_AdminBot_StoresChatAndSealedToken', () => scenario(async (
     const sealed = row.secret instanceof ArrayBuffer ? new Uint8Array(row.secret) : Uint8Array.from(row.secret);
     assert.ok(!Buffer.from(sealed).toString('latin1').includes(token.split(':')[1]), 'the token is never stored in clear');
     assert.equal(await openSecret(key, {accountId: agent.accountId, credentialRef: ref, provider: 'telegram', revision: row.revision}, sealed), token);
-    assert.deepEqual((await h.ok('/v1/external-credentials', agent)).items.map((item: any) => [item.credentialRef, item.operations]), [[ref, ['publish_post']]]);
+    assert.deepEqual((await h.ok('/v1/external-credentials', agent)).items.map((item: any) => [item.credentialRef, item.operations, item.textRules, item.mediaRules]),
+        [[ref, ['publish_post'], {max: 4096, unit: 'characters', maxWithMedia: 1024, maxBytes: null},
+            {max: 10, types: {'image/jpeg': 10_000_000, 'image/png': 10_000_000, 'video/mp4': 50_000_000}, maxTotalBytes: 50_000_000, maxAlt: 0}]]);
 }));
 
+test('connectTelegram_ValuesPastedWithSurroundingSpaces_ConnectsAndSealsTrimmedToken', () => scenario(async ({h, fake, env}) => {
+    // Copying a token often brings a space along; the form keeps it, so the router trims every connect value before checking it.
+    const agent = await h.register(), humanId = await h.claim(agent);
+    await withBotApi(fake, async () => {
+        assert.deepEqual(await connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: '  ' + token + ' ', chat: ' @hscbeats '}),
+            {ok: true, accounts: ['HSC Beats (@hscbeats)']});
+    });
+    assert.ok(fake.calls.every(call => call.tokenInPath), 'only the trimmed token is sent to Telegram');
+    const row = (await h.db.prepare('SELECT revision,secret FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<any>())!;
+    const sealed = row.secret instanceof ArrayBuffer ? new Uint8Array(row.secret) : Uint8Array.from(row.secret);
+    assert.equal(await openSecret(key, {accountId: agent.accountId, credentialRef: ref, provider: 'telegram', revision: row.revision}, sealed), token, 'the trimmed token is sealed');
+    const other = await h.register(), otherHuman = await h.claim(other);
+    fake.calls.length = 0;
+    await withBotApi(fake, async () => {
+        assert.deepEqual(await connectTelegram(env, {humanId: otherHuman, authAt: Date.now(), agentId: other.accountId, botToken: '   ', chat: '@hscbeats'}),
+            {ok: false, reason: 'not-found'}, 'a value of only spaces is missing, not sent');
+    });
+    assert.equal(fake.calls.length, 0);
+}));
+
+test('connectTelegram_TitleWithControlOrBidiCharacters_StoredDisplayVisibleAndWellFormed', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    // A chat title cut inside an emoji, with a newline, a right-to-left override and a zero-width space.
+    fake.answers.getChat = () => ok({id: chatId, type: 'channel', title: 'HSC\n\u202eBeats\u200b ' + 'x'.repeat(107) + '\u{1F600}', username: 'hscbeats'});
+    await withBotApi(fake, async () => {
+        const result = await connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats'});
+        assert.deepEqual(result, {ok: true, accounts: ['HSC Beats ' + 'x'.repeat(107) + '\ufffd (@hscbeats)']});
+    });
+    const display = (await h.db.prepare('SELECT target_display FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<string>('target_display'))!;
+    assert.equal(display, 'HSC Beats ' + 'x'.repeat(107) + '\ufffd (@hscbeats)');
+    assert.equal((await h.ok('/v1/external-credentials', agent)).items[0].targetDisplay, display);
+}));
+test('connectTelegram_TitleOnlyInvisibleCharacters_DisplayFallsBackToChatId', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    fake.answers.getChat = () => ok({id: chatId, type: 'channel', title: '\u200b\u202e\u2066'});
+    await withBotApi(fake, async () => {
+        assert.deepEqual(await connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats'}),
+            {ok: true, accounts: [String(chatId)]});
+    });
+}));
+test('connectTelegram_TitleOnlyDefaultIgnorableCharacters_DisplayFallsBackToChatId', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    // Zero-width non-joiner, function application, a variation selector, a tag character and the Hangul filler.
+    fake.answers.getChat = () => ok({id: chatId, type: 'channel', title: '\u200c\u2061\ufe0f\u{E0041}\u3164'});
+    await withBotApi(fake, async () => {
+        assert.deepEqual(await connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats'}),
+            {ok: true, accounts: [String(chatId)]});
+    });
+}));
 test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(async ({h, fake, env}) => {
     const agent = await h.register(), humanId = await h.claim(agent);
     const attempt = (overrides: Record<string, unknown> = {}) => connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats', ...overrides} as any);

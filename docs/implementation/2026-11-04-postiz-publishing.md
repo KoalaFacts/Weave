@@ -29,12 +29,19 @@ discord, tiktok.
 
 Content is JSON `{text, media: [{mediaId, bytes, sha256}], settings, publishAt?}`:
 
-- `text` (≤ 7000 characters) or at least one media item; at most 10 media.
+- `text` (≤ 7000 characters, or the channel platform's smaller limit: X 280 weighted
+  characters, Bluesky 300 graphemes and 3000 bytes, LinkedIn 3000 characters,
+  Instagram 2200 characters; see the [publishing router](2026-11-05-publishing-router.md))
+  or at least one media item; at most 10 media.
 - `settings.__type` must equal the channel's type and include the fields Postiz
   requires for it (for example YouTube `title` and `type`; TikTok
   `privacy_level`, `duet`, `stitch`, `comment`, `autoAddMusic`,
   `brand_content_toggle`, `brand_organic_toggle`, `content_posting_method`;
-  Instagram `post_type`; X `who_can_reply_post`).
+  Instagram `post_type`; X `who_can_reply_post`). The documented JSON type and closed
+  values of the X, Instagram, YouTube and TikTok required settings are checked and listed
+  in the credential's `settingRules` (TikTok's toggles are JSON booleans, `autoAddMusic`
+  is `yes` or `no`); other settings are checked for presence only. The router record
+  lists each value.
 - Every media item is pinned to the agent's own uploaded file with its exact size and
   SHA-256, and must be JPEG, PNG, GIF, WebP or MP4 (what Postiz accepts).
 - `publishAt`, when present, is a future UTC instant within 90 days.

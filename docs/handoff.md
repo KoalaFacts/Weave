@@ -2,7 +2,7 @@
 
 > **Historical guide.** Written for the earlier layer-first layout; source paths here may no longer exist. Current layout and rules: [AGENTS.md](../AGENTS.md#ownership-and-composition); delivered behaviour: [implementation records](implementation/README.md).
 >
-> **Live state only.** The contract — principles, vocabulary table, roadmap — lives in [unique-agent-strategy.md](unique-agent-strategy.md). This file records the current shape of the system and what to pick up next.
+> **Live state only.** The contract (principles, vocabulary table, roadmap) lived in `unique-agent-strategy.md`, removed on 2026-11-10 and kept in Git history. This file records the current shape of the system and what to pick up next.
 >
 > Update at the end of every session that advances the roadmap.
 

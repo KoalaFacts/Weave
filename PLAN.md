@@ -1,5 +1,7 @@
 # Mainline foundation plan
 
+> **Historical (2026-11-10).** This was the work order for the .NET Governed Tools runtime up to 2026-09. That runtime is now in maintenance and new work happens in the TypeScript Workers; see [AGENTS.md](AGENTS.md#product-intent-and-implementation-boundary) and [product positioning](docs/product-positioning.md). The text below is kept as a record and is not the current work order.
+
 **Updated:** 2026-09-24. **Baseline:** `5cc84a59e2fc30840c0ac904cb3a32e2648619b1`.
 **Goal:** make one governed operation reliable before widening the product.
 **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) owns the target;

@@ -5,10 +5,12 @@ they describe the code when they were written and are not rewritten later, so a 
 wins where they differ. A record superseded by a later one says so in its first lines.
 
 Current rules live in [AGENTS.md](../../AGENTS.md) and target semantics in [ARCHITECTURE.md](../../ARCHITECTURE.md).
-Newest first within each area. Every record in this directory is listed once.
+Newest first within each area. Every record (or dated record section) in this directory is listed once.
 
 ## Publishing router and governed external actions (TypeScript Workers)
 
+- 2026-11-06: [LinkedIn publishing adapter](2026-11-05-publishing-router.md#native-linkedin-adapter-2026-11-06)
+- 2026-11-06: [X publishing adapter](2026-11-05-publishing-router.md#native-x-adapter-2026-11-06)
 - 2026-11-06: [External-action status notices on the inbox](2026-11-06-external-action-notices.md)
 - 2026-11-05: [Telegram publishing adapter](2026-11-05-telegram-adapter.md)
 - 2026-11-05: [Publishing router: one post format, one connect flow, platforms as adapters](2026-11-05-publishing-router.md)
@@ -116,18 +118,36 @@ The scheduled Weave task (publishing router and governed actions, `typescript/ma
 [issue #365](https://github.com/KoalaFacts/Weave/issues/365), the channel with Envoylet. This section holds its run
 log. Records above stay the evidence for what each change delivered.
 
-Last docs housekeeping: 2026-11-06, `weave/docs-housekeeping-2026-11-06` (adds the `check-docs` checker).
+Last docs housekeeping: 2026-11-08, #381 (`7763791`).
 
 ### Items
 
 | Item | Status |
 | --- | --- |
 | `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | blocked (#366; owner decision `schema-366` on #365: approve or reject the additive `external_action_keys` table. No further schema work until then) |
-| Status-change notification for apps (shared plan step 4) | 1/2 in progress: external-action notices on the inbox, no schema (this PR). 2/2, a push webhook, needs somewhere to keep a callback address: an owner schema decision first |
-| Native X adapter, then native LinkedIn (shared plan step 4) | todo |
+| Status-change notification for apps (shared plan step 4) | 1/2 done (#369, `0d2d22e`, deployed 2026-11-05 21:37 UTC): external-action notices on the inbox. 2/2, a push webhook, is blocked: storing a callback address is a schema change and needs an owner decision first |
+| Native X adapter (shared plan step 4) | 1/2 (#370): text and up to 4 images over OAuth 1.0a user context. 2/2 (#372): up to 1000 characters of alt text per image through `POST /2/media/metadata`, verified from X's docs on 2026-11-06 |
+| Native LinkedIn adapter (shared plan step 4) | done (#373, `ae051a9`): text and up to 9 images with alt text on the owner's member feed with their own member access token; Posts and Images APIs checked against LinkedIn's docs on 2026-11-06 |
+| Focused mailbox-worker runs test a stale `dist/` (agent friction, seen in two runs) | done (#387, `ac0d539`): `npm run test:files` rebuilds before running the named files |
+| LinkedIn tokens over 500 characters refused at connect (LinkedIn asks apps to plan for 1000 or more) | done (#388, `e73430e`): LinkedIn tokens up to 2000 characters; router and owner connect-form values up to 2048 |
+| Connect values pasted with a space around them refused as "the platform refused" | done (#390, `a6438fe`): the router trims every connect value before checking, verifying and sealing it |
+| A required Postiz setting sent blank (`""`, spaces or null) passed propose and failed at Postiz after the owner approved | done (#391, `6091549`, deployed 2026-11-08 14:27 UTC): refused at propose with `settings.<name> must not be blank`; a plan approved before is refused at execute with nothing sent |
+| A YouTube `upload_video` plan outside YouTube's limits was refused with one generic reason, so apps could not tell which field to fix | done (#392, `a636b12`, deployed 2026-11-08 18:43 UTC): the reason names the field and the limit |
+| A post outside the format itself (alt over 2000 characters, a malformed file pin, `publishAt` not in UTC, a missing `media` array) was refused with one generic reason on every publishing provider | done (#393, `a3b0c2f`, deployed 2026-11-08 21:43 UTC): the reason names the field, and the file by index |
+| `recovery_TwentyFirstAttemptFromOneSource_429` failed when its 21 attempts spanned a UTC hour boundary (the hourly window reset mid-test); nothing tested that the window does reset | done (#394, `fbe8684`, test only): the HTTP test starts clear of an hour's end, and a pinned-clock test checks the exact `Retry-After` and that the next UTC hour admits the same source again |
+| A malformed YouTube `upload_video` media reference got the "not stored" reason, so Envoylet uploaded the video again for nothing | done (#400, `fd135a9`, deployed 2026-11-09 05:49 UTC): `mediaId`, `bytes` and `sha256` are refused by field; the not-stored reason now means only that |
+| Envoylet re-stores a file only when `GET /v1/external-media/{mediaId}` answers exactly 404 `unavailable` (Envoylet #90); nothing pinned that code for swept or another agent's media | in progress (`weave/media-read-unavailable-contract`, test only): one test pins the same 404 `unavailable` body for swept, another agent's, unknown and malformed IDs, with positive controls |
+| `submit-nuget` check (NETSDK1045) | open: GitHub's Automatic Dependency Submission (not a workflow in this repository) still fails with NETSDK1045. A repository-side candidate exists and is unverified: [#372's diagnosis](https://github.com/KoalaFacts/Weave/pull/372#issuecomment-6717426980) traces the automatic setup reading `global.json` (`10.0.400`, `rollForward: latestMajor`) as an empty version and installing .NET 10, so selecting a compatible SDK explicitly in `global.json` might fix it; that must be verified in both the automatic submission and the locked restore/build/tests. Turning it off in Code Security settings is the owner's other route; target frameworks and gates stay |
 
 ### Run log
 
+- 2026-11-06 10:17 (Sydney):
+  - Baseline on `main` `0d2d22e`, Node 24: mailbox-worker 50 + 938, auth-worker 92 + 93, all passing.
+  - `submit-nuget` was the recorded next item. It turned out to be GitHub's dynamic Automatic Dependency Submission,
+    not a workflow here, so it was marked blocked on a settings decision instead of attempted.
+  - Opened the native X adapter (OAuth 1.0a, text and images). OAuth 2.0 was set aside: it needs a Weave-registered X
+    app, and its refresh token rotates on use, which would change the sealed secret on every dispatch. Alt text was
+    left out because X's v2 metadata call could not be verified from its documentation in this run.
 - 2026-11-06 04:17 (Sydney):
   - Merged #367 (records index, historical banners).
   - Housekeeping, #368, merged: added `scripts/docs/check-docs.ts` with tests and a CI job; renamed the docs index to

@@ -44,6 +44,22 @@ test('sweepMedia_OldAndUnused_RecordAndObjectDeleted', () => scenario(async h =>
     assert.equal((await h.request(`/v1/external-media/${old}`, agent)).status, 404);
 }));
 
+// Envoylet stores a file again only on exactly 404 `unavailable` (KoalaFacts/Envoylet#90); on any other answer it names
+// the old mediaId and the propose is refused. A malformed ID never reaches getMedia: the router's generic read refuses it.
+test('getMedia_SweptOtherAgentsUnknownOrMalformed_404Unavailable', () => scenario(async h => {
+    const agent = await h.register(), other = await h.register();
+    const swept = await upload(h, agent), theirs = await upload(h, other), mine = await upload(h, agent);
+    await age(h, swept, mediaRetentionMs + day);
+    await cron(h);
+    assert.equal((await h.request(`/v1/external-media/${mine}`, agent)).status, 200, 'positive control: own fresh media reads');
+    assert.equal((await h.request(`/v1/external-media/${theirs}`, other)).status, 200, 'positive control: the owner reads it');
+    const missing = {status: 404, title: 'Resource unavailable', code: 'unavailable'};
+    for (const [label, mediaId] of [['swept', swept], ['another agent\'s', theirs], ['unknown', crypto.randomUUID()], ['malformed', 'not-a-media-id']]) {
+        const response = await h.request(`/v1/external-media/${mediaId}`, agent);
+        assert.deepEqual([response.status, await response.json()], [404, missing], `${label} media`);
+    }
+}));
+
 test('sweepMedia_NamedByARecentAction_KeptUntilThatActionIsOld', () => scenario(async h => {
     const agent = await h.register(), other = await h.register();
     const mediaId = await upload(h, agent);

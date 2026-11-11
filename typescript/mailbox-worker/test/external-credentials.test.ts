@@ -70,6 +70,16 @@ test('connectExternalCredential_Youtube_StoresVerifiedChannelAndSealedRefreshTok
     } finally { await h.close(); }
 });
 
+test('connectExternalCredential_YoutubeTitleWithBidiOverride_StoredDisplayVisible', async () => {
+    const h = await start();
+    try {
+        const {agent, humanId} = await owned(h);
+        await withGoogle({channels: () => Response.json({items: [{id: channelId, snippet: {title: '\u202eHSC\tBeats\u200b'}}]})}, async () => {
+            assert.deepEqual(await connectExternalCredential(environment(h), input(humanId, agent.accountId)), {ok: true, credentialRef: 'youtube', targetDisplay: 'HSC Beats'});
+        });
+        assert.equal((await row(h, agent.accountId))!.target_display, 'HSC Beats');
+    } finally { await h.close(); }
+});
 test('connectExternalCredential_Reconnect_NewRevisionInvalidatesEarlierApproval', async () => {
     const h = await start();
     try {

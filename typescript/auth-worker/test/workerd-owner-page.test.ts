@@ -73,7 +73,15 @@ async function fakeBluesky(request:Request):Promise<Response|null>{
   return identifier===blueskyHandle&&password===blueskyPassword?Response.json({did:blueskyDid,handle:blueskyHandle,accessJwt:"jwt",active:true})
     :Response.json({error:"AuthenticationRequired"},{status:401});
 }
+// Fake LinkedIn userinfo: LinkedIn plans tokens of at least 1000 characters, so this one is that long.
+const linkedinToken="AQV"+"a1B2-c3_D4.e5~".repeat(80).slice(0,997),linkedinMember="xY12_ab-CD";
+function fakeLinkedIn(request:Request):Response|null{
+  if(request.method!=="GET"||request.url!=="https://api.linkedin.com/v2/userinfo")return null;
+  return request.headers.get("authorization")==="Bearer "+linkedinToken?Response.json({sub:linkedinMember,name:"HSC Beats"}):Response.json({status:401},{status:401});
+}
 async function mailboxOutbound(request:Request):Promise<Response>{
+  const linkedin=fakeLinkedIn(request);
+  if(linkedin)return linkedin;
   const google=await fakeGoogle(request);
   if(google)return google;
   const postiz=fakePostiz(request);
@@ -747,6 +755,16 @@ test("connectBluesky_OwnerSubmitsAppPassword_AccountStoredSealedAndListed",{time
   assert.equal(result(await postBluesky(human,token,{handle:blueskyHandle,appPassword:"zzzz-zzzz-zzzz-zzzz"})),"provider-refused");
 });
 
+test("connectLinkedIn_ThousandCharacterToken_PassesBothWorkersAndIsStoredSealed",{timeout:90_000},async()=>{
+  const human=await seedHuman(),agent=await ownedAgent(human,"linker");
+  const token=connectToken(await (await account(await sessionCookie(human))).text(),"LinkedIn");
+  const response=await postConnect(human,token,{accessToken:linkedinToken});
+  assert.equal(response.headers.get("location"),"/account?result=account-connected");
+  const rows=(await (await db()).prepare("SELECT credential_ref,target_account,secret IS NOT NULL sealed FROM external_credentials WHERE account_id=?").bind(agent.accountId).all()).results;
+  assert.deepEqual(rows,[{credential_ref:"linkedin:"+linkedinMember,target_account:"urn:li:person:"+linkedinMember,sealed:1}]);
+  assert.ok(!(await (await account(await sessionCookie(human))).text()).includes(linkedinToken.slice(-40)),"the token is never rendered");
+});
+
 test("connectBluesky_StaleSessionMissingFieldOrKeylessForm_NothingStored",{timeout:60_000},async()=>{
   const human=await seedHuman(),agent=await ownedAgent(human,"poster"),stale=Date.now()-11*60_000;
   const token=blueskyToken(await (await account(await sessionCookie(human,stale))).text());
@@ -771,7 +789,7 @@ test("ownerMedia_OnlyTheOwnerSeesFilesTheActionNames",{timeout:90_000},async()=>
   }
   const proposed=await agentFetch(agent,"/v1/external-actions",{method:"POST",body:{credentialRef:"postiz:cm4tiktok00000000000000001",operation:"publish_post",
     content:JSON.stringify({text:"",media:[{mediaId,bytes:bytes.length,sha256}],settings:{__type:"tiktok",privacy_level:"SELF_ONLY",duet:false,stitch:false,comment:false,
-      autoAddMusic:false,brand_content_toggle:false,brand_organic_toggle:false,content_posting_method:"DIRECT_POST"}})}});
+      autoAddMusic:"no",brand_content_toggle:false,brand_organic_toggle:false,content_posting_method:"DIRECT_POST"}})}});
   assert.equal(proposed.status,200,await proposed.clone().text());
   const {actionId}=await proposed.json() as {actionId:string};
   assert.ok((await (await account(await sessionCookie(human))).text()).includes('src="/account/media/'+actionId+'/'+mediaId+'"'));

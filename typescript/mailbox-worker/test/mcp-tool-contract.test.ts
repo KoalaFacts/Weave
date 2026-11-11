@@ -106,7 +106,12 @@ test('real D1 results of every private tool conform to their published output sc
         const at=(BigInt(Date.now())*10000n).toString();
         await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
             VALUES(?,'linkedin-main','test-http','rev-1','urn:li:person:contract','Contract desk',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(a.accountId,at,at).run();
-        assert.deepEqual((await run(a.accountId,'list_my_credentials')).items.map((item:{credentialRef:string})=>item.credentialRef),['linkedin-main']);
+        // A publishing credential, so non-null textRules and mediaRules (X: maxAlt 1000) are checked against the schema too.
+        await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
+            VALUES(?,'x-main','x','rev-1','1234','@contract',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(a.accountId,at,at).run();
+        const credentials=(await run(a.accountId,'list_my_credentials')).items;
+        assert.deepEqual(credentials.map((item:{credentialRef:string})=>item.credentialRef),['linkedin-main','x-main']);
+        assert.equal(credentials[1].mediaRules.maxAlt,1000);
         const upload=await run(a.accountId,'create_media_upload',{contentType:'image/png',bytes:4});
         assert.equal((await h.mf.dispatchFetch(upload.uploadUrl,{method:'PUT',headers:{'Content-Type':'image/png','Content-Length':'4'},body:'png!'})).status,200);
         assert.equal((await run(a.accountId,'get_my_media',{mediaId:upload.mediaId})).bytes,4);

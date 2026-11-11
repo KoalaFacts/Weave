@@ -89,12 +89,57 @@ test('executeExternalAction_YoutubeUpload_StreamsExactBytesOnceAndRecordsVideoId
     assert.ok(g.uploads[0].equals(bytes));
 }));
 
+test('proposeExternalAction_UploadPlanOutsideYoutubeLimits_NamesTheField', () => scenario(async ({h}) => {
+    const {agent} = await connected(h);
+    const media = await (await upload(h, agent, randomBytes(1000))).json() as {mediaId: string; bytes: number; sha256: string};
+    const cases: [string, string][] = [
+        ['not json', 'must be JSON {title, description, privacyStatus, mediaId, bytes, sha256}'],
+        [plan(media, {extra: 1}), 'must be JSON {title, description, privacyStatus, mediaId, bytes, sha256}'],
+        [plan(media, {title: '   '}), 'title must be a non-blank string'],
+        [plan(media, {title: 7}), 'title must be a non-blank string'],
+        [plan(media, {title: 't'.repeat(101)}), 'title must be at most 100 characters'],
+        [plan(media, {title: 'a <b>'}), 'title must not contain < or >'],
+        [plan(media, {description: null}), 'description must be a string'],
+        [plan(media, {description: 'é'.repeat(2501)}), 'description must be at most 5000 bytes'],
+        [plan(media, {description: 'x > y'}), 'description must not contain < or >'],
+        [plan(media, {privacyStatus: 'everyone'}), 'privacyStatus must be one of "private", "unlisted", "public"'],
+        [plan(media, {mediaId: 'nope'}), 'mediaId must be the ID that PUT /v1/external-media returned'],
+        [plan(media, {mediaId: 7}), 'mediaId must be the ID that PUT /v1/external-media returned'],
+        [plan(media, {bytes: 0}), 'bytes must be a positive whole number'],
+        [plan(media, {bytes: 1.5}), 'bytes must be a positive whole number'],
+        [plan(media, {bytes: '1000'}), 'bytes must be a positive whole number'],
+        [plan(media, {sha256: 'F'.repeat(64)}), 'sha256 must be 64 lowercase hex characters'],
+        [plan(media, {sha256: 'f'.repeat(63)}), 'sha256 must be 64 lowercase hex characters']];
+    for (const [content, reason] of cases) {
+        const response = await propose(h, agent, content);
+        assert.equal(response.status, 400, content.slice(0, 80));
+        const problem = await response.json() as {code: string; field: string; reason: string};
+        assert.deepEqual({code: problem.code, field: problem.field, reason: problem.reason}, {code: 'invalid', field: 'content', reason}, content.slice(0, 80));
+    }
+    // Exactly at the limits is accepted: 100 characters of title, 5000 bytes of description.
+    const atLimits = await propose(h, agent, plan(media, {title: 't'.repeat(100), description: 'é'.repeat(2500)}));
+    assert.equal(atLimits.status, 200, await atLimits.clone().text());
+}));
+
 test('proposeExternalAction_UploadPlanNotPinnedToStoredMedia_Rejected', () => scenario(async ({h}) => {
     const {agent} = await connected(h), other = await connected(h);
     const media = await (await upload(h, agent, randomBytes(1000))).json() as {mediaId: string; bytes: number; sha256: string};
     const foreign = await (await upload(h, other.agent, randomBytes(1000))).json() as {mediaId: string; bytes: number; sha256: string};
-    for (const content of [plan({...media, sha256: 'f'.repeat(64)}), plan({...media, bytes: media.bytes + 1}), plan(foreign),
-        plan(media, {privacyStatus: 'everyone'}), plan(media, {title: ''}), plan(media, {extra: 1}), 'not json'])
+    const image = await (await upload(h, agent, randomBytes(1000), 'image/png')).json() as {mediaId: string; bytes: number; sha256: string};
+    const foreignImage = await (await upload(h, other.agent, randomBytes(1000), 'image/png')).json() as {mediaId: string; bytes: number; sha256: string};
+    // A well-formed reference to media this agent has not stored, as given, keeps the reason apps match to upload again.
+    const notStored = 'must name your uploaded video with its exact bytes and sha256';
+    const cases: [string, string][] = [[plan({...media, sha256: 'f'.repeat(64)}), notStored], [plan({...media, bytes: media.bytes + 1}), notStored],
+        [plan(foreign), notStored], [plan({...media, mediaId: crypto.randomUUID()}), notStored],
+        [plan(image), 'mediaId must name a video, not an image'], [plan({...image, bytes: image.bytes + 1}), notStored],
+        [plan(foreignImage), notStored]];
+    for (const [content, reason] of cases) {
+        const response = await propose(h, agent, content);
+        assert.equal(response.status, 400, content.slice(0, 80));
+        const problem = await response.json() as {code: string; field: string; reason: string};
+        assert.deepEqual({code: problem.code, field: problem.field, reason: problem.reason}, {code: 'invalid', field: 'content', reason}, content.slice(0, 80));
+    }
+    for (const content of [plan(media, {privacyStatus: 'everyone'}), plan(media, {title: ''}), plan(media, {extra: 1}), 'not json'])
         assert.equal((await propose(h, agent, content)).status, 400, content.slice(0, 80));
 }));
 

@@ -11,7 +11,7 @@ const {executePrivateMcp} = await import('data:text/javascript;base64,' + Buffer
 
 type Harness = Awaited<ReturnType<typeof start>>;
 const key = randomBytes(32).toString('base64url'), origin = 'http://localhost';
-const tiktok = {__type: 'tiktok', privacy_level: 'PUBLIC_TO_EVERYONE', duet: false, stitch: false, comment: true, autoAddMusic: false,
+const tiktok = {__type: 'tiktok', privacy_level: 'PUBLIC_TO_EVERYONE', duet: false, stitch: false, comment: true, autoAddMusic: 'no',
     brand_content_toggle: false, brand_organic_toggle: false, content_posting_method: 'DIRECT_POST'};
 
 async function scenario(run: (s: {h: Harness; env: Env}) => Promise<void>) {
@@ -45,17 +45,29 @@ test('listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider', 
     const {agent, grantId} = await owned(h), other = await owned(h);
     await credential(h, agent.accountId, 'postiz:cm4tiktok', 'postiz', 'tiktok/cm4tiktok');
     await credential(h, agent.accountId, 'postiz:cm4old', 'postiz', 'x/cm4old', true);
+    await credential(h, agent.accountId, 'postiz:cm4x', 'postiz', 'x/cm4x');
     // Google is not configured here, so the YouTube credential cannot be used and says so.
     await credential(h, agent.accountId, 'youtube', 'youtube', 'UC' + 'a'.repeat(22));
     await credential(h, other.agent.accountId, 'postiz:cm4theirs', 'postiz', 'x/cm4theirs');
 
     const listed = await mcp(env, agent.accountId, grantId, 'list_my_credentials');
     assert.equal(listed.status, 200, JSON.stringify(listed.body));
-    const [postiz, youtube] = listed.body.items;
-    assert.deepEqual(listed.body.items.map((item: any) => item.credentialRef), ['postiz:cm4tiktok', 'youtube'], 'revoked and other agents\' credentials are not listed');
+    const [postiz, postizX, youtube] = listed.body.items;
+    assert.deepEqual(listed.body.items.map((item: any) => item.credentialRef), ['postiz:cm4tiktok', 'postiz:cm4x', 'youtube'], 'revoked and other agents\' credentials are not listed');
     assert.deepEqual([postiz.provider, postiz.targetAccount, postiz.targetDisplay, postiz.operations], ['postiz', 'tiktok/cm4tiktok', 'Display postiz:cm4tiktok', ['publish_post']]);
     for (const setting of Object.keys(tiktok)) assert.ok(postiz.content.includes(`"${setting}"`), setting + ' is named in the content format');
-    assert.deepEqual([youtube.operations, youtube.content], [[], null]);
+    assert.deepEqual(postiz.textRules, {max: 7000, unit: 'characters', maxWithMedia: null, maxBytes: null}, 'the limits ruleBreak enforces, as data');
+    const postizBytes = 100 * 1024 * 1024;
+    assert.deepEqual(postiz.mediaRules, {max: 10, types: {'image/jpeg': postizBytes, 'image/png': postizBytes, 'image/gif': postizBytes, 'image/webp': postizBytes, 'video/mp4': postizBytes},
+        maxTotalBytes: null, maxAlt: 0}, 'the media limits ruleBreak and storedFiles enforce, as data');
+    assert.deepEqual(postizX.textRules, {max: 280, unit: 'weighted characters', maxWithMedia: null, maxBytes: null}, 'an X channel lists X\'s limit, not Postiz\'s');
+    assert.ok(postizX.content.includes('"text": at most 280 weighted characters'), postizX.content);
+    assert.deepEqual(postiz.settingRules.duet, {type: 'boolean', values: null}, 'a TikTok toggle lists its JSON type');
+    assert.deepEqual(postiz.settingRules.content_posting_method, {type: 'string', values: ['DIRECT_POST', 'UPLOAD']}, 'a TikTok closed list is listed');
+    assert.deepEqual(postizX.settingRules, {who_can_reply_post: {type: 'string', values: ['everyone', 'following', 'mentionedUsers', 'subscribers', 'verified']}},
+        'an X channel lists the reply setting\'s closed values');
+    assert.ok(postizX.content.includes('"who_can_reply_post": one of "everyone" | "following" | "mentionedUsers" | "subscribers" | "verified"'), postizX.content);
+    assert.deepEqual([youtube.operations, youtube.content, youtube.textRules, youtube.mediaRules, youtube.settingRules], [[], null, null, null, null]);
     // The HTTP API returns the same listing for a key-authenticated agent.
     assert.deepEqual(await h.ok('/v1/external-credentials', agent), listed.body);
     assert.equal((await mcp(env, agent.accountId, grantId, 'list_my_credentials', {extra: 1})).status, 400);
