@@ -14,6 +14,18 @@ const VERIFIED_ACTION_LICENSES = new Map([
     version: '7622c5bf3d112a72ab4fa3951c2aa5723d8ab92d',
     license: 'Apache-2.0',
   }],
+  // Apache-2.0 verified at https://github.com/EnricoMi/publish-unit-test-result-action/blob/da5b7be67623cd59bbbd1a0ce4f022050a55605f/LICENSE (v2.26.0)
+  ['pkg:githubactions/EnricoMi/publish-unit-test-result-action@da5b7be67623cd59bbbd1a0ce4f022050a55605f', {
+    name: 'EnricoMi/publish-unit-test-result-action',
+    version: 'da5b7be67623cd59bbbd1a0ce4f022050a55605f',
+    license: 'Apache-2.0',
+  }],
+  // MIT verified at https://github.com/actions/setup-dotnet/blob/0f4a354dd5547a28c70b7853dbd95d5b67886e73/LICENSE (v6.1.0)
+  ['pkg:githubactions/actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73', {
+    name: 'actions/setup-dotnet',
+    version: '0f4a354dd5547a28c70b7853dbd95d5b67886e73',
+    license: 'MIT',
+  }],
   // MIT verified at https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE
   ['pkg:githubactions/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', {
     name: 'actions/checkout',
