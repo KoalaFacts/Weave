@@ -72,6 +72,15 @@ It is not repeated here. The preceding slice is the
   agents per human. The token endpoint answers `429 temporarily_unavailable`
   with `Retry-After` and does not spend the assertion. The shared `429`
   response declares `Retry-After` (set for hourly limits only).
+  Since 2026-11-11 the per-agent binding-request limit sets it too: the whole
+  seconds until the request whose leaving the window brings the count under 5
+  is 24 hours old (rounded up), so an app can say how long to wait instead of
+  guessing. `createBinding_DailyLimit_RetryAfterIsWhenTheWindowFreesARequest`
+  pins it with a fixed clock (exactly-24-hour boundary, six and seven requests
+  in the window, one tick left = 1 s); mutations killed: no `OFFSET`, `>=`
+  boundary, newest instead of oldest, floor instead of ceiling, no header. The
+  20-pending-per-human limit still sets none: a pending request can leave
+  earlier than its expiry.
 - **Re-authentication for destructive owner actions.** Confirming a request,
   revoking a key and issuing a recovery code need a GitHub sign-in from the last
   10 minutes, recorded in the human session and signed into each action token;

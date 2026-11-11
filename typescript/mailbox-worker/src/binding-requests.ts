@@ -11,6 +11,7 @@ import { Problem, fail, invalidField, object } from './wire.ts';
 
 export const bindingRequestsPerAgentPerDay = 5;
 export const pendingBindingRequestsPerHuman = 20;
+const ticksPerSecond = 10_000_000n;
 
 export type BindingStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled' | 'expired';
 export type BindingRequestView = {requestId: string; agentId: string; human: string; kid: string; status: BindingStatus; createdAt: string; expiresAt: string; decidedAt: string | null};
@@ -101,7 +102,14 @@ export async function createBindingRequest(env: Env, request: Request, auth: Age
         const recent = await tx.db.prepare('SELECT count(*) n FROM binding_requests WHERE account_id=? AND created_at>CAST(? AS INTEGER)')
             .bind(auth.accountId, (at - requestLifetimeTicks).toString()).first<number>('n');
         if (recent === null) fail(503, 'storage');
-        if (recent >= bindingRequestsPerAgentPerDay) fail(429, 'capacity');
+        if (recent >= bindingRequestsPerAgentPerDay) {
+            // Rolling 24 h: room opens when the request that brings the count back under the limit leaves the window.
+            const freeing = await tx.db.prepare(`SELECT CAST(created_at AS TEXT) created_at FROM binding_requests WHERE account_id=? AND created_at>CAST(? AS INTEGER)
+                ORDER BY created_at LIMIT 1 OFFSET ?`).bind(auth.accountId, (at - requestLifetimeTicks).toString(), recent - bindingRequestsPerAgentPerDay).first<string>('created_at');
+            if (freeing === null) fail(503, 'storage');
+            // Counted rows are newer than the window's start, so at least one tick remains and the ceiling is at least 1 s.
+            fail(429, 'capacity', Number((BigInt(freeing) + requestLifetimeTicks - at + ticksPerSecond - 1n) / ticksPerSecond));
+        }
         const waiting = await tx.db.prepare(`SELECT count(*) n FROM binding_requests WHERE target_subject=? AND status='pending' AND expires_at>CAST(? AS INTEGER)`)
             .bind(subject, stamp).first<number>('n');
         if (waiting === null) fail(503, 'storage');
