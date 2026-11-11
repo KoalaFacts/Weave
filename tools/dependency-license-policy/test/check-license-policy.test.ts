@@ -435,3 +435,25 @@ test('inspectPolicy_ObservedPaginationViews_RequireEveryManifestFromThePinnedAct
   const denied = independent.map(record => record === extra ? { ...record, license: 'GPL-3.0' } : record);
   assert.equal(inspectScenario(denied).failure_code, 'license-policy-denied');
 });
+
+// Dependabot bumps (#395, #396): GitHub's dependency graph returns no license for either pin, so the policy
+// relies on these verified entries. Licenses checked at the pinned commits (v6.1.0 and v2.26.0 tags).
+for (const [name, pin] of [
+  ['actions/setup-dotnet', '0f4a354dd5547a28c70b7853dbd95d5b67886e73'],
+  ['EnricoMi/publish-unit-test-result-action', 'da5b7be67623cd59bbbd1a0ce4f022050a55605f'],
+] as const) {
+  test(`inspectPolicy_${name.split('/')[1]}AtVerifiedPin_IsAvailableOnlyForThatExactPin`, () => {
+    const pinned = {
+      ...change(null), ecosystem: 'actions', name, version: pin,
+      package_url: `pkg:githubactions/${name}@${pin}`,
+    };
+    assert.equal(inspectScenario([pinned]).status, 'available');
+    for (const mismatch of [
+      { version: 'different' }, { name: `other/${name.split('/')[1]}` },
+      { package_url: `pkg:githubactions/other/${name.split('/')[1]}@${pin}` }, { ecosystem: 'npm' },
+    ]) {
+      assert.equal(inspectScenario([{ ...pinned, ...mismatch }]).status, 'unavailable');
+    }
+    assert.equal(inspectScenario([{ ...pinned, license: 'GPL-3.0' }]).status, 'blocked');
+  });
+}
