@@ -277,6 +277,35 @@ test('publication_StillQueuedOrUnreachable_BacksOffWithoutChangingState', () => 
     assert.equal((await publication(h, actionId)).next_check_at, null);
 }));
 
+test('publication_LongQueued_BackoffCappedAtSixHours', () => scenario(async ({h, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    const due = ms((await publication(h, actionId)).due_at);
+    // Ten unanswered checks would double the wait to 15 min × 2^10; it stays at 6 hours.
+    await h.db.prepare('UPDATE external_publications SET checks=10 WHERE action_id=?').bind(actionId).run();
+    await sweepWith(env, listing([{id: 'post-1', state: 'QUEUE', releaseURL: null, error: null}]), due);
+    const row = await publication(h, actionId);
+    assert.deepEqual([row.state, row.checks, ms(row.next_check_at)], ['queued', 11, due + 6 * 3600_000]);
+}));
+
+test('publication_SixAgentsDue_FiveAskedPerRunTheRestNextRun', () => scenario(async ({h, env}) => {
+    const tracked: {actionId: string; due: number}[] = [];
+    for (let i = 0; i < 6; i++) {
+        const {agent, actionId} = await approvedPost(h, env, {text: 'Live ' + i, media: [], settings: {__type: 'linkedin-page'}});
+        await execute(h, agent, actionId);
+        tracked.push({actionId, due: ms((await publication(h, actionId)).due_at)});
+    }
+    // Postiz allows 30 calls an hour: one run asks for at most five agents, earliest due first.
+    const at = Math.max(...tracked.map(t => t.due)) + 1000;
+    const published = listing(tracked.map((_, i) => ({id: 'post-' + (i + 1), state: 'PUBLISHED', releaseURL: null})));
+    assert.equal((await sweepWith(env, published, at)).length, 5);
+    const states = await Promise.all(tracked.map(async t => (await publication(h, t.actionId))));
+    assert.deepEqual(states.map(s => s.state), ['published', 'published', 'published', 'published', 'published', 'queued']);
+    assert.deepEqual([states[5].checks, ms(states[5].next_check_at)], [0, tracked[5].due], 'the agent left out is neither counted nor postponed');
+    assert.equal((await sweepWith(env, published, at)).length, 1, 'the next run asks for it');
+    assert.equal((await publication(h, tracked[5].actionId)).state, 'published');
+}));
+
 test('publication_SeveralPostsOneAgent_OneListingCall', () => scenario(async ({h, env}) => {
     const {agent, humanId} = await connected(h, env);
     const ids: string[] = [];

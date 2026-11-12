@@ -148,10 +148,15 @@ but not yet verified against a real account.
   - queued and unlisted posts back off, and a failed listing postpones without
     counting;
   - tracking stops after the window and when the credential is disconnected;
-  - two posts of one agent take one listing call.
+  - two posts of one agent take one listing call;
+  - with six agents due, one run asks for five and the sixth is neither counted nor
+    postponed, so the next run asks for it (#427);
+  - a post queued through ten checks is re-checked after 6 hours, not 15 min × 2^10
+    (#427).
 
   Mutation checks: removing the error cleanup, the cron call, the stop on a
-  disconnected credential, or the not-asked rule each fail a test.
+  disconnected credential, the not-asked rule, the five-agents-per-run bound or the
+  6-hour cap each fail a test.
 
 ## Limits
 
