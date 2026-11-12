@@ -645,3 +645,132 @@ for(const [label,bucket] of [['another bucket',{...mediaBucket,bucket_name:'some
         await assert.rejects(deploy(f.options),/Unexpected existing resource bindings/);
         assert.equal(f.commands.length,0);
     });
+
+// Owner-approved schema-366: the additive external_action_keys table and its unique index. Production D1 predates
+// it, so these tests drop both from a real Miniflare D1 and run the opted-in completed-only release against it.
+const keysOptIn={WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA:'true'};
+async function generatedKeysStatements(){
+    const {latestSchemaStatements}=await import('../scripts/latest-schema.ts');
+    return (await latestSchemaStatements()).filter(sql=>/^CREATE (?:TABLE `external_action_keys`|UNIQUE INDEX "external_action_keys_action")/.test(sql));
+}
+async function withoutKeysTable(f){
+    await f.h.db.prepare('DROP INDEX external_action_keys_action').run();
+    await f.h.db.prepare('DROP TABLE external_action_keys').run();
+}
+const keysObjects=f=>f.h.db.prepare("SELECT type,name FROM sqlite_master WHERE tbl_name='external_action_keys' AND sql IS NOT NULL ORDER BY type DESC").all().then(r=>r.results.map(x=>x.type+':'+x.name));
+async function keysFixture(extraEnv=keysOptIn){
+    const f=await completedFixture();Object.assign(f.options.env,extraEnv);await withoutKeysTable(f);return f;
+}
+test('opted-in completed-only release applies exactly the approved external_action_keys table and index on actual D1',async()=>{
+    const f=await keysFixture(),approved=await generatedKeysStatements();
+    try{
+        const before=(await f.h.db.prepare('SELECT * FROM data_migrations').all()).results;
+        const result=await deploy(f.options);
+        assert.deepEqual(result.approvedSchemaApplied,approved);
+        assert.equal(result.schemaPlan.statements.length,0,'the plan is empty after the approved statements');
+        assert.deepEqual(f.events,['recovery','active'],'the serving version never reads the new table, so no pause');
+        assert.equal(f.writes().length,3);assert.match(f.writes()[0],/^CREATE TABLE IF NOT EXISTS `data_migrations`/);
+        assert.deepEqual(f.writes().slice(1),approved,'the approved statements, and nothing else, are written');
+        assert.deepEqual(await keysObjects(f),['table:external_action_keys','index:external_action_keys_action']);
+        const index=(await f.h.db.prepare('PRAGMA index_list("external_action_keys")').all()).results.find(i=>i.name==='external_action_keys_action');
+        assert.equal(index.unique,1);
+        assert.deepEqual((await planLatestSchema(f.h.db)).statements,[]);
+        assert.deepEqual((await f.h.db.prepare('SELECT * FROM data_migrations').all()).results,before);
+        const report=JSON.parse(readFileSync(new URL('../test-results/deployment/result.json',import.meta.url),'utf8'));
+        assert.deepEqual(report.approvedSchemaApplied,approved);assert.equal(report.phase,'active deployment verified');
+    }finally{await f.h.close();}
+});
+test('opted-in release re-run on a database that already has the approved table is the ordinary completed-only path',async()=>{
+    const f=await keysFixture();
+    try{
+        await deploy(f.options);
+        const writes=f.writes().length,events=f.events.length;
+        const again=await deploy(f.options);
+        assert.deepEqual(again.approvedSchemaApplied,[]);
+        assert.deepEqual(f.events.slice(events),['recovery','active']);
+        assert.equal(f.writes().length,writes+1,'only the zero-change ledger check');
+        assert.match(f.writes().at(-1),/^CREATE TABLE IF NOT EXISTS `data_migrations`/);
+    }finally{await f.h.close();}
+});
+test('completed-only without the opt-in still refuses the missing external_action_keys table before any deployment or writes',async()=>{
+    for(const extraEnv of [{},{WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA:'false'}]){
+        const f=await keysFixture(extraEnv);
+        try{
+            await assert.rejects(deploy(f.options),/empty schema plan/i);
+            assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);assert.deepEqual(await keysObjects(f),[]);
+        }finally{await f.h.close();}
+    }
+});
+test('opted-in release refuses a plan with any other missing schema object before any deployment or writes',async()=>{
+    const f=await keysFixture();
+    try{
+        await f.h.db.prepare('DROP INDEX messages_identity').run();
+        await assert.rejects(deploy(f.options),/approved external_action_keys/i);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);assert.deepEqual(await keysObjects(f),[]);
+    }finally{await f.h.close();}
+});
+for(const [name,alter] of [
+    ['CHECK expressions replaced',sql=>sql.replace(/CHECK\(length\(idempotency_key\)[^\n]*\)(?=,\n)/,'CHECK(1)')],
+    ['an extra UNIQUE constraint',sql=>sql.replace('PRIMARY KEY(','UNIQUE(`created_at`),\n\tPRIMARY KEY(')],
+    ['a column default',sql=>sql.replace('`created_at` integer NOT NULL','`created_at` integer DEFAULT 0 NOT NULL')],
+    ['a non-unique index',sql=>sql.replace('CREATE UNIQUE INDEX','CREATE INDEX')],
+    ['another index column',sql=>sql.replace('("action_id")','("action_id","created_at")')]
+])test('opted-in release refuses a generated plan with '+name+' that keeps the approved names',async()=>{
+    const f=await keysFixture();
+    f.options.planSchema=async db=>{const plan=await planLatestSchema(db);return {...plan,statements:plan.statements.map(alter)};};
+    try{
+        const statements=(await planLatestSchema(f.h.db)).statements;
+        assert.notDeepEqual(statements.map(alter),statements,'the mutation must change the plan');
+        await assert.rejects(deploy(f.options),/approved external_action_keys/i);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);assert.deepEqual(await keysObjects(f),[]);
+    }finally{await f.h.close();}
+});
+for(const [name,table,index,pattern] of [
+    ['an extra UNIQUE constraint',sql=>sql.replace('PRIMARY KEY(','UNIQUE(`created_at`),\n\tPRIMARY KEY('),sql=>sql,/existing external_action_keys table differs/],
+    ['an extra index on the table',sql=>sql,sql=>sql+' CREATE INDEX "external_action_keys_extra" ON "external_action_keys" ("created_at");',/unapproved index/],
+    // The general planner already refuses a changed index under an expected name.
+    ['a non-unique approved index name',sql=>sql,sql=>sql.replace('CREATE UNIQUE INDEX','CREATE INDEX'),/Existing index differs from the latest schema: external_action_keys_action/]
+])test('opted-in release refuses an existing external_action_keys with '+name+' before any deployment or writes',async()=>{
+    const f=await keysFixture(),[createTable,createIndex]=await generatedKeysStatements();
+    try{
+        await f.h.db.prepare(table(createTable)).run();
+        for(const sql of index(createIndex).split(/;\s*/).filter(Boolean))await f.h.db.prepare(sql).run();
+        await assert.rejects(deploy(f.options),pattern);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+test('opted-in release stops before the ledger check when the plan changes after preflight',async()=>{
+    const f=await keysFixture();
+    afterPreflight(f,()=>f.h.db.prepare('DROP INDEX messages_identity').run());
+    try{
+        await assert.rejects(deploy(f.options),/approved external_action_keys/i);
+        assert.deepEqual(f.events,[]);assert.deepEqual(f.writes(),[]);assert.deepEqual(await keysObjects(f),[]);
+    }finally{await f.h.close();}
+});
+test('opted-in release stops before the ledger check when another operator creates the table after preflight',async()=>{
+    const f=await keysFixture(),[createTable]=await generatedKeysStatements();
+    afterPreflight(f,()=>f.h.db.prepare(createTable).run());
+    try{
+        await assert.rejects(deploy(f.options),/changed after preflight/i);
+        assert.deepEqual(f.events,[]);assert.deepEqual(f.writes(),[]);assert.deepEqual(await keysObjects(f),['table:external_action_keys']);
+    }finally{await f.h.close();}
+});
+for(const evidence of ['failed','missing'])test('opted-in release requires confirmed success of the approved schema batch: '+evidence,async()=>{
+    const f=await keysFixture(),open=f.options.openDatabase;
+    f.options.openDatabase=async()=>{
+        const connection=await open(),batch=connection.db.batch;
+        connection.db.batch=async statements=>{const result=await batch(statements);
+            return statements.length===2?(evidence==='failed'?result.map(item=>({...item,success:false})):result.slice(1)):result;};
+        return connection;
+    };
+    try{await assert.rejects(deploy(f.options),/approved external_action_keys schema batch/i);assert.deepEqual(f.events,[],'no recovery or active upload');}
+    finally{await f.h.close();}
+});
+for(const [name,extraEnv,pattern] of [
+    ['an ambiguous value',{WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA:'yes',WEAVE_DEPLOY_DATABASE_MODE:'completed-only'},/Invalid external_action_keys schema opt-in/],
+    ['maintain mode',{WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'maintain'},/completed-only/i],
+    ['the OAuth bootstrap',{WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'completed-only',WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING:'true'},/OAuth/i]
+])test('external_action_keys opt-in with '+name+' stops before any external operation',async()=>{
+    const f=fixture({extraEnv});
+    await assert.rejects(deploy(f.options),pattern);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);
+});
