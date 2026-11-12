@@ -429,6 +429,36 @@ test('proposeExternalAction_KeysArePerAgentAndAbsentKeysDoNotDeduplicate', () =>
     assert.equal(await actionCount(h), 4);
 }));
 
+test('proposeExternalAction_KeyedReplayWhileTwentyWait_ReturnsTheActionNot429', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    const first = await proposeKeyed(h, agent, 'retry-me');
+    assert.equal(first.status, 200, await first.clone().text());
+    const {actionId} = await first.json() as {actionId: string};
+    for (let i = 1; i < 20; i++) assert.equal((await propose(h, agent, `Post ${i}`)).status, 200, `proposal ${i} is admitted`);
+    const full = await proposeKeyed(h, agent, 'new-key', {credentialRef: 'linkedin-main', operation: 'publish_text', content: 'One too many'});
+    assert.equal(full.status, 429, 'a new key still counts against the waiting-plan limit');
+    // A retry whose first answer was lost must find its own plan, even though that plan is what fills the last place.
+    const replay = await proposeKeyed(h, agent, 'retry-me');
+    assert.equal(replay.status, 200, await replay.clone().text());
+    assert.equal((await replay.json() as {actionId: string}).actionId, actionId);
+    assert.equal(await actionCount(h), 20);
+}));
+
+test('proposeExternalAction_RefusedKeyedProposal_LeavesTheKeyUnused', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    const unknownCredential = await proposeKeyed(h, agent, 'fix-and-retry', {credentialRef: 'missing', operation: 'publish_text', content: 'Episode 12 is live.'});
+    assert.equal(unknownCredential.status, 400);
+    const blank = await proposeKeyed(h, agent, 'fix-and-retry', {credentialRef: 'linkedin-main', operation: 'publish_text', content: '   '});
+    assert.equal(blank.status, 400);
+    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_action_keys').first<number>('n'), 0, 'a refusal records no key');
+    // The corrected request is a different request; it is admitted under the same key instead of conflicting.
+    const fixed = await proposeKeyed(h, agent, 'fix-and-retry');
+    assert.equal(fixed.status, 200, await fixed.clone().text());
+    const {actionId} = await fixed.json() as {actionId: string};
+    assert.equal((await (await proposeKeyed(h, agent, 'fix-and-retry')).json() as {actionId: string}).actionId, actionId);
+    assert.equal(await actionCount(h), 1);
+}));
+
 test('proposeExternalAction_InvalidIdempotencyKey_RejectedBeforeAnyWrite', () => scenario(async ({h}) => {
     const {agent} = await ownedAgent(h);
     // An empty header does not reach the Worker; the parser refuses it all the same.
