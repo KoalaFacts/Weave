@@ -156,6 +156,14 @@ space before or after it connects, and only the trimmed value is sent and stored
 checks, each failing one of them: the values checked untrimmed; the untrimmed values verified; the untrimmed secret
 sealed; the untrimmed fields sealed as JSON.
 
+Connecting checks that the human owns the agent and is not frozen twice: before any value reaches the platform, and
+again in the transaction that stores the credential, so an owner frozen while the platform verifies the values stores
+nothing (2026-11-12). `connectAccount_OwnerFrozenBeforeOrDuringVerify_FrozenAndNothingStored` (Telegram) and
+`connectExternalCredential_OwnerFrozenDuringVerify_FrozenAndNothingStored` (YouTube) cover both, each with a positive
+control once the owner is unfrozen. Mutation checks, each surviving the 90 earlier tests of the eight connect and adapter test files and failing one of them: the
+in-write re-check removed from `connectAccount`; the same re-check removed from `connectExternalCredential`; the
+pre-verify check removed from `connectAccount`.
+
 The account name each platform sends back (a Telegram chat title, a Discord webhook
 name, a Postiz channel name, a YouTube channel title) is stored as `targetDisplay` only
 after `shownName` in `src/external-credentials.ts` passes it through `visibleExcerpt`
