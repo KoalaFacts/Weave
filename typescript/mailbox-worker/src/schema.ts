@@ -162,6 +162,21 @@ export const externalActions = sqliteTable("external_actions", {
     check("external_actions_dispatch",sql`(status IN ('dispatching','completed','unknown'))<=(dispatched_at IS NOT NULL)`)
 ]);
 
+// An agent's optional Idempotency-Key for a proposal, kept for as long as the action it names. The same key with the same
+// request returns that action; request_hash binds the credential reference, operation and content.
+export const externalActionKeys = sqliteTable("external_action_keys", {
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    idempotency_key: text("idempotency_key").notNull(),
+    request_hash: text("request_hash").notNull(),
+    action_id: text("action_id").notNull().references(() => externalActions.action_id, {onDelete:"restrict"}),
+    created_at: exactInteger("created_at").notNull(),
+}, t => [
+    primaryKey({columns:[t.account_id,t.idempotency_key]}),
+    uniqueIndex("external_action_keys_action").on(t.action_id),
+    check("external_action_keys_key",sql`length(idempotency_key) BETWEEN 1 AND 128 AND idempotency_key NOT GLOB '*[^A-Za-z0-9._:-]*'`),
+    check("external_action_keys_hash",sql`length(request_hash)=64 AND request_hash NOT GLOB '*[^0-9a-f]*'`)
+]);
+
 // What the provider later reports about a completed action whose effect finishes after dispatch (a queued or scheduled
 // post). Written when such an action completes; the scheduled sweep asks the provider until the state is final.
 export const externalPublications = sqliteTable("external_publications", {

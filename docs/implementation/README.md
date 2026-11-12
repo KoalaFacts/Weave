@@ -12,6 +12,7 @@ Newest first within each area. Every record (or dated record section) in this di
 - 2026-11-06: [LinkedIn publishing adapter](2026-11-05-publishing-router.md#native-linkedin-adapter-2026-11-06)
 - 2026-11-06: [X publishing adapter](2026-11-05-publishing-router.md#native-x-adapter-2026-11-06)
 - 2026-11-06: [External-action status notices on the inbox](2026-11-06-external-action-notices.md)
+- 2026-11-05: [Retrying a proposal safely: `Idempotency-Key` on external actions](2026-11-05-propose-idempotency.md)
 - 2026-11-05: [Telegram publishing adapter](2026-11-05-telegram-adapter.md)
 - 2026-11-05: [Publishing router: one post format, one connect flow, platforms as adapters](2026-11-05-publishing-router.md)
 - 2026-11-05: [Discord publishing adapter](2026-11-05-discord-adapter.md)
@@ -124,7 +125,7 @@ Last docs housekeeping: 2026-11-12 (Sydney), this PR.
 
 | Item | Status |
 | --- | --- |
-| `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | blocked (#366; owner decision `schema-366` on #365: approve or reject the additive `external_action_keys` table. No further schema work until then) |
+| `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | merged, not deployed (owner approved `schema-366` on 2026-11-11; this PR supersedes #366). Deploying needs the separate additive-schema release path (follow-up) and an owner deploy decision |
 | Status-change notification for apps (shared plan step 4) | 1/2 done (#369, `0d2d22e`, deployed 2026-11-05 21:37 UTC): external-action notices on the inbox. 2/2, a push webhook, is blocked: storing a callback address is a schema change and needs an owner decision first |
 | Native X adapter (shared plan step 4) | 1/2 (#370): text and up to 4 images over OAuth 1.0a user context. 2/2 (#372): up to 1000 characters of alt text per image through `POST /2/media/metadata`, verified from X's docs on 2026-11-06 |
 | Native LinkedIn adapter (shared plan step 4) | done (#373, `ae051a9`): text and up to 9 images with alt text on the owner's member feed with their own member access token; Posts and Images APIs checked against LinkedIn's docs on 2026-11-06 |
@@ -149,6 +150,8 @@ Last docs housekeeping: 2026-11-12 (Sydney), this PR.
 
 ### Run log
 
+- 2026-11-11: the owner approved `schema-366`. #366's branch was merged with main in a new PR that supersedes #366,
+  without its draft deploy guard, which moves to the additive-schema release-path follow-up. Not deployed.
 - 2026-11-06 10:17 (Sydney):
   - Baseline on `main` `0d2d22e`, Node 24: mailbox-worker 50 + 938, auth-worker 92 + 93, all passing.
   - `submit-nuget` was the recorded next item. It turned out to be GitHub's dynamic Automatic Dependency Submission,
