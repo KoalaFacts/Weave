@@ -64,6 +64,10 @@ generated video at a public URL), `import_media_from_url {url}` (scope
 - Every refusal is 400 with field `url`, including a source body that breaks off or
   is not its stated length. Authority refusals and storage or database errors keep
   their own status (for example 503), so an outage is not blamed on the URL.
+- A source that keeps sending past its stated length is cut off at the first excess
+  chunk rather than read to the end. `test/media-import.test.ts` pins each suffix,
+  the Content-Length bounds (0 and 100 MiB + 1), this cut-off and the
+  `Accept-Encoding: identity` header.
 
 Workers cannot resolve DNS before fetching, so a public name that resolves to a
 private address is not detected here; Cloudflare's network is the boundary for that.
