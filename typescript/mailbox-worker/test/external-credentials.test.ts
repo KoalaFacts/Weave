@@ -15,7 +15,7 @@ const environment = (h: Harness, overrides: Partial<Env> = {}) => ({db: h.db, RE
     REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100', GOOGLE_CLIENT_ID: 'client.apps.googleusercontent.com',
     GOOGLE_CLIENT_SECRET: 'google-secret', EXTERNAL_CREDENTIAL_KEY: key, ...overrides}) as unknown as Env;
 
-type Google = {token: () => Response; channels: () => Response; requests: {url: string; body: string; auth: string | null}[]};
+type Google = {token: () => Response | Promise<Response>; channels: () => Response | Promise<Response>; requests: {url: string; body: string; auth: string | null}[]};
 /** Replaces fetch for the fixed Google endpoints while `run` executes; any other URL is refused. */
 async function withGoogle(google: Partial<Google>, run: (requests: Google['requests']) => Promise<void>) {
     const requests: Google['requests'] = [], original = globalThis.fetch;
@@ -117,6 +117,29 @@ test('connectExternalCredential_Refusals_NothingStored', async () => {
             assert.equal(requests.length, 0, 'the code is not exchanged for an agent the human cannot act for');
         });
         assert.equal(await row(h, agent.accountId), null);
+    } finally { await h.close(); }
+});
+
+test('connectExternalCredential_OwnerFrozenDuringVerify_FrozenAndNothingStored', async () => {
+    const h = await start();
+    try {
+        const {agent, humanId} = await owned(h);
+        const setFrozen = (frozen: boolean) => h.db.prepare('UPDATE humans SET frozen_at=CAST(? AS INTEGER) WHERE human_id=?')
+            .bind(frozen ? (BigInt(Date.now()) * 10000n).toString() : null, humanId).run();
+        // Frozen while Google confirms the channel: the write re-checks the owner and stores nothing.
+        const channels = async () => {
+            await setFrozen(true);
+            return Response.json({items: [{id: channelId, snippet: {title: 'HSC Beats'}}]});
+        };
+        await withGoogle({channels}, async requests => {
+            assert.deepEqual(await connectExternalCredential(environment(h), input(humanId, agent.accountId)), {ok: false, reason: 'frozen'});
+            assert.equal(requests.length, 2, 'the code was exchanged and the channel read before the owner was frozen');
+        });
+        assert.equal(await row(h, agent.accountId), null);
+        // Positive control: the same connect succeeds once the owner is unfrozen.
+        await setFrozen(false);
+        await withGoogle({}, async () => assert.equal((await connectExternalCredential(environment(h), input(humanId, agent.accountId))).ok, true));
+        assert.notEqual(await row(h, agent.accountId), null);
     } finally { await h.close(); }
 });
 

@@ -21,7 +21,7 @@ const refused = (status: number, description = 'Bad Request') => Response.json({
 
 type Call = {method: string; tokenInPath: boolean; json?: any; form?: Map<string, string | {type: string; bytes: Buffer}>};
 /** A Bot API fake; `answers` overrides one method's reply. Every method answers for the configured token only. */
-type Fake = {calls: Call[]; answers: Record<string, (call: Call) => Response>};
+type Fake = {calls: Call[]; answers: Record<string, (call: Call) => Response | Promise<Response>>};
 function botApi(fake: Fake) {
     return async (request: Request): Promise<Response> => {
         const url = new URL(request.url);
@@ -208,6 +208,31 @@ test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(
     fake.answers = {getChat: () => ok({id: chatId, type: 'supergroup', title: 'Fans'}), getChatMember: () => ok({status: 'administrator'})};
     await withBotApi(fake, async () => assert.equal((await attempt()).ok, true));
     assert.equal(await h.db.prepare('SELECT count(*) n FROM external_credentials').first<number>('n'), 1);
+}));
+
+test('connectAccount_OwnerFrozenBeforeOrDuringVerify_FrozenAndNothingStored', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    const attempt = () => connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats'});
+    const setFrozen = (frozen: boolean) => h.db.prepare('UPDATE humans SET frozen_at=CAST(? AS INTEGER) WHERE human_id=?')
+        .bind(frozen ? (BigInt(Date.now()) * 10000n).toString() : null, humanId).run();
+    const stored = () => h.db.prepare('SELECT count(*) n FROM external_credentials WHERE account_id=?').bind(agent.accountId).first<number>('n');
+    await setFrozen(true);
+    await withBotApi(fake, async () => assert.deepEqual(await attempt(), {ok: false, reason: 'frozen'}));
+    assert.equal(fake.calls.length, 0, 'a frozen owner\'s token is never sent to Telegram');
+    await setFrozen(false);
+    // Frozen while Telegram verifies the bot: the write re-checks the owner and stores nothing.
+    fake.answers.getChatMember = async () => {
+        await setFrozen(true);
+        return ok({status: 'administrator', can_post_messages: true, user: {id: botId}});
+    };
+    await withBotApi(fake, async () => assert.deepEqual(await attempt(), {ok: false, reason: 'frozen'}));
+    assert.equal(fake.calls.at(-1)?.method, 'getChatMember');
+    assert.equal(await stored(), 0);
+    // Positive control: the same connect succeeds once the owner is unfrozen.
+    fake.answers = {};
+    await setFrozen(false);
+    await withBotApi(fake, async () => assert.equal((await attempt()).ok, true));
+    assert.equal(await stored(), 1);
 }));
 
 test('telegramRules_Limits_TextCaptionAlbumTotalSizeAndNoSchedule', async () => {
