@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
-import { approvalOrigin, proposalKey } from '../src/external-actions.ts';
+import { approvalOrigin, planDigest, proposalKey } from '../src/external-actions.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -195,11 +195,13 @@ test('decideExternalAction_AlreadyDecided_NotPendingAndOutcomeKept', () => scena
     assert.equal(provider.calls.length, 1);
 }));
 
-for (const change of ['rotated', 'revoked', 'retargeted'] as const)
+for (const change of ['rotated', 'revoked', 'retargeted', 'reprovidered'] as const)
     test(`executeExternalAction_CredentialChangedAfterApproval_${change}_FailsWithoutSending`, () => scenario(async ({h, provider}) => {
         const {agent, actionId} = await approved(h);
         if (change === 'rotated') await setCredential(h, agent.accountId, 'rev-2');
         else if (change === 'retargeted') await setCredential(h, agent.accountId, 'rev-1', 'urn:li:person:beta', 'Desk Beta');
+        // Same reference, revision and target, but another platform: the plan's provider still exists, so only the credential check refuses.
+        else if (change === 'reprovidered') await h.db.prepare(`UPDATE external_credentials SET provider='telegram' WHERE account_id=?`).bind(agent.accountId).run();
         else await h.db.prepare('UPDATE external_credentials SET revoked_at=CAST(? AS INTEGER) WHERE account_id=?').bind(ticks(), agent.accountId).run();
 
         const result = await execute(h, agent, actionId);
@@ -268,6 +270,27 @@ for (const [field, assignment] of Object.entries(planEdits))
         assert.equal(again.status, 'failed');
         assert.equal(provider.calls.length, 0);
     }));
+
+// A plan approved under an earlier contract of its adapter, with a digest that still matches its stored fields: a deploy
+// that changed what the adapter sends must not send it. Only the dispatch's contract check can catch this.
+test('executeExternalAction_AdapterContractChangedSinceApproval_FailsPlanChangedWithoutSending', () => scenario(async ({h, provider}) => {
+    const {agent, actionId} = await approved(h);
+    const row = await h.db.prepare(`SELECT action_id,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,
+        target_account,CAST(expires_at AS TEXT) expires_at FROM external_actions WHERE action_id=?`).bind(actionId).first<Parameters<typeof planDigest>[0]>();
+    assert.equal(row!.contract_revision, 'test-http-v1');
+    const earlier = {...row!, contract_revision: 'test-http-v0'};
+    await h.db.prepare(`UPDATE external_actions SET contract_revision=?,plan_digest=? WHERE action_id=?`)
+        .bind(earlier.contract_revision, await planDigest(earlier), actionId).run();
+
+    const result = await execute(h, agent, actionId);
+    const again = await execute(h, agent, actionId);
+
+    assert.equal(result.status, 'failed');
+    assert.equal(result.failure, 'plan-changed');
+    assert.equal(result.dispatchedAt, null);
+    assert.equal(again.status, 'failed');
+    assert.equal(provider.calls.length, 0);
+}));
 
 test('executeExternalAction_Rejected_NeverSends', () => scenario(async ({h, provider}) => {
     const {agent, humanId} = await ownedAgent(h);

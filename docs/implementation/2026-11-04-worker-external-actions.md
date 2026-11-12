@@ -102,6 +102,11 @@ while rejecting still decides it; confirming or rejecting a plan already decided
 `not-pending` and keeps its outcome. Each of the five guards (revoked, target, expiry,
 confirm status, reject status) survived every earlier test; removing any one now fails
 its new test.
+Added later (2026-11-12): two dispatch re-checks that every earlier test let pass. A
+credential whose platform changed under the same reference, revision and target fails
+with `credential-changed`; a plan approved under an earlier adapter contract, whose
+digest still matches its stored fields, fails with `plan-changed`. Both send nothing on
+a first and a repeated execute, and dropping either comparison fails its test.
 
 In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
 content in `<pre>`, verified account, credential revision, bound form tokens) and
