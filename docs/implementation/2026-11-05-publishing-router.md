@@ -248,6 +248,17 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   the adapter's re-check of each stored file's size before anything is sent; and the connect refusals
   now include a non-numeric bot or chat id, with a chat's creator accepted. Eight guard mutations that
   survived before are killed.
+- Discord's own confirmation checks (2026-11-13): a webhook answer that is not one message for the
+  approved channel is `unknown` and never sent again.
+  `executeDiscordPost_AnswerNotOneConfirmedMessage_UnknownAndNeverResent` covers a message body on a
+  non-200 status, an id that is not a Discord id (text or a JSON number) and an answer over 64 KiB;
+  the refusal loop now covers 401, 403 and 413 as `discord-refused-<status>`;
+  `publishDiscordPost_StoredFileMissingOrResized_MediaUnavailableAndNothingPosted` the adapter's re-check
+  of each stored file before anything is posted; the connect refusals include a webhook body on a
+  non-200 status and a channel id that is not a Discord id; and
+  `connectDiscord_LongOrBlankWebhookName_ShownCutOrAsWebhook` the 80-character display cut and the
+  `Webhook` fallback. Thirteen guard mutations that survived before are killed. Not pinned: the longer
+  upload timeout for posts with files (a timing value; shortening it survives).
 - auth-worker portable tests:
   - the generic form reader takes the token and then the fields, and refuses: empty,
     misplaced, duplicate or badly named fields; too many fields; another form's token;

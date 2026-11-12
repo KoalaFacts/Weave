@@ -103,7 +103,9 @@ test('connectDiscord_NotAWebhookOrRefused_NothingStored', () => scenario(async (
             assert.deepEqual(await attempt({webhookUrl: url}), {ok: false, reason: 'provider-refused'}, name);
         assert.equal(fake.calls.length, 0, 'a value that is not a Discord webhook URL is never sent anywhere');
         for (const [name, answer] of [['unknown webhook', () => Response.json({message: 'Unknown Webhook'}, {status: 404})],
-            ['a channel-follower webhook', hook({type: 2})], ['another webhook id', hook({id: '1'.repeat(18)})]] as const) {
+            ['a channel-follower webhook', hook({type: 2})], ['another webhook id', hook({id: '1'.repeat(18)})],
+            ['a webhook body on a non-200 status', () => Response.json({id: hookId, type: 1, channel_id: channelId, name: 'HSC Beats'}, {status: 203})],
+            ['a channel id that is not a Discord id', hook({channel_id: 'general'})]] as const) {
             fake.webhook = answer;
             assert.deepEqual(await attempt(), {ok: false, reason: 'provider-refused'}, name);
         }
@@ -113,6 +115,17 @@ test('connectDiscord_NotAWebhookOrRefused_NothingStored', () => scenario(async (
         assert.equal((await attempt({webhookUrl: webhookUrl.replace('discord.com', 'discordapp.com')})).ok, true);
     });
     assert.equal(await h.db.prepare('SELECT count(*) n FROM external_credentials').first<number>('n'), 1);
+}));
+
+test('connectDiscord_LongOrBlankWebhookName_ShownCutOrAsWebhook', () => scenario(async ({h, fake, env}) => {
+    await withDiscord(fake, async () => {
+        for (const [name, shown] of [['N'.repeat(100), 'N'.repeat(80)], ['', 'Webhook']] as const) {
+            fake.webhook = hook({name});
+            const agent = await h.register(), humanId = await h.claim(agent);
+            assert.deepEqual(await connectDiscord(env, {humanId, authAt: Date.now(), agentId: agent.accountId, webhookUrl}),
+                {ok: true, accounts: [`${shown} (channel ${channelId})`]}, JSON.stringify(name).slice(0, 20));
+        }
+    });
 }));
 
 test('discordRules_Limits_TextFilesSizeAndNoSchedule', async () => {
@@ -161,7 +174,7 @@ test('proposeDiscordPost_UnsupportedOrUnpinnedMedia_Refused', () => scenario(asy
 }));
 
 test('executeDiscordPost_RefusedOrUncertain_FailedOrUnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
-    for (const [status, expected] of [[400, 'failed'], [404, 'failed'], [429, 'failed'], [502, 'unknown']] as const) {
+    for (const [status, expected] of [[400, 'failed'], [401, 'failed'], [403, 'failed'], [404, 'failed'], [413, 'failed'], [429, 'failed'], [502, 'unknown']] as const) {
         fake.answer = () => status === 502 ? new Response('bad gateway', {status}) : Response.json({message: 'refused'}, {status});
         const {agent, actionId} = await approvedPost(h, env, fake, {text: 'status ' + status, media: []});
         const result = await execute(h, agent, actionId);
@@ -189,3 +202,47 @@ test('executeDiscordPost_WebhookMovedOrDeletedAfterApproval_FailedWithNothingPos
         assert.equal(posts(fake).length, 0, 'the approved post never reaches another channel: ' + name);
     }
 }));
+
+test('executeDiscordPost_AnswerNotOneConfirmedMessage_UnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
+    // Each answer may follow a real message, so none is a refusal: the action is unknown and never sent again.
+    const message = {id: '123456789012345678', channel_id: channelId};
+    const cases: [string, () => Response][] = [
+        ['a message body on a non-200 status', () => Response.json(message, {status: 201})],
+        ['an id that is not a Discord id', () => Response.json({...message, id: 'abc'})],
+        ['a numeric id', () => Response.json({...message, id: 123456789012345678})],
+        ['an answer over 64 KiB', () => Response.json({...message, content: 'x'.repeat(70_000)})],
+    ];
+    for (const [name, answer] of cases) {
+        fake.answer = undefined;
+        const {agent, actionId} = await approvedPost(h, env, fake, {text: name, media: []});
+        fake.answer = answer;
+        assert.equal((await execute(h, agent, actionId)).status, 'unknown', name);
+        fake.answer = undefined;
+        assert.equal((await execute(h, agent, actionId)).status, 'unknown', name + ', again');
+        assert.equal(posts(fake).length, 1, 'never sent again: ' + name);
+        fake.calls.length = 0;
+    }
+    // Positive control: the same post answered with one message for this channel completes.
+    const {agent, actionId} = await approvedPost(h, env, fake, {text: 'control', media: []});
+    assert.deepEqual([(await execute(h, agent, actionId)).status, posts(fake).length], ['completed', 1]);
+}));
+
+test('publishDiscordPost_StoredFileMissingOrResized_MediaUnavailableAndNothingPosted', async () => {
+    // The router checks the pinned files first; this is the adapter's own re-check at the moment it reads the bytes.
+    const original = globalThis.fetch, sent: string[] = [];
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        sent.push(init?.method ?? 'GET');
+        return init?.method === 'POST' ? Response.json({id: '123456789012345678', channel_id: channelId}) : hook()();
+    };
+    const publish = (stored: {size: number} | null) => discord.publish({
+        env: {EXTERNAL_MEDIA: {get: async () => stored && {size: stored.size, body: new Blob([new Uint8Array(stored.size)]).stream()}}} as unknown as Env,
+        accountId: 'a', targetAccount: channelId, secret: webhookUrl, actionId: 'x',
+        post: {text: 'x', media: [{mediaId: 'm', bytes: 300, sha256: 'a'.repeat(64), contentType: 'image/png'}], settings: {}, publishAt: null}} as never);
+    try {
+        assert.deepEqual(await publish(null), {status: 'rejected', reason: 'media-unavailable'}, 'gone');
+        assert.deepEqual(await publish({size: 301}), {status: 'rejected', reason: 'media-unavailable'}, 'resized');
+        assert.deepEqual(sent, ['GET', 'GET'], 'only the webhook is read; nothing is posted');
+        assert.equal((await publish({size: 300})).status, 'completed', 'positive control');
+        assert.deepEqual(sent.slice(2), ['GET', 'POST']);
+    } finally { globalThis.fetch = original; }
+});
