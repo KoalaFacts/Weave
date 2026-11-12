@@ -241,6 +241,13 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   LinkedIn, Telegram and YouTube receipts were already pinned exactly. Mutations, each killed:
   dropping the `.`/`..` lookahead, narrowing it to only `.` or only `..`, dropping the 256 bound,
   widening the pattern to `/ ? #`, or letting it match an empty key.
+- Telegram's own confirmation checks (2026-11-12): a Bot API answer that is not one confirmed post is
+  `unknown` and never sent again. `executeTelegramPost_AnswerNotOneConfirmedPost_UnknownAndNeverResent`
+  covers `ok: true` on a non-200 status, no `message_id`, an answer over 64 KiB and an album confirmed
+  for fewer messages than files; `publishTelegramPost_StoredFileMissingOrResized_MediaUnavailableAndNothingSent`
+  the adapter's re-check of each stored file's size before anything is sent; and the connect refusals
+  now include a non-numeric bot or chat id, with a chat's creator accepted. Eight guard mutations that
+  survived before are killed.
 - auth-worker portable tests:
   - the generic form reader takes the token and then the fields, and refuses: empty,
     misplaced, duplicate or badly named fields; too many fields; another form's token;
