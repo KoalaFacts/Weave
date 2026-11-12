@@ -195,6 +195,8 @@ test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(
             ['a private chat', {getChat: () => ok({id: 42, type: 'private', first_name: 'x'})}],
             ['a plain member', {getChatMember: () => ok({status: 'member'})}],
             ['an admin who cannot post', {getChatMember: () => ok({status: 'administrator', can_post_messages: false})}],
+            ['a bot without a numeric id', {getMe: () => ok({id: String(botId), is_bot: true})}],
+            ['a chat without a numeric id', {getChat: () => ok({id: '@hscbeats', type: 'channel', title: 'HSC Beats'})}],
         ];
         for (const [name, answers] of cases) {
             fake.answers = answers;
@@ -204,10 +206,12 @@ test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(
         assert.deepEqual(await attempt({authAt: Date.now() - 11 * 60_000}), {ok: false, reason: 'stale-authentication'});
         assert.deepEqual(await attempt({humanId: await h.claim(await h.register())}), {ok: false, reason: 'not-found'});
     });
-    // A group's administrator needs no posting right of its own.
+    // A group's administrator needs no posting right of its own, and a chat's creator holds every right.
     fake.answers = {getChat: () => ok({id: chatId, type: 'supergroup', title: 'Fans'}), getChatMember: () => ok({status: 'administrator'})};
     await withBotApi(fake, async () => assert.equal((await attempt()).ok, true));
-    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_credentials').first<number>('n'), 1);
+    fake.answers = {getChat: () => ok({id: chatId - 1, type: 'channel', title: 'Own channel'}), getChatMember: () => ok({status: 'creator'})};
+    await withBotApi(fake, async () => assert.equal((await attempt()).ok, true, 'a creator'));
+    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_credentials').first<number>('n'), 2);
 }));
 
 test('connectAccount_OwnerFrozenBeforeOrDuringVerify_FrozenAndNothingStored', () => scenario(async ({h, fake, env}) => {
@@ -298,3 +302,46 @@ test('executeTelegramPost_RefusedOrUncertain_FailedOrUnknownAndNeverResent', () 
         fake.calls.length = 0;
     }
 }));
+
+test('executeTelegramPost_AnswerNotOneConfirmedPost_UnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
+    // Each answer may follow a real post, so none is a refusal: the action is unknown and never sent again.
+    const cases: [string, (call: Call) => Response][] = [
+        ['ok body on a non-200 status', () => Response.json({ok: true, result: {message_id: 40}}, {status: 202})],
+        ['no message_id', () => ok({chat: {id: chatId}})],
+        ['an answer over 64 KiB', () => ok({message_id: 40, text: 'x'.repeat(70_000)})],
+        ['an album confirmed for one file of two', call => ok([{message_id: 40}].concat(call.method === 'sendMediaGroup' ? [] : [{message_id: 41}]))],
+    ];
+    for (const [name, answer] of cases) {
+        const album = name.startsWith('an album');
+        fake.answers = {};
+        const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) =>
+            ({text: name, media: album ? [await upload(h, agent, randomBytes(300), 'image/png'), await upload(h, agent, randomBytes(400), 'image/png')] : []}));
+        fake.answers = {[album ? 'sendMediaGroup' : 'sendMessage']: answer};
+        assert.equal((await execute(h, agent, actionId)).status, 'unknown', name);
+        fake.answers = {};
+        assert.equal((await execute(h, agent, actionId)).status, 'unknown', name + ', again');
+        assert.deepEqual(sends(fake), [album ? 'sendMediaGroup' : 'sendMessage'], 'never sent again: ' + name);
+        fake.calls.length = 0;
+    }
+    // Positive control: the same two-file album answered with two messages completes.
+    const {agent, actionId} = await approvedPost(h, env, fake, async (agent: any) =>
+        ({text: 'control', media: [await upload(h, agent, randomBytes(300), 'image/png'), await upload(h, agent, randomBytes(400), 'image/png')]}));
+    assert.deepEqual([(await execute(h, agent, actionId)).status, sends(fake)], ['completed', ['sendMediaGroup']]);
+}));
+
+test('publishTelegramPost_StoredFileMissingOrResized_MediaUnavailableAndNothingSent', async () => {
+    // The router checks the pinned files first; this is the adapter's own re-check at the moment it reads the bytes.
+    const original = globalThis.fetch, fetched: string[] = [];
+    globalThis.fetch = async (input: RequestInfo | URL) => { fetched.push(String(input)); return ok({message_id: 40}); };
+    const publish = (stored: {size: number} | null) => telegram.publish({
+        env: {EXTERNAL_MEDIA: {get: async () => stored && {size: stored.size, body: new Blob([new Uint8Array(stored.size)]).stream()}}} as unknown as Env,
+        accountId: 'a', targetAccount: String(chatId), secret: token, actionId: 'x',
+        post: {text: 'x', media: [{mediaId: 'm', bytes: 300, sha256: 'a'.repeat(64), contentType: 'image/png'}], settings: {}, publishAt: null}} as never);
+    try {
+        assert.deepEqual(await publish(null), {status: 'rejected', reason: 'media-unavailable'}, 'gone');
+        assert.deepEqual(await publish({size: 301}), {status: 'rejected', reason: 'media-unavailable'}, 'resized');
+        assert.deepEqual(fetched, [], 'nothing is sent to Telegram');
+        assert.equal((await publish({size: 300})).status, 'completed', 'positive control');
+        assert.equal(fetched.length, 1);
+    } finally { globalThis.fetch = original; }
+});
