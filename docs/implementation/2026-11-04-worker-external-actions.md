@@ -95,6 +95,13 @@ another human, or left unowned) fails with `owner-changed` and nothing sent, on 
 first and a repeated execute. No product path moves a bound agent today, so this pins
 the dispatch re-check itself. Dropping the approver comparison fails both cases;
 refusing only an unowned agent fails the other-human case.
+Added later (2026-11-12): the owner's decision itself. Confirming a pending plan whose
+credential was revoked or retargeted after it was shown is `plan-changed` and leaves it
+pending (only the revision change was covered); confirming past expiry is `expired`
+while rejecting still decides it; confirming or rejecting a plan already decided is
+`not-pending` and keeps its outcome. Each of the five guards (revoked, target, expiry,
+confirm status, reject status) survived every earlier test; removing any one now fails
+its new test.
 
 In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
 content in `<pre>`, verified account, credential revision, bound form tokens) and
