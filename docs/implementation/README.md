@@ -119,13 +119,13 @@ The scheduled Weave task (publishing router and governed actions, `typescript/ma
 [issue #365](https://github.com/KoalaFacts/Weave/issues/365), the channel with Envoylet. This section holds its run
 log. Records above stay the evidence for what each change delivered.
 
-Last docs housekeeping: 2026-11-12 (Sydney), this PR.
+Last docs housekeeping: 2026-11-12 (Sydney), #417.
 
 ### Items
 
 | Item | Status |
 | --- | --- |
-| `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | merged, not deployed (owner approved `schema-366` on 2026-11-11; #421 superseded #366). Release path added (this PR): a manual production dispatch with `apply_external_action_keys_schema: true` applies exactly the approved table and index ([steps](2026-11-05-propose-idempotency.md#release-path-applying-the-table-to-production-2026-11-12)); applying it to production is owner-authorized (2026-11-12) and waits for that owner run |
+| `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | merged, not deployed (#421, `66482d4`; owner approved `schema-366` on 2026-11-11; supersedes #366). Replay at full capacity and refused keyed proposals pinned by tests (#422). Release path added (#423): a manual production dispatch with `apply_external_action_keys_schema: true` applies exactly the approved table and index ([steps](2026-11-05-propose-idempotency.md#release-path-applying-the-table-to-production-2026-11-12)); applying it to production is owner-authorized (2026-11-12) and waits for that owner run |
 | Status-change notification for apps (shared plan step 4) | 1/2 done (#369, `0d2d22e`, deployed 2026-11-05 21:37 UTC): external-action notices on the inbox. 2/2, a push webhook, is blocked: storing a callback address is a schema change and needs an owner decision first |
 | Native X adapter (shared plan step 4) | 1/2 (#370): text and up to 4 images over OAuth 1.0a user context. 2/2 (#372): up to 1000 characters of alt text per image through `POST /2/media/metadata`, verified from X's docs on 2026-11-06 |
 | Native LinkedIn adapter (shared plan step 4) | done (#373, `ae051a9`): text and up to 9 images with alt text on the owner's member feed with their own member access token; Posts and Images APIs checked against LinkedIn's docs on 2026-11-06 |
@@ -145,7 +145,7 @@ Last docs housekeeping: 2026-11-12 (Sydney), this PR.
 | Seven hourly-limit tests in `agent-limits.test.ts` (unclaimed and claimed send, contact-request and token counts, the previous-hour window) could fail when they spanned the end of a UTC hour, as #394's recovery test did | done (#414, test only): they wait out the last minute of an hour first, through the `clearOfUtcHourEnd` helper now shared from `test/harness.ts` |
 | The 20-waiting-actions limit on `POST /v1/external-actions` (`pendingActionsPerAgent`) had no test, and the MCP tool and Agent Start did not name it | done (#415, `4f2c2ce`, test and docs only): a test pins the limit, its per-agent scope and that executing, rejecting or expiring a plan frees a place; MCP, Agent Start and the README name it |
 | The signed download URL Postiz fetches media through was tested only for a tampered signature and another agent; expiry, another media ID and extra parameters were not | done (#416, `b7b5658`, test only): one test pins `404 unavailable` for each, with a positive control |
-| Execute refuses with `owner-changed` when the agent's owner is no longer the approver, but no test covered that guard | done (this PR, test only): an agent moved to another human or left unowned after approval fails with nothing sent, on a first and a repeated execute |
+| Execute refuses with `owner-changed` when the agent's owner is no longer the approver, but no test covered that guard | done (#418, `a9911a8`, test only): an agent moved to another human or left unowned after approval fails with nothing sent, on a first and a repeated execute |
 | `submit-nuget` check (NETSDK1045) | open: GitHub's Automatic Dependency Submission (not a workflow here) fails with NETSDK1045. Unverified repository-side candidate ([#372's diagnosis](https://github.com/KoalaFacts/Weave/pull/372#issuecomment-6717426980)): the automatic setup reads `global.json` (`10.0.400`, `rollForward: latestMajor`) as an empty version and installs .NET 10, so selecting a compatible SDK explicitly in `global.json` might fix it; verify it in the automatic submission and the locked restore/build/tests. Otherwise the owner turns it off in Code Security settings; target frameworks and gates stay |
 
 ### Run log
