@@ -74,6 +74,10 @@ mailbox-worker tests (real D1 through Miniflare; MCP through the bundled private
 - malformed keys (space, 129 characters, a joined `k1, k2`, `/`) are `400` naming `Idempotency-Key`; a 128-character
   key is accepted; an empty value is refused by the parser (an empty header does not reach the Worker in Miniflare);
 - three concurrent proposals with one key create one plan;
+- when the keyed plan fills the agent's 20th waiting place, a new key is `429 capacity` but a replay of the first key
+  returns its action (the replay does not re-check capacity);
+- a keyed proposal refused for its fields (unknown `credentialRef`, blank content) records no key, so the corrected
+  request is admitted under the same key instead of conflicting;
 - a key row relinked to another agent's account (both foreign keys still valid) fails closed with `503 storage` instead
   of returning the other agent's action;
 - MCP: the same `idempotencyKey` twice returns the same action, the HTTP header with that key returns it too, changed
@@ -90,8 +94,9 @@ Mutation checks: each of these fails at least one test:
 - accepting a key without checking its pattern;
 - ignoring the HTTP header;
 - ignoring the MCP argument;
-- re-checking the credential on replay.
-- dropping the replayed action's account check.
+- re-checking the credential on replay;
+- dropping the replayed action's account check;
+- re-checking waiting-plan capacity on replay (only the full-capacity replay test fails).
 
 ## Limits
 
