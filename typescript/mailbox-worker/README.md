@@ -76,6 +76,13 @@ the version already serving stays compatible and keeps serving until the active
 deployment replaces it, and a failed check leaves that version serving. (Pausing used
 to add about a minute of 503 responses to every release while protecting nothing.)
 The one-time OAuth bootstrap still deploys maintenance first, because it adds bindings.
+
+One owner-approved exception, off by default and set per run: a manual production dispatch with
+`apply_external_action_keys_schema: true` lets completed-only apply exactly the approved `external_action_keys`
+table and unique index (`schema-366`, `scripts/approved-external-action-keys.ts`) and nothing else. It compares full
+normalized definitions, refuses any other pending statement or a differing existing table or index, and is a no-op once
+applied. Operator steps, the exact statements and the read-only check are in the
+[implementation record](../../docs/implementation/2026-11-05-propose-idempotency.md#release-path-applying-the-table-to-production-2026-11-12).
 Verified recovery version information is saved before the final database check, so
 it remains available in the failure report if that check fails.
 This protects the permitted SQL scope; it does not lock out concurrent administrators

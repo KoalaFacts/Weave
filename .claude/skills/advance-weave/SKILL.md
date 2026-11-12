@@ -78,7 +78,7 @@ Every PR keeps current: the area's implementation record (scope, behaviour, veri
 - Never empty-commit or close/reopen to kick CI.
 - Public demo sign-in is open (owner decision 2026-11-05, see AGENTS.md); do not make the trial allowlist mandatory again.
 - Owner decisions the task must not take: schema changes that need an apply-schema release (the push webhook), A1 (approve in chat), deploys, dropping production tables.
-- `schema-366` (the additive `external_action_keys` table) was approved by the owner on 2026-11-11. Applying it to production D1 is still an owner-authorized deploy.
+- `schema-366` (the additive `external_action_keys` table) was approved by the owner on 2026-11-11, and applying it to production D1 was authorized by the owner on 2026-11-12. The deploy still runs only from the owner's manual production dispatch with `apply_external_action_keys_schema: true`, set explicitly per run; the task never dispatches it, never sets the opt-in by default and never extends it to other statements.
 
 ## Docs scope (housekeeping)
 

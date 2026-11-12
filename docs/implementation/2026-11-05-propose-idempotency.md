@@ -61,6 +61,76 @@ statements, and an owner deploy.
   `7c88e6e`) is not part of this merge. It is release-path code with two open review findings (compare full constraint
   definitions, not names; test a successful opted-in deploy at the D1 boundary) and moves to the separate
   additive-schema release-path PR.
+- 2026-11-12: the owner authorized applying the table to production D1. The release path below delivers it, with both
+  findings fixed. The opt-in is still set explicitly on each run; nothing sets it by default.
+
+### Release path: applying the table to production (2026-11-12)
+
+**How a release compares the schema.** `scripts/deploy.ts` connects to the live D1 through Wrangler's remote binding.
+In `completed-only` mode (every ordinary release) `scripts/completed-deployment.ts` hands the planner a metadata-only
+database and `planLatestSchema` compares the live tables and indexes with a fresh in-memory database generated from
+`src/schema.ts`: missing objects become `CREATE` statements, and changed columns, foreign keys, CHECKs or indexes stop
+the release. `completed-only` requires that plan to be empty at preflight, before the ledger check, after it and before
+activation, so since #421 it refuses every release until the table exists.
+
+**The opt-in.** `WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA=true`, set from the `apply_external_action_keys_schema`
+input of a manual production dispatch of [Deploy Weave Worker](../../.github/workflows/deploy-weave-worker.yml)
+(default `false`; the owner comment on #236, `publish/demo` and repository scope can never set it). With it, the
+completed-only release (`scripts/approved-external-action-keys.ts`):
+
+- accepts a pending plan only if every statement, in order, equals one of the two pinned approved statements as whole
+  normalized DDL (every column, type, default, constraint expression, foreign-key action, index column and
+  `UNIQUE`), not just their names; anything else pending is refused before any upload or write (finding P2);
+- refuses an existing `external_action_keys` table or `external_action_keys_action` index whose full definition differs,
+  and any other index or trigger on the table;
+- re-plans before the ledger check and refuses if the pending statements changed since preflight;
+- after the zero-change ledger check, executes the pinned statement text as one D1 batch, requires every result to
+  report success, then requires an empty plan with both objects present and exact, and continues the normal release
+  (recovery version, active version, the same final checks);
+- does not pause the demo: the version already serving never reads the new table;
+- is a no-op once applied: with the exact table and index present the plan is empty and the release is an ordinary
+  completed-only release.
+
+The opt-in is refused before any external operation in `maintain` mode, with the one-time OAuth bootstrap, or with any
+value other than `true`/`false`. Off (the default), behaviour is unchanged.
+
+**What it executes**, and nothing else:
+
+```sql
+CREATE TABLE `external_action_keys` (
+	`account_id` text NOT NULL,
+	`idempotency_key` text NOT NULL,
+	`request_hash` text NOT NULL,
+	`action_id` text NOT NULL,
+	`created_at` integer NOT NULL,
+	PRIMARY KEY(`account_id`, `idempotency_key`),
+	FOREIGN KEY (`account_id`) REFERENCES `accounts`(`account_id`) ON UPDATE no action ON DELETE restrict,
+	FOREIGN KEY (`action_id`) REFERENCES `external_actions`(`action_id`) ON UPDATE no action ON DELETE restrict,
+	CONSTRAINT "external_action_keys_key" CHECK(length(idempotency_key) BETWEEN 1 AND 128 AND idempotency_key NOT GLOB '*[^A-Za-z0-9._:-]*'),
+	CONSTRAINT "external_action_keys_hash" CHECK(length(request_hash)=64 AND request_hash NOT GLOB '*[^0-9a-f]*')
+);
+CREATE UNIQUE INDEX "external_action_keys_action" ON "external_action_keys" ("action_id");
+```
+
+**Operator steps (owner only).**
+
+1. Actions → Deploy Weave Worker → Run workflow, from `main`: `configuration_scope: production`,
+   `enable_first_party_oauth: false`, `apply_external_action_keys_schema: true`. Approve the protected `production`
+   environment when asked.
+2. In the deploy step's log, expect `Completed-only approved schema: {"statements":2,...}` followed by the
+   `after-ledger-check` validation with `"schemaStatements":0`, then the recovery and active deployments and the public
+   MCP check. `test-results/deployment/result.json` records the applied statements in `approvedSchemaApplied`.
+3. Later releases go back to the default: the `/weave-deploy-demo` comment or a dispatch with the opt-in off. Running
+   it again with the opt-in on is harmless (empty plan).
+
+**Checking it afterwards, read-only.** Post `/weave-d1-inventory` on #236 (or dispatch the read-only D1 inventory
+workflow) and look for `external_action_keys` among the tables; or run
+`wrangler d1 execute <database> --remote --command "SELECT name,sql FROM sqlite_master WHERE tbl_name='external_action_keys'"`.
+The next ordinary completed-only release passing its preflight (`"schemaStatements":0`) is the end-to-end check.
+
+**Failure.** Every refusal before the batch leaves the previous version serving and D1 untouched. The batch is a single
+D1 transaction; if a later step fails, the previous version keeps serving with the new (unread) table, and a re-run
+continues from an empty plan. Do not drop the table or restore a snapshot.
 
 ## Verification
 
@@ -100,3 +170,6 @@ Mutation checks: each of these fails at least one test:
   dispatched action.
 - Not deployable through the current `completed-only` release (see Storage). Envoylet's demo check (propose with a
   key, drop the response, repeat, see one plan on `/account`) waits for that path and an owner deploy.
+  (2026-11-12: the path exists; see "Release path" above. The owner deploy is still to run.)
+- The release path protects the permitted SQL; it does not lock out a concurrent administrator between its checks.
+  Changes they make are caught by the re-plans before the ledger check, after the batch and before activation.

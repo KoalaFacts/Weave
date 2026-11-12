@@ -115,3 +115,19 @@ test('protected production preflights the live authorization Worker before mutat
     assert.match(production.slice(preflight,mailbox),/CLOUDFLARE_API_TOKEN:/);
     assert.match(production.slice(preflight,mailbox),/CLOUDFLARE_ACCOUNT_ID:/);
 });
+
+test('the external_action_keys schema opt-in is a default-off manual input gated twice and passed only to the production deploy',()=>{
+    const workflow=readFileSync(path,'utf8');
+    assert.match(workflow,/apply_external_action_keys_schema:\n(?:\s+\w+:.*\n)*?\s+type: boolean\n\s+default: false/);
+    const verify=workflow.split(/^  verify:/m)[1].split(/^  deploy-repository:/m)[0];
+    const repository=workflow.split(/^  deploy-repository:/m)[1].split(/^  deploy-production:/m)[0];
+    const production=workflow.split(/^  deploy-production:/m)[1];
+    const gate=/WEAVE_RELEASE_EXTERNAL_ACTION_KEYS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_external_action_keys_schema \|\| 'false' \}\}/;
+    assert.match(verify,gate);assert.match(production,gate);
+    assert.ok(verify.indexOf('scripts/approved-external-action-keys.ts')<verify.indexOf('require-ci-success.ts'),'gated before other release work');
+    assert.ok(production.indexOf('node scripts/approved-external-action-keys.ts')<production.indexOf('node scripts/deploy.ts'),'revalidated inside production before the deploy');
+    assert.match(production,/WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_external_action_keys_schema == true && 'true' \|\| 'false' \}\}/,
+        'an owner comment can never opt in');
+    assert.doesNotMatch(repository,/EXTERNAL_ACTION_KEYS/,'repository-scope and publish/demo releases never opt in');
+    assert.equal((workflow.match(/WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA:/g)||[]).length,1);
+});

@@ -7,6 +7,7 @@ import { build } from 'esbuild';
 import { createMissingSchema, planLatestSchema, type StorageDatabase } from './latest-schema.ts';
 import { prepareCompletedDeployment } from './completed-deployment.ts';
 import { verifyCompletedMigration } from './completed-migration.ts';
+import { externalActionKeysOptIn } from './approved-external-action-keys.ts';
 
 interface WorkerConfig {
     name: string;
@@ -37,7 +38,7 @@ interface DeployOptions {
 interface DeploymentReport {
     worker:string;databaseId:string;artifactSha256:Record<string,string>;startedAt:string;
     databaseMode:'maintain'|'completed-only';
-    conversion?:unknown;schemaPlan?:Awaited<ReturnType<typeof planLatestSchema>>;
+    conversion?:unknown;schemaPlan?:Awaited<ReturnType<typeof planLatestSchema>>;approvedSchemaApplied?:string[];
     recoveryVersion?:string;recoveryCommand?:string;finishedAt?:string;failure?:string;
 }
 
@@ -73,6 +74,12 @@ export async function buildArtifacts(root: string){
 export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory,openDatabase=openRemoteDatabase,buildBundles=buildArtifacts,verifyMigration=verifyCompletedMigration,applySchema=createMissingSchema,planSchema=planLatestSchema}: DeployOptions={}){
     const databaseMode=env.WEAVE_DEPLOY_DATABASE_MODE??'maintain';
     if(databaseMode!=='maintain'&&databaseMode!=='completed-only')throw Error('Unknown database mode; use maintain or completed-only.');
+    // The owner's per-run opt-in for the approved external_action_keys schema: completed-only only, never with the
+    // one-time OAuth bootstrap, and checked before any external operation.
+    const approvedKeys=externalActionKeysOptIn(env.WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA);
+    if(approvedKeys&&databaseMode!=='completed-only')throw Error('The external_action_keys schema opt-in requires completed-only mode; no mutation attempted.');
+    if(approvedKeys&&env.WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING!==undefined&&env.WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING!=='false')
+        throw Error('The external_action_keys schema opt-in cannot share a release with the OAuth bootstrap; no mutation attempted.');
     const base=JSON.parse(await readFile(join(root,'wrangler.jsonc'),'utf8'));
     const config: ReturnType<typeof deploymentConfig> & {
         services?: {binding:string;service:string;entrypoint?:string}[]
@@ -304,7 +311,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         // initialization, resource provisioning or legacy SQL migration chain.
         const tables=(await connection.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all<{name:string}>()).results.map(row=>row.name);
         if(!tables.includes('mailbox_records')||!tables.includes('mailbox_revision')||!tables.includes('mailbox_guard'))throw Error('Expected existing mailbox storage; no mutation attempted.');
-        const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,planSchema):undefined;
+        const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,planSchema,approvedKeys):undefined;
         // Read-only and before maintenance: an unconverted database never pauses the service.
         if(!completed){
             report.conversion=await verifyMigration(connection.db);
@@ -315,8 +322,10 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             await save();
         }
         // Completed-only changes no schema or data, so the version already serving
-        // stays compatible throughout and a pause would only be downtime. Schema
-        // work and the one-time OAuth bootstrap (new bindings) still pause first.
+        // stays compatible throughout and a pause would only be downtime. The opted-in
+        // external_action_keys table is new and unread by that version, so it does not
+        // pause either. Maintain-mode schema work and the one-time OAuth bootstrap (new
+        // bindings) still pause first.
         const pause=!completed||firstPartyBootstrap;
         const held=pause?'maintenance retained':'previous version still serving';
         if(pause){

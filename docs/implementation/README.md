@@ -125,7 +125,7 @@ Last docs housekeeping: 2026-11-12 (Sydney), this PR.
 
 | Item | Status |
 | --- | --- |
-| `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | merged, not deployed (owner approved `schema-366` on 2026-11-11; this PR supersedes #366). Deploying needs the separate additive-schema release path (follow-up) and an owner deploy decision |
+| `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | merged, not deployed (owner approved `schema-366` on 2026-11-11; #421 superseded #366). Release path added (this PR): a manual production dispatch with `apply_external_action_keys_schema: true` applies exactly the approved table and index ([steps](2026-11-05-propose-idempotency.md#release-path-applying-the-table-to-production-2026-11-12)); applying it to production is owner-authorized (2026-11-12) and waits for that owner run |
 | Status-change notification for apps (shared plan step 4) | 1/2 done (#369, `0d2d22e`, deployed 2026-11-05 21:37 UTC): external-action notices on the inbox. 2/2, a push webhook, is blocked: storing a callback address is a schema change and needs an owner decision first |
 | Native X adapter (shared plan step 4) | 1/2 (#370): text and up to 4 images over OAuth 1.0a user context. 2/2 (#372): up to 1000 characters of alt text per image through `POST /2/media/metadata`, verified from X's docs on 2026-11-06 |
 | Native LinkedIn adapter (shared plan step 4) | done (#373, `ae051a9`): text and up to 9 images with alt text on the owner's member feed with their own member access token; Posts and Images APIs checked against LinkedIn's docs on 2026-11-06 |
