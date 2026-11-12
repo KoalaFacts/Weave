@@ -19,6 +19,11 @@ on:
         required: true
         type: boolean
         default: false
+      apply_external_action_keys_schema:
+        description: Owner-approved schema-366 only; applies exactly the external_action_keys table and unique index; production scope, set per run
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
 # All issue comments trigger this workflow, even when its release job skips.
@@ -96,6 +101,13 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
           WEAVE_RELEASE_DATABASE_MODE: completed-only
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
+      - name: Gate the opt-in external_action_keys schema before all other release work
+        shell: bash
+        run: node typescript/mailbox-worker/scripts/approved-external-action-keys.ts
+        env:
+          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
+          WEAVE_RELEASE_EXTERNAL_ACTION_KEYS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_external_action_keys_schema || 'false' }}
       # Full product CI includes the .NET tests and mandatory 90% owner coverage gate.
       # Worker/OAuth suites alone cannot authorize a production release while this CI is pending or red.
       - name: Require passed full CI and coverage on main for this commit
@@ -204,6 +216,13 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
           WEAVE_RELEASE_DATABASE_MODE: completed-only
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
+      - name: Revalidate the opt-in external_action_keys schema inside protected production
+        run: node scripts/approved-external-action-keys.ts
+        working-directory: typescript/mailbox-worker
+        env:
+          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
+          WEAVE_RELEASE_EXTERNAL_ACTION_KEYS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_external_action_keys_schema || 'false' }}
       - name: Verify resources, migrate, confirm, and deploy existing demo
         run: node scripts/deploy.ts
         working-directory: typescript/mailbox-worker
@@ -212,6 +231,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WEAVE_DEPLOY_DATABASE_MODE: completed-only
           WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: ${{ github.event_name == 'issue_comment' && 'false' || (inputs.enable_first_party_oauth == true && 'true' || 'false') }}
+          WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_external_action_keys_schema == true && 'true' || 'false' }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
         working-directory: typescript/mailbox-worker
