@@ -228,3 +228,89 @@ test('executeBlueskyPost_ServerErrorAtCreate_UnknownAndNeverResent', () => scena
     assert.equal((await execute(h, agent, actionId)).status, 'unknown');
     assert.equal(methods(b).filter(m => m === 'com.atproto.repo.createRecord').length, 1);
 }));
+
+/** Calls the adapter directly with Bluesky's XRPC answers replaced; `answer` receives the method name and returns the response. */
+async function publishDirect(answer: (method: string) => Response, options: {stored?: {size: number} | null; media?: boolean; target?: string} = {}) {
+    const original = globalThis.fetch, sent: string[] = [];
+    globalThis.fetch = async (input: RequestInfo | URL) => {
+        const method = String(input).slice(xrpc.length);
+        sent.push(method);
+        return answer(method);
+    };
+    const stored = options.stored === undefined ? {size: 300} : options.stored;
+    try {
+        const outcome = await bluesky.publish({
+            env: {EXTERNAL_MEDIA: {get: async () => stored && {size: stored.size, body: new Blob([new Uint8Array(stored.size)]).stream()}}} as unknown as Env,
+            accountId: 'a', targetAccount: options.target ?? did, secret: appPassword, actionId: 'x',
+            post: {text: 'x', media: options.media ? [{mediaId: 'm', bytes: 300, sha256: 'a'.repeat(64), contentType: 'image/png', alt: 'a'}] : [], settings: {}, publishAt: null}} as never)
+            .catch((error: Error) => ({thrown: error.message}));
+        return {outcome, sent};
+    } finally { globalThis.fetch = original; }
+}
+const blob = {$type: 'blob', ref: {$link: 'bafkx'}, mimeType: 'image/png', size: 300};
+const posted = (overrides: Record<string, unknown> = {}) => (method: string) =>
+    method === 'com.atproto.server.createSession' ? session(overrides)
+        : method === 'com.atproto.repo.uploadBlob' ? Response.json({blob})
+            : Response.json({uri: `at://${did}/app.bsky.feed.post/3kabc`, cid: 'bafyrei'});
+
+test('publishBlueskyPost_AnswerNotOnePostOfThisAccount_UnconfirmedNeverCompleted', async () => {
+    const answers: [string, () => Response][] = [
+        ['a post URI on a non-2xx status', () => Response.json({uri: `at://${did}/app.bsky.feed.post/3kabc`}, {status: 500})],
+        ['another account\'s post', () => Response.json({uri: `at://did:plc:${'b'.repeat(24)}/app.bsky.feed.post/3kabc`})],
+        ['another collection', () => Response.json({uri: `at://${did}/app.bsky.feed.like/3kabc`})],
+        ['a URI that is not a string', () => Response.json({uri: 7})],
+        ['an answer over 64 KiB', () => Response.json({uri: `at://${did}/app.bsky.feed.post/3kabc`, padding: 'x'.repeat(70_000)})],
+    ];
+    for (const [name, create] of answers) {
+        const {outcome, sent} = await publishDirect(method => method === 'com.atproto.repo.createRecord' ? create() : posted()(method));
+        assert.deepEqual(outcome, {thrown: 'Unconfirmed Bluesky response.'}, name + ' does not confirm a post, so the router records unknown');
+        assert.equal(sent.filter(m => m === 'com.atproto.repo.createRecord').length, 1, name);
+    }
+    assert.deepEqual((await publishDirect(posted())).outcome, {status: 'completed', receipt: `at://${did}/app.bsky.feed.post/3kabc`}, 'positive control');
+});
+
+test('publishBlueskyPost_CreateRefused401Or403Or413_RejectedWithStatus', async () => {
+    for (const status of [401, 403, 413]) {
+        const {outcome} = await publishDirect(method => method === 'com.atproto.repo.createRecord'
+            ? Response.json({uri: `at://${did}/app.bsky.feed.post/3kabc`}, {status}) : posted()(method));
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'bluesky-refused-' + status});
+    }
+});
+
+test('publishBlueskyPost_SessionNotUsable_CredentialRefusedAndNothingPosted', async () => {
+    const cases: [string, (method: string) => Response, string?][] = [
+        ['a session body on a refusal status', method => Response.json({did, handle, accessJwt: 'jwt-x', active: true}, {status: 401})],
+        ['no access token', posted({accessJwt: ''})],
+        ['a handle that is not a handle', posted({handle: 'not a handle'})],
+        ['a DID outside did:plc and did:web', posted({did: 'did:example:abc'}), 'did:example:abc'],
+    ];
+    for (const [name, answer, target] of cases) {
+        const {outcome, sent} = await publishDirect(answer, {target});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'credential-refused'}, name);
+        assert.deepEqual(sent, ['com.atproto.server.createSession'], name + ': nothing is posted');
+    }
+});
+
+test('publishBlueskyPost_StoredFileMissingOrResized_MediaUnavailableAndNothingPosted', async () => {
+    // The router checks the pinned files first; this is the adapter's own re-check at the moment it reads the bytes.
+    for (const [name, stored] of [['gone', null], ['resized', {size: 301}]] as const) {
+        const {outcome, sent} = await publishDirect(posted(), {media: true, stored});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'media-unavailable'}, name);
+        assert.deepEqual(sent, ['com.atproto.server.createSession'], name + ': nothing is uploaded or posted');
+    }
+    const control = await publishDirect(posted(), {media: true});
+    assert.equal((control.outcome as {status: string}).status, 'completed', 'positive control');
+    assert.deepEqual(control.sent, ['com.atproto.server.createSession', 'com.atproto.repo.uploadBlob', 'com.atproto.repo.createRecord']);
+});
+
+test('publishBlueskyPost_UploadNotConfirmed_MediaUploadRefusedAndNothingPosted', async () => {
+    const answers: [string, () => Response][] = [
+        ['a blob on a non-2xx status', () => Response.json({blob}, {status: 500})],
+        ['a blob that is not an object', () => Response.json({blob: 'bafkx'})],
+    ];
+    for (const [name, upload] of answers) {
+        const {outcome, sent} = await publishDirect(method => method === 'com.atproto.repo.uploadBlob' ? upload() : posted()(method), {media: true});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'media-upload-refused'}, name);
+        assert.ok(!sent.includes('com.atproto.repo.createRecord'), name + ': nothing is posted');
+    }
+});
