@@ -19,6 +19,9 @@ const sources: Record<string, () => Response> = {
     '/missing.mp4': () => new Response('gone', {status: 404}),
     '/page.html': () => new Response('<html></html>', {headers: {'Content-Type': 'text/html'}}),
     '/unsized.mp4': () => new Response(new ReadableStream({start(c) { c.enqueue(file); c.close(); }}), {headers: {'Content-Type': 'video/mp4'}}),
+    '/empty.mp4': () => new Response(null, {headers: {'Content-Type': 'video/mp4', 'Content-Length': '0'}}),
+    // Over the 100 MiB cap by one byte; the Worker must refuse on the header alone, before reading any of the body.
+    '/huge.mp4': () => new Response(new ReadableStream({start(c) { c.enqueue(file); c.close(); }}), {headers: {'Content-Type': 'video/mp4', 'Content-Length': String(100 * 1024 * 1024 + 1)}}),
 };
 async function scenario(run: (s: {h: Harness; seen: string[]}) => Promise<void>) {
     const seen: string[] = [];
@@ -49,6 +52,7 @@ test('importMedia_UnsafeOrMalformedUrl_RefusedWithoutAnyRequest', () => scenario
     for (const url of ['http://cdn.example.com/clip.mp4', 'https://127.0.0.1/clip.mp4', 'https://2130706433/clip.mp4', 'https://0x7f.1/clip.mp4',
         'https://[::1]/clip.mp4', 'https://localhost/clip.mp4', 'https://localhost./clip.mp4', 'https://printer.local./clip.mp4',
         'https://media.weave.test./v1/external-media/x/content', 'https://printer.local/clip.mp4', 'https://db.internal/clip.mp4',
+        'https://api.localhost/clip.mp4', 'https://router.home.arpa/clip.mp4', 'https://ROUTER.Home.Arpa./clip.mp4',
         'https://cdn.example.com:8443/clip.mp4', 'https://user:pw@cdn.example.com/clip.mp4', 'https://media.weave.test/v1/external-media/x/content',
         'https://cdn.example.com/' + 'a'.repeat(2048), 'not a url', 42]) {
         const response = await importing(h, agent, {url});
@@ -62,7 +66,8 @@ test('importMedia_UnsafeOrMalformedUrl_RefusedWithoutAnyRequest', () => scenario
 test('importMedia_SourceRefusesOrMisdescribes_NothingStored', () => scenario(async ({h}) => {
     const agent = await h.register();
     for (const [path, reason] of [['/moved.mp4', 'must not redirect'], ['/missing.mp4', 'answered 404, not 200'], ['/page.html', 'must serve'],
-        ['/unsized.mp4', 'must state a Content-Length'], ['/other.mp4', 'answered 599, not 200']]) {
+        ['/unsized.mp4', 'must state a Content-Length'], ['/empty.mp4', 'must state a Content-Length'], ['/huge.mp4', 'must state a Content-Length'],
+        ['/other.mp4', 'answered 599, not 200']]) {
         const response = await importing(h, agent, {url: 'https://cdn.example.com' + path});
         assert.equal(response.status, 400, path);
         assert.ok(((await response.json()) as any).reason.startsWith(reason), path);
@@ -79,9 +84,10 @@ test('importMediaFromUrl_McpGrant_ChecksAuthorityBeforeFetching', () => scenario
         CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: mediaOrigin,
         EXTERNAL_MEDIA: inProcessMedia(await h.mf.getR2Bucket('EXTERNAL_MEDIA'))} as unknown as Env;
     // The tool runs in this process, so its fetch is this process's fetch.
-    const fetched: {url: string; redirect?: string}[] = [], original = globalThis.fetch;
+    const fetched: {url: string; redirect?: string; encoding?: string | null}[] = [], original = globalThis.fetch;
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-        fetched.push({url: String(input), redirect: init?.redirect});
+        // Content-Length is compared with the stored size, so the source must not compress what it sends.
+        fetched.push({url: String(input), redirect: init?.redirect, encoding: new Headers(init?.headers).get('Accept-Encoding')});
         return sources['/clip.mp4']();
     };
     const call = async () => {
@@ -92,7 +98,7 @@ test('importMediaFromUrl_McpGrant_ChecksAuthorityBeforeFetching', () => scenario
         const imported = await call();
         assert.equal(imported.status, 200, JSON.stringify(imported.body));
         assert.equal(imported.body.sha256, sha);
-        assert.deepEqual(fetched, [{url: 'https://cdn.example.com/clip.mp4', redirect: 'manual'}]);
+        assert.deepEqual(fetched, [{url: 'https://cdn.example.com/clip.mp4', redirect: 'manual', encoding: 'identity'}]);
         await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now()) * 10000n).toString(), grantId).run();
         assert.equal((await call()).status, 401);
         assert.equal(fetched.length, 1, 'a revoked grant makes no outbound request');
@@ -122,6 +128,13 @@ test('importMediaFromUrl_SourceBreaksOffOrStorageFails_EachKeepsItsOwnMeaning', 
     try {
         const short = await call();
         assert.deepEqual([short.status, short.body.field, short.body.reason], [400, 'url', 'could not be fetched completely'], 'a body shorter than stated is the source\'s failure');
+        // A source that keeps sending past its stated length is cut off at the first excess chunk, not read to the end.
+        let pulled = 0;
+        serve = () => new Response(new ReadableStream({pull(c) { if (++pulled > 50) c.close(); else c.enqueue(file); }}),
+            {headers: {'Content-Type': 'video/mp4', 'Content-Length': '100'}});
+        const long = await call();
+        assert.deepEqual([long.status, long.body.field, long.body.reason], [400, 'url', 'could not be fetched completely'], 'a body longer than stated is the source\'s failure');
+        assert.ok(pulled <= 3, `read ${pulled} chunks of a source already over its stated length`);
         serve = sources['/clip.mp4'];
         storageDown = true;
         const down = await call();

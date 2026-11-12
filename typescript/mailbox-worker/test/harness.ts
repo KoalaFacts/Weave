@@ -24,10 +24,20 @@ export async function start({ persist, migrate = true, bindings = {}, scriptPath
             if(legacy)for(const sql of (await readFile('test/fixtures/legacy-mailbox.sql','utf8')).split(';').filter(x=>x.trim()))await db.prepare(sql).run();
             else await initializeDatabase(db,BigInt(Date.now())*10000n);
         }
+        // Concurrent requests for one credential share a single token request: parallel issuance can meet a busy
+        // database and answer 503, which is the token endpoint's behaviour and not what those tests exercise.
+        const issuing = new Map<string, Promise<string>>();
         const token = async (as: AgentCredential): Promise<string> => {
             if (strangers.has(as)) return randomBytes(32).toString('base64url');
             const cacheKey = as.accountId + '/' + as.key.kid, cached = tokens.get(cacheKey);
             if (cached && cached.expiresAt - Date.now() > 60000) return cached.accessToken;
+            const inFlight = issuing.get(cacheKey);
+            if (inFlight) return inFlight;
+            const request = issue(as, cacheKey).finally(() => issuing.delete(cacheKey));
+            issuing.set(cacheKey, request);
+            return request;
+        };
+        const issue = async (as: AgentCredential, cacheKey: string): Promise<string> => {
             const url = 'http://localhost/v1/token';
             const form = new URLSearchParams([['grant_type', 'client_credentials'], ['client_assertion_type', 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'],
                 ['client_assertion', clientAssertion(as.key, { accountId: as.accountId, audience: url })]]);
