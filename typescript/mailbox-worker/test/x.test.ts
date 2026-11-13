@@ -379,7 +379,9 @@ test('connectX_UserNotConfirmedByX_RefusedWithoutStoring', async () => {
     const user = {id: userId, name: 'HSC Beats', username: 'hscbeats'};
     for (const [name, me] of [['a user on a refusal status', () => Response.json({data: user}, {status: 401})],
         ['a user in an answer over 64 KiB', () => oversized(user)],
-        ['a username X would not issue', () => Response.json({data: {...user, username: 'hsc beats<b>'}})]] as const) {
+        ['a username X would not issue', () => Response.json({data: {...user, username: 'hsc beats<b>'}})],
+        ['an answer that is not UTF-8', () => new Response(Buffer.concat([Buffer.from(`{"data":{"id":"${userId}","name":"`), Buffer.from([0xff]),
+            Buffer.from('","username":"hscbeats"}}')]))]] as const) {
         const {accounts, sent} = await verifyDirect(me);
         assert.equal(accounts, null, name);
         assert.deepEqual(sent, ['/2/users/me'], name);
