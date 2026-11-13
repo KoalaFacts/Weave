@@ -317,6 +317,26 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   cleaning removed from the YouTube connect; the fallback tested on an empty string
   instead of on a visible character (2026-11-07). Raising the 400-unit bound survives:
   every current adapter cuts its name shorter, so the bound only guards future adapters.
+- Connect-input validation (2026-11-13): the two owner connect RPCs refuse a malformed
+  form before any platform call. `telegram`
+  `connectAccount_MalformedFormShape_NotFoundBeforeAnyPlatformCall` drives `connectAccount`
+  with an extra top-level key, a non-integer `authAt`, a non-string `provider`, a missing,
+  extra or non-string adapter field, and a field value over 2048 characters or carrying a
+  control character: each is `not-found`, the Telegram fake is never called, nothing is
+  stored, and the corrected five-key form connects (positive control). `external-credentials`
+  `connectExternalCredential_MalformedInput_NotFoundAndNothingExchanged` drives the YouTube
+  OAuth-callback RPC with an extra key, an empty / over-2048 / space / control-character
+  authorization code, a verifier under 43 or over 128 characters or with a disallowed
+  character, a non-`youtube` provider, and a non-URL or non-https redirect: each is
+  `not-found` with no Google exchange, and the well-formed callback exchanges and connects.
+  Mutations, each killed by these two tests: removing the top-level five-key check, the
+  `authAt` safe-integer check, the `provider` string check, the per-field count check, the
+  non-string-field check and the printable/2048 `fieldValue` check in `connectAccount`; and
+  removing the seven-key check, `codePattern`, `verifierPattern`, the `provider === 'youtube'`
+  check, `URL.canParse` and the `https:` check in `connectExternalCredential`'s `validInput`.
+  Equivalent, left unpinned: the `humanId`/`agentId` UUID checks (a non-UUID still reads as
+  `not-found` through the ownership lookup) and `Array.isArray(fields)` (an array's named
+  fields read as `undefined` and fail the non-string-field check).
 - Old actions stay readable: no sweep deletes or rewrites an `external_actions` row, and
   Envoylet #95 relies on that (it forgets a remembered plan only on `404`).
   `external-actions` `getExternalAction_OldActionsAfterCronSweeps_StillReadWithTheirOutcome`
