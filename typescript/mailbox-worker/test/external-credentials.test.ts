@@ -120,6 +120,39 @@ test('connectExternalCredential_Refusals_NothingStored', async () => {
     } finally { await h.close(); }
 });
 
+test('connectExternalCredential_MalformedInput_NotFoundAndNothingExchanged', async () => {
+    // The OAuth-callback RPC validates its own input before the code is exchanged: exactly the seven known fields, an
+    // authorization code of 1-2048 printable characters, a PKCE verifier of 43-128 unreserved characters, `provider` youtube,
+    // and an https redirect URI. Anything else is an unknown form (`not-found`) and no code is ever exchanged with Google.
+    const h = await start();
+    try {
+        const {agent, humanId} = await owned(h);
+        const good = input(humanId, agent.accountId);
+        const malformed: [string, Record<string, unknown>][] = [
+            ['an extra key', {...good, extra: 1}],
+            ['an empty code', {...good, code: ''}],
+            ['a code over 2048 characters', {...good, code: '4/'.padEnd(2049, 'a')}],
+            ['a code with a space', {...good, code: '4/0A example'}],
+            ['a code with a control character', {...good, code: '4/0A\x7fexample'}],
+            ['a verifier under 43 characters', {...good, verifier: 'v'.repeat(42)}],
+            ['a verifier over 128 characters', {...good, verifier: 'v'.repeat(129)}],
+            ['a verifier with a disallowed character', {...good, verifier: 'v'.repeat(42) + '/'}],
+            ['a provider other than youtube', {...good, provider: 'telegram'}],
+            ['a redirect URI that is not a URL', {...good, redirectUri: 'not a url'}],
+            ['a non-https redirect URI', {...good, redirectUri: 'http://insecure.example/cb'}],
+        ];
+        await withGoogle({}, async requests => {
+            for (const [name, call] of malformed)
+                assert.deepEqual(await connectExternalCredential(environment(h), call as unknown as ConnectCredentialInput), {ok: false, reason: 'not-found'}, name);
+            assert.equal(requests.length, 0, 'a malformed callback never exchanges the code');
+            // Positive control: the well-formed callback with all seven fields exchanges the code and connects.
+            assert.deepEqual(await connectExternalCredential(environment(h), good), {ok: true, credentialRef: 'youtube', targetDisplay: 'HSC Beats'});
+            assert.ok(requests.length > 0, 'a valid callback does reach Google');
+        });
+        assert.notEqual(await row(h, agent.accountId), null);
+    } finally { await h.close(); }
+});
+
 test('connectExternalCredential_OwnerFrozenDuringVerify_FrozenAndNothingStored', async () => {
     const h = await start();
     try {
