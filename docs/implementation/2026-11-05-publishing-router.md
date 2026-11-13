@@ -268,6 +268,20 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   resized stored file is `media-unavailable` before any upload; and an upload answer on a non-2xx status
   or with a blob that is not an object is `media-upload-refused` with nothing posted. Fifteen guard
   mutations that survived before are killed (19 scanned; four were already killed).
+- Postiz's own confirmation checks (2026-11-13), through the adapter and the connector with Postiz's
+  answers replaced: `publishPostizPost_AnswerNotOneConfirmedPost_UnconfirmedNeverCompleted` covers a
+  created post on a server error, two created posts, a post id Postiz would not issue, an answer over
+  256 KiB and one that is not UTF-8 (each throws, which the router records as `unknown`), with one
+  post as a positive control and every call sent with `redirect: 'manual'`; 400, 401, 403, 422 and 429
+  at `/posts` are `postiz-refused-<status>`; an upload on a server error, without a string id or with a
+  path outside `https:` is `media-upload-refused` with nothing posted. On connect, a channel listing on
+  a server error is refused, a value that is not a Postiz key is never sent, a channel id Postiz would
+  not issue and an inherited name such as `toString` are left out, and channel and profile names are
+  cut to 120 and 80 characters. Tracking throws on a listing on a server error or with `posts` that
+  are not a list, and keeps no release URL outside `https:` or over 2048 characters. Twenty-two guard
+  mutations that survived before are killed (28 scanned; four were already killed). One is equivalent
+  and stays: the listed post id pattern, since every tracked receipt already holds an id that passed
+  it at execute. The request timeout is a timing value and stays unpinned.
 - auth-worker portable tests:
   - the generic form reader takes the token and then the fields, and refuses: empty,
     misplaced, duplicate or badly named fields; too many fields; another form's token;

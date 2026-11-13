@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { start } from './harness.ts';
 import { sweepPublications, firstRecheckMs } from '../src/external-publications.ts';
 import { connectAccount } from '../src/external-credentials.ts';
+import { postiz } from '../src/postiz-provider.ts';
 const connectPostiz = (env: Env, {apiKey, ...owner}: {humanId: string; authAt: number; agentId: string; apiKey: string}) =>
     connectAccount(env, {...owner, provider: 'postiz', fields: {apiKey}});
 import { openSecret } from '../src/credential-vault.ts';
@@ -341,3 +342,93 @@ test('publication_ScheduledSweep_WorkerCronAsksPostiz', () => scenario(async ({h
     assert.equal(p.listed.length, 1);
     assert.equal((await publication(h, actionId)).url, 'https://www.linkedin.com/feed/update/2');
 }));
+
+// ---- Postiz's own confirmation checks, through the adapter and connector with Postiz's answers replaced ----------------
+/** Calls the adapter directly with Postiz's answers replaced; `answer` receives each request and returns the response. */
+async function publishDirect(answer: (request: Request) => Response | Promise<Response>, media = 0) {
+    const original = globalThis.fetch, sent: {method: string; path: string; redirect?: RequestRedirect}[] = [];
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        sent.push({method: init?.method ?? 'GET', path: new URL(String(input)).pathname.replace('/public/v1', ''), redirect: init?.redirect});
+        return answer(new Request(String(input), init));
+    };
+    const file = {mediaId: 'm', bytes: 300, sha256: 'a'.repeat(64), contentType: 'image/png', alt: ''};
+    try {
+        return {sent, outcome: await postiz.publish({env: {EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: 'http://localhost'} as unknown as Env,
+            accountId: 'a', targetAccount: 'linkedin-page/' + integrations[1].id, secret: apiKey, actionId: 'p',
+            post: {text: 'x', media: Array.from({length: media}, () => file), settings: {__type: 'linkedin-page'}, publishAt: null}} as never)
+            .catch((error: Error) => ({thrown: error.message}))};
+    } finally { globalThis.fetch = original; }
+}
+/** Postiz's usual answers: an uploaded file for each upload and one created post. */
+const usualPostiz = (overrides: {upload?: () => Response; post?: () => Response} = {}) => (request: Request) =>
+    new URL(request.url).pathname.endsWith('/upload-from-url') ? overrides.upload?.() ?? Response.json({id: 'media-1', path: 'https://uploads.postiz.com/a.png'})
+        : overrides.post?.() ?? Response.json([{postId: 'post-1', integration: integrations[1].id}]);
+const notUtf8 = (json: string) => new Response(Buffer.concat([Buffer.from(json.slice(0, -3)), Buffer.from([0xff]), Buffer.from(json.slice(-3))]));
+const calls = (sent: {method: string; path: string}[]) => sent.map(({method, path}) => method + ' ' + path);
+
+test('publishPostizPost_AnswerNotOneConfirmedPost_UnconfirmedNeverCompleted', async () => {
+    const one = [{postId: 'post-1', integration: integrations[1].id}];
+    for (const [name, post] of [['a created post on a server error', () => Response.json(one, {status: 500})],
+        ['two created posts', () => Response.json([...one, {postId: 'post-2', integration: integrations[1].id}])],
+        ['a post id that is not Postiz\'s', () => Response.json([{postId: '../posts', integration: integrations[1].id}])],
+        ['a post id in an answer over 256 KiB', () => Response.json([{...one[0], padding: 'x'.repeat(270_000)}])],
+        ['an answer that is not UTF-8', () => notUtf8(JSON.stringify([{...one[0], note: 'abc'}]))]] as const) {
+        const {outcome, sent} = await publishDirect(usualPostiz({post}));
+        assert.deepEqual(outcome, {thrown: 'Unconfirmed Postiz response.'}, name + ' does not confirm one post, so the router records unknown');
+        assert.deepEqual(calls(sent), ['POST /posts'], name);
+    }
+    const control = await publishDirect(usualPostiz());
+    assert.equal((control.outcome as {receipt?: string}).receipt, 'posted:post-1', 'positive control: one post with a Postiz id');
+    assert.deepEqual(control.sent.map(call => call.redirect), ['manual'], 'a redirect from Postiz is never followed');
+});
+
+test('publishPostizPost_DefiniteRefusal_RejectedWithTheStatus', async () => {
+    for (const status of [400, 401, 403, 422, 429]) {
+        const {outcome} = await publishDirect(usualPostiz({post: () => Response.json({message: 'no'}, {status})}));
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'postiz-refused-' + status});
+    }
+});
+
+test('publishPostizPost_UploadNotConfirmed_MediaUploadRefusedAndNothingPosted', async () => {
+    for (const [name, upload] of [['an uploaded file on a server error', () => Response.json({id: 'media-1', path: 'https://uploads.postiz.com/a.png'}, {status: 500})],
+        ['an upload with no id', () => Response.json({id: 7, path: 'https://uploads.postiz.com/a.png'})],
+        ['an upload outside https', () => Response.json({id: 'media-1', path: 'http://uploads.postiz.com/a.png'})]] as const) {
+        const {outcome, sent} = await publishDirect(usualPostiz({upload}), 1);
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'media-upload-refused'}, name);
+        assert.deepEqual(calls(sent), ['POST /upload-from-url'], name + ': nothing is posted');
+    }
+    const control = await publishDirect(usualPostiz(), 1);
+    assert.equal((control.outcome as {status: string}).status, 'completed', 'positive control');
+    assert.deepEqual(control.sent.map(call => call.redirect), ['manual', 'manual']);
+});
+
+test('connectPostiz_ChannelsNotConfirmedByPostiz_RefusedOrLeftOut', async () => {
+    const verify = async (value: string, respond: () => Response) => {
+        const original = globalThis.fetch; let asked = 0;
+        globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => { asked++; assert.equal(init?.redirect, 'manual'); return respond(); };
+        try { return {channels: await postiz.connector!.verify({apiKey: value}), asked}; } finally { globalThis.fetch = original; }
+    };
+    assert.deepEqual(await verify(apiKey, () => Response.json(integrations, {status: 500})), {channels: null, asked: 1}, 'a listing on a server error');
+    assert.deepEqual(await verify('short key', () => Response.json(integrations)), {channels: null, asked: 0}, 'a value that is not a Postiz key is never sent');
+    const {channels} = await verify(apiKey, () => Response.json([
+        {...integrations[1], id: 'cm4/../../posts'}, {...integrations[1], id: 'cm4inherited00000000000001', identifier: 'toString'},
+        {...integrations[0], name: 'N'.repeat(200), profile: 'p'.repeat(200)}]));
+    assert.deepEqual(channels, [{ref: integrations[0].id, targetAccount: 'tiktok/' + integrations[0].id,
+        targetDisplay: 'tiktok · ' + 'N'.repeat(120) + ' (@' + 'p'.repeat(80) + ')'}], 'an id Postiz would not issue and an inherited name are left out; long labels are cut');
+});
+
+test('publicationStates_ListingOrUrlNotConfirmed_NotTrustedAsPostiz', async () => {
+    const original = globalThis.fetch;
+    const item = {receipt: 'posted:post-1', trackFrom: Date.now()};
+    const ask = async (respond: () => Response) => {
+        globalThis.fetch = async () => respond();
+        try { return await postiz.publicationStates!(apiKey, [item] as never).catch((error: Error) => ({thrown: error.message})); } finally { globalThis.fetch = original; }
+    };
+    const published = (releaseURL: string) => ({posts: [{id: 'post-1', state: 'PUBLISHED', releaseURL}]});
+    assert.deepEqual(await ask(() => Response.json(published('https://www.linkedin.com/feed/update/1'), {status: 500})), {thrown: 'Postiz did not list posts.'}, 'a listing on a server error');
+    assert.deepEqual(await ask(() => Response.json({posts: {id: 'post-1'}})), {thrown: 'Postiz did not list posts.'}, 'posts that are not a list');
+    for (const [name, url] of [['outside https', 'http://www.linkedin.com/feed/update/1'], ['over 2048 characters', 'https://www.linkedin.com/' + 'a'.repeat(2048)]] as const)
+        assert.deepEqual(await ask(() => Response.json(published(url))), new Map([[item.receipt, {state: 'published', url: null, error: null}]]), name);
+    assert.deepEqual(await ask(() => Response.json(published('https://www.linkedin.com/feed/update/1'))),
+        new Map([[item.receipt, {state: 'published', url: 'https://www.linkedin.com/feed/update/1', error: null}]]), 'positive control');
+});
