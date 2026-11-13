@@ -298,3 +298,97 @@ test('executeXPost_RefusedOrUncertain_FailedOrUnknownAndNeverResent', () => scen
         fake.calls.length = 0;
     }
 }));
+
+/** Calls the adapter directly with X's answers replaced; `answer` receives each request and returns the response. */
+async function publishDirect(answer: (request: Request) => Response | Promise<Response>,
+    options: {stored?: {size: number} | null; media?: number; secret?: string} = {}) {
+    const original = globalThis.fetch, sent: {method: string; path: string; redirect?: RequestRedirect}[] = [];
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        sent.push({method: init?.method ?? 'GET', path: new URL(String(input)).pathname, redirect: init?.redirect});
+        return answer(new Request(String(input), init));
+    };
+    const stored = options.stored === undefined ? {size: 300} : options.stored;
+    const file = {mediaId: 'm', bytes: 300, sha256: 'a'.repeat(64), contentType: 'image/png', alt: ''};
+    try {
+        const outcome = await x.publish({
+            env: {EXTERNAL_MEDIA: {get: async () => stored && {size: stored.size, body: new Blob([new Uint8Array(stored.size)]).stream()}}} as unknown as Env,
+            accountId: 'a', targetAccount: userId, secret: options.secret ?? JSON.stringify(keys), actionId: 'x',
+            post: {text: 'x', media: Array.from({length: options.media ?? 0}, () => file), settings: {}, publishAt: null}} as never)
+            .catch((error: Error) => ({thrown: error.message}));
+        return {outcome, sent};
+    } finally { globalThis.fetch = original; }
+}
+/** X's usual answers: a media id for each upload and a post id on 201. */
+const usualX = (overrides: {upload?: () => Response; post?: () => Response} = {}) => (request: Request) =>
+    new URL(request.url).pathname === '/2/media/upload' ? overrides.upload?.() ?? Response.json({data: {id: '1710000000000000001'}})
+        : overrides.post?.() ?? Response.json({data: {id: '1860000000000000001'}}, {status: 201});
+const oversized = (data: Record<string, unknown>, status = 200) => Response.json({data, padding: 'x'.repeat(70_000)}, {status});
+const xPaths = (sent: {method: string; path: string}[]) => sent.map(({method, path}) => method + ' ' + path);
+
+test('publishXPost_AnswerNotAConfirmedPost_UnconfirmedNeverCompleted', async () => {
+    for (const [name, post] of [['a post id that is not X\'s', () => Response.json({data: {id: 'abc'}}, {status: 201})],
+        ['a post id in an answer over 64 KiB', () => oversized({id: '1860000000000000001'}, 201)]] as const) {
+        const {outcome, sent} = await publishDirect(usualX({post}));
+        assert.deepEqual(outcome, {thrown: 'Unconfirmed X response.'}, name + ' does not confirm a post, so the router records unknown');
+        assert.deepEqual(xPaths(sent), ['POST /2/tweets'], name);
+    }
+    const control = await publishDirect(usualX());
+    assert.deepEqual(control.outcome, {status: 'completed', receipt: '1860000000000000001'}, 'positive control: a numeric id on 201');
+    assert.deepEqual(control.sent.map(call => call.redirect), ['manual'], 'a redirect from X is never followed');
+});
+
+test('publishXPost_SecretNotFourXKeys_CredentialRefusedAndNothingSent', async () => {
+    for (const [name, secret] of [['an unreadable secret', 'not json'], ['an API key that is not one', JSON.stringify({...keys, apiKey: 'short'})],
+        ['an access token secret that is not one', JSON.stringify({...keys, accessTokenSecret: 'hunter2 my password'})]] as const) {
+        const {outcome, sent} = await publishDirect(usualX(), {secret});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'credential-refused'}, name);
+        assert.deepEqual(sent, [], name + ': a value that is not an X key is never sent anywhere');
+    }
+});
+
+test('publishXPost_UploadNotConfirmed_MediaUploadRefusedAndNothingPosted', async () => {
+    for (const [name, upload] of [['a media id on a refusal status', () => Response.json({data: {id: '1710000000000000001'}}, {status: 400})],
+        ['a media id that is not X\'s', () => Response.json({data: {id: '../tweets'}})],
+        ['a media id in an answer over 64 KiB', () => oversized({id: '1710000000000000001'})]] as const) {
+        const {outcome, sent} = await publishDirect(usualX({upload}), {media: 1});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'media-upload-refused'}, name);
+        assert.deepEqual(xPaths(sent), ['POST /2/media/upload'], name + ': nothing is posted');
+    }
+    const control = await publishDirect(usualX(), {media: 1});
+    assert.equal((control.outcome as {status: string}).status, 'completed', 'positive control');
+    assert.deepEqual(control.sent.map(call => call.redirect), ['manual', 'manual']);
+});
+
+test('publishXPost_StoredFileMissingOrResized_MediaUnavailableAndNothingUploaded', async () => {
+    // The router checks the pinned files first; this is the adapter's own re-check at the moment it reads the bytes.
+    for (const [name, stored] of [['gone', null], ['resized', {size: 301}]] as const) {
+        const {outcome, sent} = await publishDirect(usualX(), {media: 1, stored});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'media-unavailable'}, name);
+        assert.deepEqual(sent, [], name + ': nothing is uploaded or posted');
+    }
+});
+
+/** Runs the connector's check directly with X's answer to GET /2/users/me replaced. */
+async function verifyDirect(me: () => Response, values: Record<string, string> = keys) {
+    const original = globalThis.fetch, sent: string[] = [];
+    globalThis.fetch = async (input: RequestInfo | URL) => { sent.push(new URL(String(input)).pathname); return me(); };
+    try { return {accounts: await x.connector.verify(values), sent}; } finally { globalThis.fetch = original; }
+}
+
+test('connectX_UserNotConfirmedByX_RefusedWithoutStoring', async () => {
+    const user = {id: userId, name: 'HSC Beats', username: 'hscbeats'};
+    for (const [name, me] of [['a user on a refusal status', () => Response.json({data: user}, {status: 401})],
+        ['a user in an answer over 64 KiB', () => oversized(user)],
+        ['a username X would not issue', () => Response.json({data: {...user, username: 'hsc beats<b>'}})]] as const) {
+        const {accounts, sent} = await verifyDirect(me);
+        assert.equal(accounts, null, name);
+        assert.deepEqual(sent, ['/2/users/me'], name);
+    }
+    const longId = '1'.repeat(20), longKeys = {...keys, accessToken: longId + '-' + 'T'.repeat(40)};
+    assert.equal((await verifyDirect(() => Response.json({data: {...user, id: longId}}), longKeys)).accounts, null,
+        'a 20-digit user id is not an X id, even when the token names it');
+    const {accounts, sent} = await verifyDirect(() => Response.json({data: user}), {...keys, apiKey: 'short'});
+    assert.deepEqual([accounts, sent], [null, []], 'an API key that is not one is never sent');
+    assert.deepEqual((await verifyDirect(() => Response.json({data: user}))).accounts, [{ref: userId, targetAccount: userId, targetDisplay: '@hscbeats'}],
+        'positive control');
+});

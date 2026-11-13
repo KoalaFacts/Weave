@@ -442,6 +442,19 @@ Mutation checks: each of these breaks a test:
 A second check that the sealed token's user matches the credential before dispatch survived mutation, because the
 vault already binds the secret to its credential row. It was removed rather than kept untested.
 
+X's own confirmation checks (2026-11-13), through the adapter and the connector with X's answers replaced:
+`publishXPost_AnswerNotAConfirmedPost_UnconfirmedNeverCompleted` covers a 201 whose post id is not numeric or comes in
+an answer over 64 KiB (each throws, which the router records as `unknown`), with a numeric id on 201 as a positive
+control and every call sent with `redirect: 'manual'`; a stored secret that is unreadable, or whose API key or access
+token secret is not one, is `credential-refused` with nothing sent; an upload answered with a media id on a refusal
+status, a media id that is not numeric, or one over 64 KiB is `media-upload-refused` with nothing posted; a gone or
+resized stored file is `media-unavailable` before any upload. On connect, a user on a refusal status, in an answer over
+64 KiB, with a username X would not issue, or with a 20-digit id (even when the token names it) is refused, and an API
+key that is not one is never sent. Eleven guard mutations that survived before are killed (18 scanned; seven were
+already killed). Four are equivalent and stay: trimming the stored keys (the router trims every field before storing
+it), refusing a JSON answer that is not an object or a `data` that is an array (neither carries the `id` read), and
+decoding the answer leniently (a replaced byte cannot pass the id and username patterns).
+
 A local gate passes. No request is made to the real X API: tests use the fake, and no post is created.
 
 ### X limits
