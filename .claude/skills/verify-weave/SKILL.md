@@ -51,7 +51,7 @@ For C# changes add AGENTS.md's restore, locked restore, build and test commands.
 - auth-worker workerd tests load `dist/index.js` from both workers: a stale or missing bundle makes them pass or fail for the previous code, or fail with ENOENT.
 - A passing provider test proves the fake platform's view. Check that the fake asserts the request body and that a refusal and an uncertain answer each have a test; never point a test at a real platform.
 - A guard is verified only when a mutation (remove or invert it) makes a named test fail. List each mutation and the failing test in the PR.
-- `submit-nuget` fails on every PR and on `main` (NETSDK1045, GitHub's Automatic Dependency Submission); it is not a signal about the PR.
+- `submit-nuget` (GitHub's Automatic Dependency Submission) fails with NETSDK1045 on runners without the .NET 11 SDK; it is not a signal about the PR, but a base `main` commit without its snapshot blocks `Dependency Review` (see advance-weave's Gate section for the re-run recipe).
 - A hosted check that never started is not a pass.
 - `npm run build` in auth-worker is a wrangler dry run; on its own it checks bundling, not behaviour, but the workerd tests then run the bundle it writes.
 
