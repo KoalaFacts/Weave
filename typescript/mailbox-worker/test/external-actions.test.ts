@@ -138,6 +138,18 @@ test('confirmExternalAction_DigestOrCredentialChanged_PlanChanged', () => scenar
     assert.equal(provider.calls.length, 0);
 }));
 
+// A malformed digest is not a different plan: the owner page never sent it, so it reads as not-found before the plan is compared.
+test('confirmExternalAction_MalformedPlanDigest_NotFoundAndStillPending', () => scenario(async ({h, provider}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    const [shown] = await pendingFor(h, humanId);
+    for (const planDigest of [undefined, 43, shown.planDigest.slice(1), shown.planDigest + 'A', shown.planDigest.slice(1) + '=', shown.planDigest.slice(1) + '+'])
+        assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest}), {ok: false, reason: 'not-found'}, String(planDigest));
+    assert.equal((await execute(h, agent, action.actionId)).status, 'pending');
+    assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: true});
+    assert.equal(provider.calls.length, 0);
+}));
+
 test('confirmExternalAction_StaleAuthentication_Refused', () => scenario(async ({h}) => {
     const {agent, humanId} = await ownedAgent(h);
     const action = await (await propose(h, agent)).json() as {actionId: string};
