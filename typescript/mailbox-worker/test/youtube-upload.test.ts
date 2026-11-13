@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { start } from './harness.ts';
 import { sealSecret } from '../src/credential-vault.ts';
+import { youtubeUpload } from '../src/youtube-provider.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
 import type { Env } from '../src/database.ts';
 
@@ -179,3 +180,70 @@ test('executeExternalAction_SealedSecretDoesNotOpen_FailsWithoutCallingGoogle', 
     assert.equal(result.failure, 'credential-unreadable');
     assert.equal(g.refreshes.length + g.uploads.length, 0);
 }));
+
+for (const [name, change, reason] of [
+    ['TokenOnRefusedRefresh', (g: Google) => { g.refresh = () => Response.json({access_token: 'ya29.fresh'}, {status: 400}); }, 'provider-rejected: credential-refused'],
+    ['EmptyRefreshedToken', (g: Google) => { g.refresh = () => Response.json({access_token: ''}); }, 'provider-rejected: credential-refused'],
+    ['UploadStartNot200', (g: Google) => { g.init = () => new Response(null, {status: 201, headers: {Location: sessionUrl}}); }, 'provider-rejected: upload-refused'],
+    ['UploadSessionOffYoutube', (g: Google) => { g.init = () => new Response(null, {status: 200, headers: {Location: 'https://upload.example/youtube/v3/videos?upload_id=1'}}); }, 'provider-rejected: upload-refused'],
+] as const)
+    test(`executeExternalAction_Youtube${name}_FailedWithNothingUploaded`, () => scenario(async ({h, g, env}) => {
+        const {agent, actionId} = await approvedUpload(h, env);
+        change(g);
+        const result = await execute(h, agent, actionId);
+        assert.equal(result.status, 'failed');
+        assert.equal(result.failure, reason);
+        assert.equal(g.uploads.length, 0);
+    }));
+
+test('executeExternalAction_YoutubeUploadIdOnRefusedStatus_UnknownAndNeverReuploads', () => scenario(async ({h, g, env}) => {
+    const {agent, actionId} = await approvedUpload(h, env);
+    g.upload = () => Response.json({id: videoId}, {status: 400});
+    const first = await execute(h, agent, actionId), again = await execute(h, agent, actionId);
+    assert.deepEqual([first.status, again.status], ['unknown', 'unknown']);
+    assert.equal(g.uploads.length, 1);
+}));
+
+test('executeExternalAction_YoutubeUploadAnswered201_CompletedWithVideoId', () => scenario(async ({h, g, env}) => {
+    const {agent, actionId} = await approvedUpload(h, env);
+    g.upload = () => Response.json({id: videoId}, {status: 201});
+    const result = await execute(h, agent, actionId);
+    assert.equal(result.status, 'completed');
+    assert.equal(result.receipt, videoId);
+}));
+
+test('youtubeUpload_NoSecretOrStoredFileChangedOrStartLost_RejectedBeforeAnyUpload', async () => {
+    // The router checks the pinned file and the credential first; this is the adapter's own re-check at dispatch.
+    const original = globalThis.fetch, sent: string[] = [], puts: RequestInit[] = [];
+    let lost: string | null = null;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input instanceof Request ? input.url : input);
+        sent.push(url);
+        if (url === lost) throw TypeError('connection reset');
+        if (url === 'https://oauth2.googleapis.com/token') return Response.json({access_token: 'ya29.fresh'});
+        if (init?.method === 'POST') return new Response(null, {status: 200, headers: {Location: sessionUrl}});
+        puts.push(init!);
+        return Response.json({id: videoId});
+    };
+    const media = {mediaId: crypto.randomUUID(), bytes: 300, sha256: 'a'.repeat(64)};
+    const run = (stored: {size: number} | null, secret: string | null = refreshToken) => youtubeUpload.execute(
+        {...bindings, EXTERNAL_MEDIA: {get: async () => stored && {size: stored.size, body: new Blob([new Uint8Array(stored.size)]).stream()}}} as unknown as Env,
+        {accountId: 'a', targetAccount: channel, secret, actionId: 'x', content: plan(media)} as never);
+    try {
+        assert.deepEqual(await run({size: 300}, null), {status: 'rejected', reason: 'plan-unreadable'}, 'no secret');
+        assert.deepEqual(sent, [], 'nothing is asked of Google without a secret');
+        assert.deepEqual(await run(null), {status: 'rejected', reason: 'media-unavailable'}, 'gone');
+        assert.deepEqual(await run({size: 301}), {status: 'rejected', reason: 'media-unavailable'}, 'resized');
+        assert.ok(sent.every(url => url === 'https://oauth2.googleapis.com/token'), 'only the token is refreshed; no upload is started');
+        // A lost token refresh or session start sent no video: each is a refusal, not an unknown outcome.
+        lost = 'https://oauth2.googleapis.com/token';
+        assert.deepEqual(await run({size: 300}), {status: 'rejected', reason: 'credential-refused'}, 'refresh lost');
+        lost = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status';
+        assert.deepEqual(await run({size: 300}), {status: 'rejected', reason: 'upload-refused'}, 'session start lost');
+        assert.ok(!sent.includes(sessionUrl), 'no upload is started');
+        lost = null;
+        assert.deepEqual(await run({size: 300}), {status: 'completed', receipt: videoId}, 'positive control');
+        // The upload carries the bearer token: a redirect is never followed with it, and it declares its exact length.
+        assert.deepEqual(puts.map(put => [put.redirect, new Headers(put.headers).get('Content-Length')]), [['manual', '300']]);
+    } finally { globalThis.fetch = original; }
+});
