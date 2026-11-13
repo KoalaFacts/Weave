@@ -299,6 +299,13 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   `executeExternalAction_RejectionReasonWithControlsAndSplitPair_StoredVisibleAndWellFormed`
   pin it; dropping the pair check, the invisible-character replacement or the
   well-formed step each fails at least one of them (2026-11-06).
+- The shared rule itself (`src/visible-text.ts`, also imported by the auth-worker's consent and
+  client-name pages) is pinned directly by `test/visible-text.test.ts`: each hidden class (C0, DEL/C1,
+  soft hyphen, Arabic letter mark, zero-width space, LRM/RLM, embeddings and overrides, word joiner,
+  isolates, BOM) is replaced and refused inside a name; whitespace-only and default-ignorable-only names
+  are refused; Arabic, CJK and the emoji zero-width joiner are kept (positive controls); the excerpt's
+  spacing, collapse, trim, U+FFFD, pair-safe cut and trailing trim are each checked. All 25 one-line
+  mutants of the module are killed by that file alone (2026-11-13).
 - Stored account names: `telegram`
   `connectTelegram_TitleWithControlOrBidiCharacters_StoredDisplayVisibleAndWellFormed`
   `connectTelegram_TitleOnlyInvisibleCharacters_DisplayFallsBackToChatId` and
