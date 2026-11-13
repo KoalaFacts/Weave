@@ -119,6 +119,29 @@ test('proposeExternalAction_NoProviderConfigured_Conflict', () => scenario(async
     assert.equal((await response.json() as {reason: string}).reason, 'provider-unavailable');
 }, false));
 
+// A deploy that no longer runs the adapter an approved plan names (the propose side answers 409 provider-unavailable):
+// the plan is refused at dispatch and never sent, even with a matching digest and credential. Only the dispatch's
+// provider lookup can catch this.
+test('executeExternalAction_AdapterRemovedSinceApproval_FailsPlanChangedWithoutSending', () => scenario(async ({h, provider}) => {
+    const {agent, actionId} = await approved(h);
+    const row = await h.db.prepare(`SELECT action_id,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,
+        target_account,CAST(expires_at AS TEXT) expires_at FROM external_actions WHERE action_id=?`).bind(actionId).first<Parameters<typeof planDigest>[0]>();
+    const retired = {...row!, provider: 'retired-platform'};
+    await h.db.batch([
+        h.db.prepare(`UPDATE external_actions SET provider=?,plan_digest=? WHERE action_id=?`).bind(retired.provider, await planDigest(retired), actionId),
+        h.db.prepare(`UPDATE external_credentials SET provider=? WHERE account_id=? AND credential_ref='linkedin-main'`).bind(retired.provider, agent.accountId),
+    ]);
+
+    const result = await execute(h, agent, actionId);
+    const again = await execute(h, agent, actionId);
+
+    assert.equal(result.status, 'failed');
+    assert.equal(result.failure, 'plan-changed');
+    assert.equal(result.dispatchedAt, null);
+    assert.deepEqual(again, result);
+    assert.equal(provider.calls.length, 0);
+}));
+
 test('proposeExternalAction_InvalidInput_Rejected', () => scenario(async ({h}) => {
     const {agent} = await ownedAgent(h);
     for (const input of [{credentialRef: 'missing', operation: 'publish_text', content: 'x'}, {credentialRef: 'linkedin-main', operation: 'delete_everything', content: 'x'},

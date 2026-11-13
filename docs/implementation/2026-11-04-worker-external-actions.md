@@ -107,6 +107,11 @@ credential whose platform changed under the same reference, revision and target 
 with `credential-changed`; a plan approved under an earlier adapter contract, whose
 digest still matches its stored fields, fails with `plan-changed`. Both send nothing on
 a first and a repeated execute, and dropping either comparison fails its test.
+Added later (2026-11-13): a deploy that no longer runs the adapter an approved plan
+names (the case propose answers `409 provider-unavailable`), with a matching digest
+and credential, fails with `plan-changed` and sends nothing on a first and a repeated
+execute. Treating the adapter as always present survived the external-actions,
+publishing and external-credentials suites; it now fails the new test.
 
 In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
 content in `<pre>`, verified account, credential revision, bound form tokens) and
