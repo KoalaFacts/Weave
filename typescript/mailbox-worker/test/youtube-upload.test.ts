@@ -13,9 +13,10 @@ const channel = 'UC' + 'b'.repeat(22), refreshToken = '1//refresh-upload', video
 const sessionUrl = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=session-1';
 const bindings = {GOOGLE_CLIENT_ID: 'client.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'google-secret', EXTERNAL_CREDENTIAL_KEY: key};
 
-type Google = {refresh: () => Response; init: () => Response; upload: (bytes: Buffer) => Response; uploads: Buffer[]; inits: Record<string, any>[]; refreshes: URLSearchParams[]};
+type Google = {refresh: () => Response; init: () => Response; upload: (bytes: Buffer) => Response; uploads: Buffer[]; uploadTypes: (string | null)[];
+    inits: Record<string, any>[]; refreshes: URLSearchParams[]};
 function google(): Google {
-    const g: Google = {uploads: [], inits: [], refreshes: [],
+    const g: Google = {uploads: [], uploadTypes: [], inits: [], refreshes: [],
         refresh: () => Response.json({access_token: 'ya29.fresh', expires_in: 3599, token_type: 'Bearer'}),
         init: () => new Response(null, {status: 200, headers: {Location: sessionUrl}}),
         upload: () => Response.json({id: videoId, status: {privacyStatus: 'unlisted'}})};
@@ -27,9 +28,11 @@ async function scenario(run: (s: {h: Harness; g: Google; env: Env}) => Promise<v
         if (request.method === 'POST' && request.url === 'https://oauth2.googleapis.com/token') { g.refreshes.push(new URLSearchParams(await request.text())); return g.refresh(); }
         if (request.headers.get('authorization') !== 'Bearer ya29.fresh') return new Response('{}', {status: 401, headers: {'Content-Type': 'application/json'}});
         if (request.method === 'POST' && request.url === 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status') {
-            g.inits.push({body: await request.json(), length: request.headers.get('x-upload-content-length')}); return g.init();
+            g.inits.push({body: await request.json(), length: request.headers.get('x-upload-content-length'), type: request.headers.get('x-upload-content-type')}); return g.init();
         }
-        if (request.method === 'PUT' && request.url === sessionUrl) { const bytes = Buffer.from(await request.arrayBuffer()); g.uploads.push(bytes); return g.upload(bytes); }
+        if (request.method === 'PUT' && request.url === sessionUrl) {
+            const bytes = Buffer.from(await request.arrayBuffer()); g.uploads.push(bytes); g.uploadTypes.push(request.headers.get('content-type')); return g.upload(bytes);
+        }
         return new Response('refused', {status: 599});
     }});
     const env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
@@ -51,9 +54,9 @@ const plan = (media: {mediaId: string; bytes: number; sha256: string}, over: Rec
 const propose = (h: Harness, agent: any, content: string) => h.request('/v1/external-actions', agent, 'POST', {credentialRef: 'youtube', operation: 'upload_video', content});
 const execute = (h: Harness, agent: any, actionId: string) => h.ok(`/v1/external-actions/${actionId}/execute`, agent, 'POST', {});
 
-async function approvedUpload(h: Harness, env: Env, bytes = randomBytes(300_000)) {
+async function approvedUpload(h: Harness, env: Env, bytes = randomBytes(300_000), type = 'video/mp4') {
     const {agent, humanId} = await connected(h);
-    const stored = await upload(h, agent, bytes);
+    const stored = await upload(h, agent, bytes, type);
     assert.equal(stored.status, 200, await stored.clone().text());
     const media = await stored.json() as {mediaId: string; bytes: number; sha256: string};
     const proposed = await propose(h, agent, plan(media));
@@ -85,10 +88,25 @@ test('executeExternalAction_YoutubeUpload_StreamsExactBytesOnceAndRecordsVideoId
     assert.deepEqual(again, first);
     assert.equal(g.refreshes[0].get('refresh_token'), refreshToken, 'the sealed token is opened only for dispatch');
     assert.deepEqual(g.inits, [{body: {snippet: {title: 'Episode 12', description: 'Lyrics in the comments.'}, status: {privacyStatus: 'unlisted', selfDeclaredMadeForKids: false}},
-        length: String(bytes.length)}]);
+        length: String(bytes.length), type: 'video/*'}]);
     assert.equal(g.uploads.length, 1);
     assert.ok(g.uploads[0].equals(bytes));
+    assert.deepEqual(g.uploadTypes, ['video/*']);
 }));
+
+// Envoylet's file picker and media relay accept QuickTime and WebM for YouTube (Envoylet#147), relying on Weave storing both types
+// and sending any stored video to YouTube as video/*. This pins that contract at the HTTP boundary.
+for (const [name, type] of [['QuickTime', 'video/quicktime'], ['Webm', 'video/webm']])
+    test(`executeExternalAction_Youtube${name}Upload_StreamsExactBytesAsVideoWildcard`, () => scenario(async ({h, g, env}) => {
+        const {agent, bytes, actionId} = await approvedUpload(h, env, randomBytes(50_000), type);
+        const result = await execute(h, agent, actionId);
+        assert.equal(result.status, 'completed', JSON.stringify(result));
+        assert.equal(result.receipt, videoId);
+        assert.deepEqual(g.inits.map(init => init.type), ['video/*']);
+        assert.equal(g.uploads.length, 1);
+        assert.ok(g.uploads[0].equals(bytes));
+        assert.deepEqual(g.uploadTypes, ['video/*']);
+    }));
 
 test('proposeExternalAction_UploadPlanOutsideYoutubeLimits_NamesTheField', () => scenario(async ({h}) => {
     const {agent} = await connected(h);
