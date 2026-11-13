@@ -126,6 +126,20 @@ listed in the PR.
   re-upload; a ciphertext sealed for another revision fails before Google is called.
   Dropping the hash check or treating an upload error as a rejection fails four
   tests.
+- YouTube's own confirmation checks (2026-11-13, mutation scan): on connect, tokens on
+  a refused exchange, an empty access or refresh token, a channel on a refused read,
+  a channel answer not sent as JSON, over 64 KiB or not a JSON object, and a title
+  that is not text are `provider-refused`; two channels are `no-channel`; a title
+  over 200 characters is cut. On upload, tokens on a refused refresh, an empty or
+  lost refresh are `credential-refused`; a session start on a status other than 200,
+  with a session address off `www.googleapis.com/upload`, or lost is `upload-refused`
+  with nothing uploaded; a video ID on a refused status records `unknown`; a video
+  answered 201 completes; the upload never follows a redirect with the token and
+  declares its exact `Content-Length`; a missing secret is `plan-unreadable` and a
+  gone or resized stored file `media-unavailable`, both before any upload starts.
+  Of 29 guard mutations scanned, 6 were already killed and 22 of the 23 survivors
+  are now killed. One is equivalent and stays: refusing an empty refreshed access
+  token inside the refresh (the caller refuses an empty token too).
 
 ## Limits
 
