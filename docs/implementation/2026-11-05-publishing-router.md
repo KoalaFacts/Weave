@@ -259,6 +259,15 @@ Neither the authorization server, the owner page nor the RPC surface changes.
   `connectDiscord_LongOrBlankWebhookName_ShownCutOrAsWebhook` the 80-character display cut and the
   `Webhook` fallback. Thirteen guard mutations that survived before are killed. Not pinned: the longer
   upload timeout for posts with files (a timing value; shortening it survives).
+- Bluesky's own confirmation checks (2026-11-13), through the adapter with XRPC answers replaced:
+  `publishBlueskyPost_AnswerNotOnePostOfThisAccount_UnconfirmedNeverCompleted` covers a post URI on a
+  non-2xx status, another account's post, another collection, a URI that is not a string and an answer
+  over 64 KiB (each throws, which the router records as `unknown`); 401, 403 and 413 at `createRecord`
+  are `bluesky-refused-<status>`; a session body on a refusal status, an empty access token, an invalid
+  handle or a DID outside `did:plc`/`did:web` is `credential-refused` with nothing posted; a gone or
+  resized stored file is `media-unavailable` before any upload; and an upload answer on a non-2xx status
+  or with a blob that is not an object is `media-upload-refused` with nothing posted. Fifteen guard
+  mutations that survived before are killed (19 scanned; four were already killed).
 - auth-worker portable tests:
   - the generic form reader takes the token and then the fields, and refuses: empty,
     misplaced, duplicate or badly named fields; too many fields; another form's token;
