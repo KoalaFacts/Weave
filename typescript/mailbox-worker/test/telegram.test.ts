@@ -182,6 +182,34 @@ test('connectTelegram_TitleOnlyDefaultIgnorableCharacters_DisplayFallsBackToChat
             {ok: true, accounts: [String(chatId)]});
     });
 }));
+test('connectAccount_MalformedFormShape_NotFoundBeforeAnyPlatformCall', () => scenario(async ({h, fake, env}) => {
+    // The shared connect RPC validates the owner's form before the adapter is called: the top-level object must be exactly
+    // the five known fields, `fields` must be exactly the adapter's own fields each as a string, and every value must be
+    // printable text of at most 2048 characters once trimmed. Anything else reads as an unknown form (`not-found`), and the
+    // platform is never contacted — a malformed value such as an overlong or non-printable token is not sent to Telegram.
+    const agent = await h.register(), humanId = await h.claim(agent);
+    const base = {humanId, authAt: Date.now(), agentId: agent.accountId, provider: 'telegram', fields: {botToken: token, chat: '@hscbeats'}};
+    const malformed: [string, Record<string, unknown>][] = [
+        ['an extra top-level key', {...base, extra: 1}],
+        ['humanId not a uuid', {...base, humanId: 'not-a-uuid'}],
+        ['agentId not a uuid', {...base, agentId: 'not-a-uuid'}],
+        ['authAt not a safe integer', {...base, authAt: 1.5}],
+        ['provider not a string', {...base, provider: 7}],
+        ['fields is an array', {...base, fields: [token, '@hscbeats']}],
+        ['a field is missing', {...base, fields: {botToken: token}}],
+        ['an extra field', {...base, fields: {botToken: token, chat: '@hscbeats', extra: 'x'}}],
+        ['a non-string field value', {...base, fields: {botToken: 7, chat: '@hscbeats'}}],
+        ['a field value over 2048 characters', {...base, fields: {botToken: 'A'.repeat(2049), chat: '@hscbeats'}}],
+        ['a field value with a control character', {...base, fields: {botToken: token, chat: '@h\x1fscbeats'}}],
+    ];
+    for (const [name, input] of malformed)
+        assert.deepEqual(await connectAccount(env, input as unknown as Parameters<typeof connectAccount>[1]), {ok: false, reason: 'not-found'}, name);
+    assert.equal(fake.calls.length, 0, 'a malformed form is never sent to the platform');
+    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_credentials').first<number>('n'), 0, 'nothing is stored');
+    // Positive control: the same form with exactly the five keys and two string fields reaches the platform and connects.
+    await withBotApi(fake, async () => assert.deepEqual(await connectAccount(env, base), {ok: true, accounts: ['HSC Beats (@hscbeats)']}));
+}));
+
 test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(async ({h, fake, env}) => {
     const agent = await h.register(), humanId = await h.claim(agent);
     const attempt = (overrides: Record<string, unknown> = {}) => connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats', ...overrides} as any);
