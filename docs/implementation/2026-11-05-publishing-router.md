@@ -539,7 +539,7 @@ id. The credential is `linkedin:<sub>`, its target account `urn:li:person:<sub>`
 
 ### LinkedIn verification
 
-`typescript/mailbox-worker/test/linkedin.test.ts` (11 tests) runs against a LinkedIn fake that answers 401 without the
+`typescript/mailbox-worker/test/linkedin.test.ts` (19 tests) runs against a LinkedIn fake that answers 401 without the
 member's Bearer token and 426 without the version headers. It covers connecting and sealing, refused and malformed
 tokens with nothing stored or sent, escaping and counting, the post rules, a text post sent once, images uploaded
 byte-for-byte and attached with alt text, one image as `media`, every upload failure with nothing posted and the token
@@ -557,6 +557,18 @@ every character is percent-encoded and refuses 2049; the workerd test
 owner's form and stores the credential sealed. Mutation checks, each failing one of them: the router back at 512 or
 unbounded; LinkedIn's pattern back at 500 or unbounded; the form field limit back at 512 or unchecked; the connect
 form read with the 4096-byte cap of the other owner forms.
+
+LinkedIn's own confirmation checks (2026-11-13, #433), through the adapter with LinkedIn's answers replaced:
+`publishLinkedInPost_AnswerNotAConfirmedPost_UnconfirmedNeverCompleted` covers a post id on 200 or on a server error
+(each throws, which the router records as `unknown`), with a `ugcPost` id on 201 as a positive control; a stored secret
+that is not a token is `credential-refused` with nothing sent; an upload initialisation on a non-200 status, over
+64 KiB, or with an address on another port or carrying credentials is `media-upload-refused` with nothing uploaded,
+and the bare `linkedin.com` host is accepted; an upload answered 200 is accepted; a gone or resized stored file is
+`media-unavailable` before any upload. On connect, a value under 20 characters is never sent, a member on a refusal
+status or an answer over 64 KiB is `provider-refused`, and a name over 100 characters is cut and a blank one shown as
+`LinkedIn member`. Fourteen guard mutations that survived before are killed (20 scanned; four were already killed).
+Two are equivalent and stay: trimming the stored token (the router trims every field before storing it) and refusing
+a JSON answer that is not an object (no other shape carries the fields read).
 
 ### LinkedIn limits
 

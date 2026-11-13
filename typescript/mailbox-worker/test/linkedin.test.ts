@@ -267,3 +267,112 @@ test('executeLinkedInPost_UncertainPostOutcomes_UnknownAndNeverResent', () => sc
         assert.equal(posts(fake).length, sent, name + ': never sent again');
     }
 }));
+
+/** Calls the adapter directly with LinkedIn's answers replaced; `answer` receives each request and returns the response. */
+async function publishDirect(answer: (request: Request) => Response | Promise<Response>,
+    options: {stored?: {size: number} | null; media?: number; secret?: string} = {}) {
+    const original = globalThis.fetch, sent: {method: string; url: string}[] = [];
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        // Recorded before a Request is built, so an address the runtime would refuse still shows as sent.
+        sent.push({method: init?.method ?? 'GET', url: String(input)});
+        return answer(new Request(String(input), init));
+    };
+    const stored = options.stored === undefined ? {size: 300} : options.stored;
+    const file = {mediaId: 'm', bytes: 300, sha256: 'a'.repeat(64), contentType: 'image/png', alt: 'a'};
+    try {
+        const outcome = await linkedin.publish({
+            env: {EXTERNAL_MEDIA: {get: async () => stored && {size: stored.size, body: new Blob([new Uint8Array(stored.size)]).stream()}}} as unknown as Env,
+            accountId: 'a', targetAccount: author, secret: options.secret ?? accessToken, actionId: 'x',
+            post: {text: 'x', media: Array.from({length: options.media ?? 0}, () => file), settings: {}, publishAt: null}} as never)
+            .catch((error: Error) => ({thrown: error.message}));
+        return {outcome, sent};
+    } finally { globalThis.fetch = original; }
+}
+const uploadAt = (uploadUrl: string) => Response.json({value: {uploadUrl, image: 'urn:li:image:C4E10AQ00001'}});
+/** LinkedIn's usual answers: an upload address on www.linkedin.com, 201 for the bytes and a share id for the post. */
+const usual = (overrides: {init?: () => Response; put?: () => Response; post?: () => Response} = {}) => (request: Request) => {
+    const url = new URL(request.url);
+    if (url.pathname === '/rest/images') return overrides.init?.() ?? uploadAt('https://www.linkedin.com/dms-uploads/C1/uploaded-image/0');
+    if (request.method === 'PUT') return overrides.put?.() ?? new Response(null, {status: 201});
+    return overrides.post?.() ?? new Response(null, {status: 201, headers: {'x-restli-id': 'urn:li:share:6844785523593134080'}});
+};
+const paths = (sent: {method: string; url: string}[]) => sent.map(({method, url}) => method + ' ' + new URL(url).host + new URL(url).pathname);
+
+test('publishLinkedInPost_AnswerNotAConfirmedPost_UnconfirmedNeverCompleted', async () => {
+    const answers: [string, () => Response][] = [
+        ['a post id on 200 instead of 201', () => new Response(null, {status: 200, headers: {'x-restli-id': 'urn:li:share:6844785523593134080'}})],
+        ['a post id on a server error', () => new Response(null, {status: 500, headers: {'x-restli-id': 'urn:li:share:6844785523593134080'}})]];
+    for (const [name, post] of answers) {
+        const {outcome, sent} = await publishDirect(usual({post}));
+        assert.deepEqual(outcome, {thrown: 'Unconfirmed LinkedIn response.'}, name + ' does not confirm a post, so the router records unknown');
+        assert.equal(sent.length, 1, name);
+    }
+    for (const id of ['urn:li:share:6844785523593134080', 'urn:li:ugcPost:7012345678901234567']) {
+        assert.deepEqual((await publishDirect(usual({post: () => new Response(null, {status: 201, headers: {'x-restli-id': id}})}))).outcome,
+            {status: 'completed', receipt: id}, 'positive control: a 201 with a share or ugcPost id');
+    }
+});
+
+test('publishLinkedInPost_SecretNotAToken_CredentialRefusedAndNothingSent', async () => {
+    const {outcome, sent} = await publishDirect(usual(), {secret: 'short-token'});
+    assert.deepEqual(outcome, {status: 'rejected', reason: 'credential-refused'});
+    assert.deepEqual(sent, [], 'a value that is not a token is never sent anywhere');
+});
+
+test('publishLinkedInPost_InitialisationNotConfirmed_MediaUploadRefusedAndNothingPosted', async () => {
+    const answers: [string, () => Response][] = [
+        ['an upload address on a non-200 status', () => Response.json({value: {uploadUrl: 'https://www.linkedin.com/dms-uploads/C1/uploaded-image/0', image: 'urn:li:image:C1'}}, {status: 201})],
+        ['an answer over 64 KiB', () => Response.json({value: {uploadUrl: 'https://www.linkedin.com/dms-uploads/C1/uploaded-image/0', image: 'urn:li:image:C1'}, padding: 'x'.repeat(70_000)})],
+        ['an address on another port', () => uploadAt('https://www.linkedin.com:8443/dms-uploads/C1/uploaded-image/0')],
+        ['an address carrying credentials', () => uploadAt('https://user:pass@www.linkedin.com/dms-uploads/C1/uploaded-image/0')]];
+    for (const [name, init] of answers) {
+        const {outcome, sent} = await publishDirect(usual({init}), {media: 1});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'media-upload-refused'}, name);
+        assert.deepEqual(paths(sent), ['POST api.linkedin.com/rest/images'], name + ': nothing is uploaded or posted');
+    }
+    const control = await publishDirect(usual({init: () => uploadAt('https://linkedin.com/dms-uploads/C1/uploaded-image/0')}), {media: 1});
+    assert.equal((control.outcome as {status: string}).status, 'completed', 'positive control: LinkedIn\'s bare host is its own');
+    assert.deepEqual(paths(control.sent), ['POST api.linkedin.com/rest/images', 'PUT linkedin.com/dms-uploads/C1/uploaded-image/0', 'POST api.linkedin.com/rest/posts']);
+});
+
+test('publishLinkedInPost_UploadAnswered200_Accepted', async () => {
+    const {outcome, sent} = await publishDirect(usual({put: () => new Response(null, {status: 200})}), {media: 1});
+    assert.equal((outcome as {status: string}).status, 'completed', 'LinkedIn answers an upload with 200 or 201');
+    assert.equal(paths(sent).at(-1), 'POST api.linkedin.com/rest/posts');
+});
+
+test('publishLinkedInPost_StoredFileMissingOrResized_MediaUnavailableAndNothingUploaded', async () => {
+    // The router checks the pinned files first; this is the adapter's own re-check at the moment it reads the bytes.
+    for (const [name, stored] of [['gone', null], ['resized', {size: 301}]] as const) {
+        const {outcome, sent} = await publishDirect(usual(), {media: 1, stored});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'media-unavailable'}, name);
+        assert.deepEqual(paths(sent), ['POST api.linkedin.com/rest/images'], name + ': nothing is uploaded or posted');
+    }
+});
+
+test('connectLinkedIn_ShortTokenOrUnconfirmedMember_RefusedWithoutStoring', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    const attempt = (fields: Record<string, string> = {accessToken}) => connectLinkedIn(env, {humanId, authAt: Date.now(), agentId: agent.accountId, fields});
+    await withLinkedIn(fake, async () => {
+        fake.token = 'a'.repeat(19);
+        assert.deepEqual(await attempt({accessToken: fake.token}), {ok: false, reason: 'provider-refused'}, 'a value under 20 characters is not a token');
+        assert.equal(fake.calls.length, 0, 'and is never sent to LinkedIn');
+        delete fake.token;
+        for (const [name, me] of [['a member on a refusal status', () => Response.json({sub: member, name: 'HSC Beats'}, {status: 401})],
+            ['an answer over 64 KiB', () => Response.json({sub: member, name: 'HSC Beats', padding: 'x'.repeat(70_000)})]] as const) {
+            fake.me = me;
+            assert.deepEqual(await attempt(), {ok: false, reason: 'provider-refused'}, name);
+        }
+    });
+    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_credentials').first<number>('n'), 0);
+}));
+
+test('connectLinkedIn_LongOrBlankName_ShownCutOrAsLinkedInMember', () => scenario(async ({h, fake, env}) => {
+    for (const [name, shown] of [['N'.repeat(150), 'N'.repeat(100)], ['   ', 'LinkedIn member']] as const) {
+        const agent = await h.register(), humanId = await h.claim(agent);
+        fake.me = () => Response.json({sub: member, name});
+        await withLinkedIn(fake, async () => {
+            assert.deepEqual(await connectLinkedIn(env, {humanId, authAt: Date.now(), agentId: agent.accountId}), {ok: true, accounts: [shown]});
+        });
+    }
+}));
