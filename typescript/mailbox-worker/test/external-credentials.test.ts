@@ -160,3 +160,28 @@ test('revokeCredential_Owner_ErasesSecretAndHidesIt', async () => {
         assert.deepEqual(overview.agents[0].credentials, []);
     } finally { await h.close(); }
 });
+
+test('connectExternalCredential_YoutubeAnswerNotOneUsableChannel_RefusedAndNothingStored', async () => {
+    const h = await start();
+    try {
+        const {agent, humanId} = await owned(h);
+        const tokens = {access_token: 'ya29.access', refresh_token: '1//refresh', scope, token_type: 'Bearer'};
+        const one = {items: [{id: channelId, snippet: {title: 'HSC Beats'}}]};
+        const cases: [string, Partial<Google>, string][] = [
+            ['tokens on a refused exchange', {token: () => Response.json(tokens, {status: 400})}, 'provider-refused'],
+            ['empty access token', {token: () => Response.json({...tokens, access_token: ''})}, 'provider-refused'],
+            ['empty refresh token', {token: () => Response.json({...tokens, refresh_token: ''})}, 'provider-refused'],
+            ['a channel on a refused read', {channels: () => Response.json(one, {status: 403})}, 'provider-refused'],
+            ['a channel not sent as JSON', {channels: () => new Response(JSON.stringify(one), {headers: {'Content-Type': 'text/plain'}})}, 'provider-refused'],
+            ['a channel answer over 64 KiB', {channels: () => Response.json({...one, padding: 'x'.repeat(64 * 1024)})}, 'provider-refused'],
+            ['an array answer', {channels: () => Response.json([one])}, 'provider-refused'],
+            ['two channels', {channels: () => Response.json({items: [one.items[0], {id: 'UC' + 'c'.repeat(22), snippet: {title: 'Other'}}]})}, 'no-channel'],
+            ['a title that is not text', {channels: () => Response.json({items: [{id: channelId, snippet: {title: 7}}]})}, 'provider-refused']];
+        for (const [name, google, reason] of cases)
+            await withGoogle(google, async () => assert.deepEqual(await connectExternalCredential(environment(h), input(humanId, agent.accountId)), {ok: false, reason}, name));
+        assert.equal(await row(h, agent.accountId), null);
+        // Positive control: a long channel title is kept to its first 200 characters.
+        await withGoogle({channels: () => Response.json({items: [{id: channelId, snippet: {title: 't'.repeat(250)}}]})}, async () =>
+            assert.deepEqual(await connectExternalCredential(environment(h), input(humanId, agent.accountId)), {ok: true, credentialRef: 'youtube', targetDisplay: 't'.repeat(200)}));
+    } finally { await h.close(); }
+});
