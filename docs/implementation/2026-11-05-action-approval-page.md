@@ -70,6 +70,13 @@ Mutation checks: each of these fails a test:
 - returning `approvalUrl` after a decision;
 - returning `approvalUrl` without the first-party Service Binding (mailbox unit test).
 
+The mailbox's owner-decision RPC (`ownerAction`) checks the shape of every decision before reading anything. A
+malformed `planDigest` on a pending action, or a malformed `keysDigest` on a pending binding (not a string or
+not 43 base64url characters; a missing `planDigest` too), is `not-found` with no effect, not `plan-changed` or `keys-changed`, and the
+well-formed digest then decides it (mailbox tests). Dropping either digest-shape check fails a test. The scanned ID-shape checks
+(human, request, agent and kid) are equivalent mutants: a malformed ID is never found by the
+ownership lookup that follows, so it is `not-found` either way.
+
 ## Limits
 
 - A relay without first-party OAuth returns `approvalUrl: null`: it has no Weave owner pages.

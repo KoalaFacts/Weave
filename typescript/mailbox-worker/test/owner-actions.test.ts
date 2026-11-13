@@ -192,6 +192,22 @@ test('confirmBinding_FutureSkewBoundary_Accepted', async () => {
     } finally { await h.close(); }
 });
 
+// A malformed digest is not a changed key set: the owner page never sent it, so it reads as not-found before the keys are compared.
+test('confirmBinding_MalformedKeysDigest_NotFoundAndStillPending', async () => {
+    const h = await start();
+    try {
+        const {cred, requestId} = await requested(h, '555');
+        const id = await human(h, '555'), digest = await liveDigest(h, cred.accountId);
+        for (const keysDigest of [43, digest.slice(1), digest + 'A', digest.slice(1) + '=', digest.slice(1) + '/']) {
+            assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId, keysDigest} as unknown as Action), {ok: false, reason: 'not-found'}, String(keysDigest));
+            assert.equal(await ownerOf(h, cred.accountId), null);
+            assert.equal(await bindingStatus(h, requestId), 'pending');
+        }
+        assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId, keysDigest: digest}), {ok: true});
+        assert.equal(await ownerOf(h, cred.accountId), id);
+    } finally { await h.close(); }
+});
+
 test('confirmBinding_OtherHumansRequest_NotFound', async () => {
     const h = await start();
     try {
