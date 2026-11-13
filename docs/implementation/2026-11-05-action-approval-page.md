@@ -77,6 +77,15 @@ well-formed digest then decides it (mailbox tests). Dropping either digest-shape
 (human, request, agent and kid) are equivalent mutants: a malformed ID is never found by the
 ownership lookup that follows, so it is `not-found` either way.
 
+`revoke-grant` and `revoke-credential` are shape-checked the same way: a missing or non-string grant ID, a missing or
+malformed agent ID, and a credential reference that is missing, not a string, empty, over 64 characters or outside
+`[A-Za-z0-9._:-]` are `not-found` and revoke nothing, and the well-formed action then revokes the same grant or
+credential (mailbox test `ownerAction_MalformedRevokeGrantOrCredential_NotFoundAndNothingRevoked`). Without these checks a
+missing value was no longer answered `not-found`, and a stored reference outside the adapter pattern was revoked. The scan also confirmed that existing tests kill dropping each kind from the
+fresh-sign-in set, the future-skew check, both window boundaries (`>` to `>=`), the read-only/maintenance refusal and
+the unknown-kind refusal. Equivalent, left unpinned: a case-insensitive grant ID (stored IDs are lowercase and the
+lookup compares exactly) and dropping the object check (a non-object has no `humanId`).
+
 ## Limits
 
 - A relay without first-party OAuth returns `approvalUrl: null`: it has no Weave owner pages.
