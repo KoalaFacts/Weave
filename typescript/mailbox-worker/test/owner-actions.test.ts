@@ -770,3 +770,44 @@ test('revokeGrantAction_NoReauthNeeded', async () => {
         assert.equal(await grantRevokedAt(h, other), null);
     } finally { await h.close(); }
 });
+
+const credentialRevokedAt = (h: Harness, accountId: string, credentialRef: string) =>
+    h.db.prepare('SELECT CAST(revoked_at AS TEXT) r FROM external_credentials WHERE account_id=? AND credential_ref=?').bind(accountId, credentialRef).first<string>('r');
+async function seedCredential(h: Harness, accountId: string, credentialRef: string): Promise<void> {
+    await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
+        VALUES(?,?,'test-http','rev-1','target','Target',1000,1000)`).bind(accountId, credentialRef).run();
+}
+
+test('ownerAction_MalformedRevokeGrantOrCredential_NotFoundAndNothingRevoked', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        const grantId = await seedGrant(h, id, cred.accountId);
+        // The database accepts any 1-64 character reference; the owner RPC only names references an adapter can mint.
+        const spaced = 'telegram main';
+        await seedCredential(h, cred.accountId, 'telegram:1');
+        await seedCredential(h, cred.accountId, spaced);
+        const cases: Record<string, unknown>[] = [
+            {kind: 'revoke-grant'},
+            {kind: 'revoke-grant', grantId: null},
+            {kind: 'revoke-grant', grantId: 42},
+            {kind: 'revoke-credential', credentialRef: 'telegram:1'},
+            {kind: 'revoke-credential', agentId: 'x', credentialRef: 'telegram:1'},
+            {kind: 'revoke-credential', agentId: cred.accountId},
+            {kind: 'revoke-credential', agentId: cred.accountId, credentialRef: 42},
+            {kind: 'revoke-credential', agentId: cred.accountId, credentialRef: ''},
+            {kind: 'revoke-credential', agentId: cred.accountId, credentialRef: 'a'.repeat(65)},
+            {kind: 'revoke-credential', agentId: cred.accountId, credentialRef: spaced},
+        ];
+        for (const action of cases)
+            assert.deepEqual(await ownerAction(environment(h), {humanId: id, authAt: Date.now(), ...action} as OwnerAction), {ok: false, reason: 'not-found'}, JSON.stringify(action));
+        assert.equal(await grantRevokedAt(h, grantId), null);
+        assert.equal(await credentialRevokedAt(h, cred.accountId, 'telegram:1'), null);
+        assert.equal(await credentialRevokedAt(h, cred.accountId, spaced), null);
+        // Positive controls: the well-formed actions revoke the same grant and credential.
+        assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId}), {ok: true});
+        assert.notEqual(await grantRevokedAt(h, grantId), null);
+        assert.deepEqual(await act(h, id, {kind: 'revoke-credential', agentId: cred.accountId, credentialRef: 'telegram:1'}), {ok: true});
+        assert.notEqual(await credentialRevokedAt(h, cred.accountId, 'telegram:1'), null);
+    } finally { await h.close(); }
+});
