@@ -140,6 +140,13 @@ listed in the PR.
   Of 29 guard mutations scanned, 6 were already killed and 22 of the 23 survivors
   are now killed. One is equivalent and stays: refusing an empty refreshed access
   token inside the refresh (the caller refuses an empty token too).
+- Video types (2026-11-13): an approved upload of a stored `video/quicktime` or
+  `video/webm` file streams its exact bytes once and completes, and both the session
+  start (`X-Upload-Content-Type`) and the upload (`Content-Type`) declare `video/*`
+  for every stored video, MP4 included. Envoylet's YouTube upload relies on this.
+  Dropping either type from the stored-media types, sending the stored type instead
+  of `video/*` on either request, or accepting only `video/mp4` fails these tests;
+  before them, the last three survived.
 
 ## Limits
 
