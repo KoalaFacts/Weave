@@ -117,6 +117,14 @@ Mutations:
 The OpenAPI `Notice` schema gains the `external-action` variant. The inbox page's `notices` description, Agent Start
 and the Worker README are updated.
 
+`inbox_EveryActionStatus_NoticeMatchesPublishedNoticeSchema` (2026-11-15) reads one inbox page holding a notice in
+each reachable status (pending, approved, rejected, expired, completed, failed with a provider reason, unknown) and
+checks the page against the published `inboxPage` schema and each notice against the `external-action` variant of
+`Notice` (required members, no undocumented member, types, `const`, enums, patterns, nullable timestamps). The checker
+is shared with the `AgentCredential` pin in `test/openapi-schema.ts`. Mutation checks: an undocumented `revision`
+member added to the notice (fails this test and the exact-shape test); `unknown` dropped from the published notice
+`status` enum (fails only this test).
+
 ## Limits
 
 - **Still a pull.** This is not push: an app reads the inbox (one request covers all its actions) instead of each
