@@ -191,12 +191,15 @@ test('confirmExternalAction_AnotherHumansAgent_NotFound', () => scenario(async (
 }));
 
 // The approval-time credential re-check: the owner reviewed the plan for one connected account, which no longer stands.
-for (const change of ['revoked', 'retargeted'] as const)
+// It matches execute's credential check, so the owner is never asked to approve a plan that execute would refuse unsent.
+for (const change of ['revoked', 'retargeted', 'reprovidered'] as const)
     test(`confirmExternalAction_CredentialChangedWhilePending_${change}_PlanChangedAndStillPending`, () => scenario(async ({h, provider}) => {
         const {agent, humanId} = await ownedAgent(h);
         const action = await (await propose(h, agent)).json() as {actionId: string};
         const [shown] = await pendingFor(h, humanId);
         if (change === 'retargeted') await setCredential(h, agent.accountId, 'rev-1', 'urn:li:person:beta', 'Desk Beta');
+        // Same reference, revision and target, but another platform.
+        else if (change === 'reprovidered') await h.db.prepare(`UPDATE external_credentials SET provider='telegram' WHERE account_id=?`).bind(agent.accountId).run();
         else await h.db.prepare('UPDATE external_credentials SET revoked_at=CAST(? AS INTEGER) WHERE account_id=?').bind(ticks(), agent.accountId).run();
 
         assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: false, reason: 'plan-changed'});

@@ -300,7 +300,7 @@ export async function confirmExternalAction(tx: Transaction, human: OwnerHuman, 
     if (digest !== row.plan_digest) return {ok: false, reason: 'plan-changed'};
     const credential = await readCredential(tx, row.account_id, row.credential_ref);
     if (!credential || credential.revoked_at !== null || credential.revision !== row.credential_revision
-        || credential.target_account !== row.target_account) return {ok: false, reason: 'plan-changed'};
+        || credential.provider !== row.provider || credential.target_account !== row.target_account) return {ok: false, reason: 'plan-changed'};
     const stamp = at.toString();
     tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='approved',decided_at=CAST(? AS INTEGER),decided_by=?,updated_at=CAST(? AS INTEGER)
         WHERE action_id=? AND status='pending'`).bind(stamp, human.humanId, stamp, actionId));
