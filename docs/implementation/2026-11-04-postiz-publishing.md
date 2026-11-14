@@ -160,12 +160,18 @@ but not yet verified against a real account.
     time of each answered listing (also one that no longer lists the post), keeps its
     value through a failed listing, and stays null when tracking stops on a
     disconnected credential.
+  - a post still queued is re-checked 15, 30, 60, 120, 240, 360 and 360 minutes
+    apart; a check 7 days after it was due still schedules one more 6 hours later,
+    which still asks Postiz and is the last (#448). The test uses literal durations,
+    the published contract, rather than the module's constants.
 
   Mutation checks: removing the error cleanup, the cron call, the stop on a
   disconnected credential, the not-asked rule, the five-agents-per-run bound or the
   6-hour cap each fail a test. Stamping `checkedAt` on every sweep, never, only for a
   final state or only when the post is listed each fails a test; the first and last
-  two survived the earlier tests.
+  two survived the earlier tests. A 1-day tracking window or a 30-minute first
+  re-check fails the #448 test and survived the earlier tests; an 8-day window fails
+  it too.
 
 ## Limits
 
