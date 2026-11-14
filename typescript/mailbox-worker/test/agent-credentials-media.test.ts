@@ -75,6 +75,56 @@ test('listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider', 
     assert.equal((await mcp(env, agent.accountId, grantId, 'list_my_credentials', {extra: 1})).status, 400);
 }));
 
+type Schema = {$ref?: string; type?: string | string[]; oneOf?: Schema[]; enum?: unknown[]; required?: string[]; properties?: Record<string, Schema>;
+    additionalProperties?: boolean | Schema; items?: Schema; maxLength?: number; minimum?: number};
+/** Checks `value` against the subset of JSON Schema that the published OpenAPI uses for listed credentials; returns the first mismatch. */
+function mismatch(spec: {components: {schemas: Record<string, Schema>}}, schema: Schema, value: unknown, at: string): string | null {
+    if (schema.$ref) return mismatch(spec, spec.components.schemas[schema.$ref.replace('#/components/schemas/', '')], value, at);
+    if (schema.oneOf) return schema.oneOf.filter(option => mismatch(spec, option, value, at) === null).length === 1 ? null : at + ' matches no single oneOf option';
+    const kind = value === null ? 'null' : Array.isArray(value) ? 'array' : Number.isInteger(value) ? 'integer' : typeof value;
+    const types = schema.type === undefined ? [] : [schema.type].flat();
+    if (types.length && !types.includes(kind) && !(kind === 'integer' && types.includes('number'))) return `${at} is ${kind}, not ${types.join('|')}`;
+    if (schema.enum && !schema.enum.includes(value)) return `${at} is not one of ${JSON.stringify(schema.enum)}`;
+    if (typeof value === 'string' && schema.maxLength !== undefined && value.length > schema.maxLength) return `${at} is longer than ${schema.maxLength}`;
+    if (typeof value === 'number' && schema.minimum !== undefined && value < schema.minimum) return `${at} is below ${schema.minimum}`;
+    if (Array.isArray(value)) {
+        for (const [index, item] of value.entries()) { const found = schema.items ? mismatch(spec, schema.items, item, `${at}[${index}]`) : null; if (found) return found; }
+    } else if (kind === 'object') {
+        const object = value as Record<string, unknown>;
+        for (const name of schema.required ?? []) if (!(name in object)) return `${at}.${name} is required but missing`;
+        for (const [name, item] of Object.entries(object)) {
+            const own = schema.properties?.[name] ?? (typeof schema.additionalProperties === 'object' ? schema.additionalProperties : undefined);
+            if (!own) { if (schema.additionalProperties === false) return `${at}.${name} is not documented`; continue; }
+            const found = mismatch(spec, own, item, `${at}.${name}`);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+test('listMyCredentials_EveryProviderShape_MatchesPublishedAgentCredentialSchema', () => scenario(async ({h, env}) => {
+    // Apps such as Envoylet code against OpenAPI AgentCredential; a member added, dropped or renamed in the listing must fail here first.
+    const spec = JSON.parse(await (await h.request('/openapi.json')).text());
+    const {agent, grantId} = await owned(h);
+    for (const [ref, provider, target] of [['postiz:cm4tiktok', 'postiz', 'tiktok/cm4tiktok'], ['postiz:cm4x', 'postiz', 'x/cm4x'],
+        ['youtube', 'youtube', 'UC' + 'a'.repeat(22)], ['x', 'x', '12345'], ['bluesky', 'bluesky', 'did:plc:abc'], ['telegram', 'telegram', '-100123'],
+        ['discord', 'discord', '123456789012345678'], ['linkedin', 'linkedin', 'urn:li:person:abc']] as const)
+        await credential(h, agent.accountId, ref, provider, target);
+    const operation = spec.paths['/v1/external-credentials'].get;
+    const page = operation.responses['200'].content['application/json'].schema;
+    const listed = await h.ok('/v1/external-credentials', agent) as {items: Record<string, unknown>[]};
+    assert.equal(listed.items.length, 8);
+    assert.ok(listed.items.some(item => item.textRules !== null && item.mediaRules !== null && item.settingRules !== null), 'positive control: a fully described account is checked');
+    assert.ok(listed.items.some(item => item.content === null), 'positive control: an unusable provider is checked');
+    assert.equal(mismatch(spec, page, listed, 'listing'), null);
+    assert.equal(mismatch(spec, page, (await mcp(env, agent.accountId, grantId, 'list_my_credentials')).body, 'list_my_credentials'), null);
+    // The checker itself fails for the drift this test exists to catch.
+    const [first] = listed.items, item = {$ref: '#/components/schemas/AgentCredential'};
+    assert.match(mismatch(spec, item, {...first, extra: 1}, 'item') ?? '', /item\.extra is not documented/);
+    assert.match(mismatch(spec, item, Object.fromEntries(Object.entries(first).filter(([name]) => name !== 'revision')), 'item') ?? '', /item\.revision is required/);
+    assert.match(mismatch(spec, item, {...first, textRules: {max: 1, unit: 'words', maxWithMedia: null, maxBytes: null}}, 'item') ?? '', /item\.textRules/);
+}));
+
 test('createMediaUpload_PutThenPropose_PinsTheUploadedFile', () => scenario(async ({h, env}) => {
     const {agent, grantId} = await owned(h);
     await credential(h, agent.accountId, 'postiz:cm4tiktok', 'postiz', 'tiktok/cm4tiktok');
