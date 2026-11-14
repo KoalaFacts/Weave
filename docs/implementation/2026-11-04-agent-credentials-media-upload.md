@@ -61,8 +61,9 @@ generated video at a public URL), `import_media_from_url {url}` (scope
   Only 200 with a supported Content-Type and a Content-Length of at most 100 MiB is
   accepted. The body is counted as it arrives and piped through `FixedLengthStream`,
   so R2 receives a stream of known length.
-- Every refusal is 400 with field `url`, including a source body that breaks off or
-  is not its stated length. Authority refusals and storage or database errors keep
+- Every refusal is 400 `invalid` with field `url`, including a source that cannot be
+  reached (`could not be fetched`) and a source body that breaks off or is not its
+  stated length. Agents rely on this shape to tell a link refusal from a post refusal. Authority refusals and storage or database errors keep
   their own status (for example 503), so an outage is not blamed on the URL.
 - A source that keeps sending past its stated length is cut off at the first excess
   chunk rather than read to the end. `test/media-import.test.ts` pins each suffix,
@@ -119,7 +120,12 @@ How a file is deleted:
   nothing. Through MCP: the request uses manual redirects, a revoked grant makes
   no request, a short body is a `url` refusal and a storage failure is 503. Mutation checks: dropping the IP-literal check, the authority check
   before fetching, manual redirects, trailing-dot removal or the source-failure
-  distinction each fail a test.
+  distinction each fail a test. Each unsafe-URL and source refusal is pinned as
+  400 `invalid` on field `url`, and a fetch that rejects (unreachable source, in
+  process because Miniflare answers a failed connection with 500) as `could not be
+  fetched` with one attempt and nothing stored. Mutation checks (2026-11-14): naming
+  another field in the source-refusal path, which survived before, and answering an
+  unreachable source with 502 `unavailable` or rethrowing it each fail a test.
 - `test/media-retention.test.ts`, through the Worker's own cron and real R2: old,
   unused media loses its record and object while recent media is kept; media named by
   a recent action of its own agent is kept until that action is old, and another
