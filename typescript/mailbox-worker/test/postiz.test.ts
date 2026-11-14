@@ -278,6 +278,33 @@ test('publication_StillQueuedOrUnreachable_BacksOffWithoutChangingState', () => 
     assert.equal((await publication(h, actionId)).next_check_at, null);
 }));
 
+test('publication_CheckedAt_StampedOnlyWhenPostizAnswers', () => scenario(async ({h, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    const read = async () => (await h.ok(`/v1/external-actions/${actionId}`, agent)).publication;
+    const due = ms((await publication(h, actionId)).due_at);
+    await sweepWith(env, () => new Response('down', {status: 500}), due);
+    assert.deepEqual([(await read()).state, (await read()).checkedAt], ['queued', null], 'a check Postiz never answered is not a check');
+
+    let before = Date.now();
+    await sweepWith(env, listing([{id: 'post-1', state: 'QUEUE', releaseURL: null, error: null}]), ms((await publication(h, actionId)).next_check_at));
+    let after = Date.now();
+    const first = (await read()).checkedAt;
+    assert.equal((await read()).state, 'queued');
+    assert.ok(first && Date.parse(first) >= before - 1 && Date.parse(first) <= after + 1, `stamped when Postiz answered: ${first}`);
+
+    await sweepWith(env, () => new Response('down', {status: 500}), ms((await publication(h, actionId)).next_check_at));
+    assert.equal((await read()).checkedAt, first, 'an unanswered check keeps the last answered time');
+
+    await new Promise(resolve => setTimeout(resolve, 5));
+    before = Date.now();
+    await sweepWith(env, listing([]), ms((await publication(h, actionId)).next_check_at));
+    after = Date.now();
+    const second = (await read()).checkedAt;
+    assert.ok(second && Date.parse(second) > Date.parse(first) && Date.parse(second) >= before - 1 && Date.parse(second) <= after + 1,
+        `an answer that no longer lists the post still counts as checked: ${second}`);
+}));
+
 test('publication_LongQueued_BackoffCappedAtSixHours', () => scenario(async ({h, env}) => {
     const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
     await execute(h, agent, actionId);
@@ -329,7 +356,7 @@ test('publication_CredentialDisconnected_TrackingStopsWithoutAsking', () => scen
     assert.deepEqual(await ownerAction(env, {humanId, authAt: 0, kind: 'revoke-credential', agentId: agent.accountId, credentialRef: 'postiz:' + integrations[1].id} as OwnerAction), {ok: true});
     assert.deepEqual(await sweepWith(env, listing([]), due + 1000), []);
     const row = await publication(h, actionId);
-    assert.deepEqual([row.state, row.next_check_at], ['queued', null]);
+    assert.deepEqual([row.state, row.next_check_at, row.checked_at], ['queued', null, null], 'never asked, so never checked');
 }));
 
 test('publication_ScheduledSweep_WorkerCronAsksPostiz', () => scenario(async ({h, p, env}) => {

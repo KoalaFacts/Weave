@@ -107,6 +107,9 @@ agent's due posts, and at most 5 agents are asked per run.
 - A failed or unanswered listing only postpones the check; it never changes a state
   or counts as a check.
 - A disconnected credential stops tracking without asking.
+- `checkedAt` is when Postiz last answered a listing, including an answer that no
+  longer lists the post. It stays null until the first answer, and a failed or
+  unanswered listing, or a credential that stops tracking, leaves it unchanged.
 - Tracking only reads: it never dispatches or retries anything.
 
 `get_external_action`, `execute_external_action` and the HTTP reads return
@@ -153,10 +156,16 @@ but not yet verified against a real account.
     postponed, so the next run asks for it (#427);
   - a post queued through ten checks is re-checked after 6 hours, not 15 min × 2^10
     (#427).
+  - `checkedAt` stays null through an unanswered first listing, is stamped with the
+    time of each answered listing (also one that no longer lists the post), keeps its
+    value through a failed listing, and stays null when tracking stops on a
+    disconnected credential.
 
   Mutation checks: removing the error cleanup, the cron call, the stop on a
   disconnected credential, the not-asked rule, the five-agents-per-run bound or the
-  6-hour cap each fail a test.
+  6-hour cap each fail a test. Stamping `checkedAt` on every sweep, never, only for a
+  final state or only when the post is listed each fails a test; the first and last
+  two survived the earlier tests.
 
 ## Limits
 
