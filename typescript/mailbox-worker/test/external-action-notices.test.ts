@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
 import { maxNotices } from '../src/notices.ts';
+import { mismatch, type Schema } from './openapi-schema.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -63,6 +64,44 @@ test('inbox_ProposedAction_PendingNoticeWithoutContent', () => scenario(async ({
     assert.deepEqual(notices, [{kind: 'external-action', actionId: action.actionId, status: 'pending', credentialRef: 'linkedin-main',
         provider: 'test-http', targetAccount: 'urn:li:person:alpha', credentialRevision: 'rev-1', operation: 'publish_text', createdAt: action.createdAt, expiresAt: action.expiresAt, decidedAt: null, completedAt: null, failure: null}]);
     assert.equal(JSON.stringify(notices).includes('Episode 12'), false, 'notices never carry the planned content');
+}));
+
+test('inbox_EveryActionStatus_NoticeMatchesPublishedNoticeSchema', () => scenario(async ({h, provider}) => {
+    // Apps such as Envoylet code against OpenAPI Notice; a member added, dropped, renamed or retyped in the notice must fail here first.
+    const spec = JSON.parse(await (await h.request('/openapi.json')).text());
+    const {agent, humanId} = await ownedAgent(h);
+    const run = async (respond: () => Response) => {
+        const {actionId} = await propose(h, agent, crypto.randomUUID());
+        await approve(h, humanId, actionId);
+        provider.respond = respond;
+        await h.ok(`/v1/external-actions/${actionId}/execute`, agent, 'POST', {});
+        return actionId;
+    };
+    await propose(h, agent, 'pending');
+    await approve(h, humanId, (await propose(h, agent, 'approved')).actionId);
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: (await propose(h, agent, 'rejected')).actionId}), {ok: true});
+    const lapsed = await propose(h, agent, 'expired');
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind((nowTicks() - 1n).toString(), lapsed.actionId).run();
+    await run(() => Response.json({externalId: 'post-1'}));
+    await run(() => Response.json({reason: 'duplicate content'}, {status: 422}));
+    await run(() => new Response('{}', {status: 502}));
+    const page = await h.ok('/v1/inbox', agent) as {notices: Notice[]};
+    const statuses = page.notices.filter(notice => notice.kind === 'external-action').map(notice => `${notice.status}:${notice.failure}`);
+    assert.deepEqual(new Set(statuses), new Set(['pending:null', 'approved:null', 'rejected:null', 'expired:null', 'completed:null',
+        'failed:provider-rejected: duplicate content', 'unknown:outcome-unknown']), 'positive control: every reachable status is checked');
+    const pageSchema = spec.paths['/v1/inbox'].get.responses['200'].content['application/json'].schema;
+    assert.equal(mismatch(spec, pageSchema, page, 'inbox'), null);
+    const actionSchema = (spec.components.schemas.Notice.oneOf as Schema[]).find(option => option.properties?.kind?.const === 'external-action')!;
+    for (const notice of page.notices.filter(notice => notice.kind === 'external-action')) assert.equal(mismatch(spec, actionSchema, notice, 'notice'), null);
+    // The checker itself fails for the drift this test exists to catch.
+    const notice = page.notices.find(notice => notice.kind === 'external-action')!;
+    const item = {$ref: '#/components/schemas/Notice'};
+    assert.match(mismatch(spec, item, {...notice, extra: 1}, 'item') ?? '', /matches no single oneOf option/);
+    assert.match(mismatch(spec, actionSchema, {...notice, extra: 1}, 'item') ?? '', /item\.extra is not documented/);
+    assert.match(mismatch(spec, actionSchema, Object.fromEntries(Object.entries(notice).filter(([name]) => name !== 'credentialRevision')), 'item') ?? '', /item\.credentialRevision is required/);
+    assert.match(mismatch(spec, actionSchema, {...notice, status: 'sent'}, 'item') ?? '', /item\.status is not one of/);
+    assert.match(mismatch(spec, actionSchema, {...notice, createdAt: '2026-11-15 00:00:00'}, 'item') ?? '', /item\.createdAt does not match/);
+    assert.match(mismatch(spec, actionSchema, {...notice, decidedAt: 1}, 'item') ?? '', /item\.decidedAt matches no anyOf option/);
 }));
 
 test('inbox_CredentialReconnectedAfterProposal_NoticeKeepsTheActionsAccount', () => scenario(async ({h}) => {
