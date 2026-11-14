@@ -595,3 +595,89 @@ test('proposeExternalAction_CrossAccountKeyLink_FailsClosed', () => scenario(asy
     assert.equal(replay.status, 503, 'a mislinked key must fail closed rather than expose another agent\'s action');
     assert.equal((await replay.json() as {code: string}).code, 'storage');
 }));
+
+// Envoylet #153 shows "Approved"/"Rejected" from decidedAt and "Result recorded by Weave" from completedAt (KoalaFacts/Weave#365):
+// decidedAt is set only by the owner's approve or reject and never moves afterwards; completedAt is set exactly when the
+// action reaches completed, failed (including a refusal before dispatch) or unknown, and stays null otherwise.
+type Times = {status: string; decidedAt: string | null; dispatchedAt: string | null; completedAt: string | null};
+const read = async (h: Harness, as: AgentCredential, actionId: string) => await h.ok(`/v1/external-actions/${actionId}`, as) as Times;
+const pastExpiry = (h: Harness, actionId: string) => h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?')
+    .bind((BigInt(ticks()) - 1n).toString(), actionId).run();
+const notBefore = (later: string, earlier: string) => assert.ok(Date.parse(later) >= Date.parse(earlier), `${later} is before ${earlier}`);
+
+test('externalActionTimes_PendingAndExpiredUndecided_NoDecisionAndNoResult', () => scenario(async ({h, provider}) => {
+    const {agent} = await ownedAgent(h);
+    const {actionId} = await (await propose(h, agent)).json() as {actionId: string};
+    for (const seen of [await read(h, agent, actionId), await execute(h, agent, actionId) as Times])
+        assert.deepEqual([seen.status, seen.decidedAt, seen.dispatchedAt, seen.completedAt], ['pending', null, null, null]);
+    await pastExpiry(h, actionId);
+    for (const seen of [await read(h, agent, actionId), await execute(h, agent, actionId) as Times])
+        assert.deepEqual([seen.status, seen.decidedAt, seen.dispatchedAt, seen.completedAt], ['expired', null, null, null]);
+    assert.equal(provider.calls.length, 0);
+}));
+
+test('externalActionTimes_Approved_DecidedAtSetOnceAndKeptThroughExecute', () => scenario(async ({h}) => {
+    const {agent, actionId} = await approved(h);
+    const decided = await read(h, agent, actionId);
+    assert.deepEqual([decided.status, decided.dispatchedAt, decided.completedAt], ['approved', null, null]);
+    assert.notEqual(decided.decidedAt, null);
+    const done = await execute(h, agent, actionId) as Times;
+    assert.equal(done.status, 'completed');
+    assert.equal(done.decidedAt, decided.decidedAt);
+    notBefore(done.dispatchedAt!, decided.decidedAt!);
+    notBefore(done.completedAt!, done.dispatchedAt!);
+    const again = await read(h, agent, actionId);
+    assert.deepEqual([again.decidedAt, again.dispatchedAt, again.completedAt], [done.decidedAt, done.dispatchedAt, done.completedAt]);
+    assert.deepEqual((await execute(h, agent, actionId) as Times).completedAt, done.completedAt);
+}));
+
+test('externalActionTimes_Rejected_DecidedAtSetAndNoResultEvenPastExpiry', () => scenario(async ({h, provider}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const {actionId} = await (await propose(h, agent)).json() as {actionId: string};
+    await pastExpiry(h, actionId);
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: actionId}), {ok: true});
+    const rejected = await read(h, agent, actionId);
+    assert.deepEqual([rejected.status, rejected.dispatchedAt, rejected.completedAt], ['rejected', null, null]);
+    assert.notEqual(rejected.decidedAt, null);
+    const again = await execute(h, agent, actionId) as Times;
+    assert.deepEqual([again.status, again.decidedAt, again.completedAt], ['rejected', rejected.decidedAt, null]);
+    assert.equal(provider.calls.length, 0);
+}));
+
+test('externalActionTimes_ApprovedThenExpired_DecidedAtKeptAndNoResult', () => scenario(async ({h, provider}) => {
+    const {agent, actionId} = await approved(h);
+    const decidedAt = (await read(h, agent, actionId)).decidedAt;
+    await pastExpiry(h, actionId);
+    const seen = await execute(h, agent, actionId) as Times;
+    assert.deepEqual([seen.status, seen.decidedAt, seen.dispatchedAt, seen.completedAt], ['expired', decidedAt, null, null]);
+    assert.notEqual(decidedAt, null);
+    assert.equal(provider.calls.length, 0);
+}));
+
+test('externalActionTimes_RefusedBeforeDispatch_CompletedAtSetWithoutDispatch', () => scenario(async ({h, provider}) => {
+    const {agent, humanId, actionId} = await approved(h);
+    const decidedAt = (await read(h, agent, actionId)).decidedAt!;
+    await h.db.prepare('UPDATE humans SET frozen_at=CAST(? AS INTEGER) WHERE human_id=?').bind(ticks(), humanId).run();
+    const refused = await execute(h, agent, actionId) as Times & {failure: string};
+    assert.deepEqual([refused.status, refused.failure, refused.decidedAt, refused.dispatchedAt], ['failed', 'owner-frozen', decidedAt, null]);
+    notBefore(refused.completedAt!, decidedAt);
+    assert.equal((await read(h, agent, actionId)).completedAt, refused.completedAt);
+    assert.equal((await execute(h, agent, actionId) as Times).completedAt, refused.completedAt);
+    assert.equal(provider.calls.length, 0);
+}));
+
+for (const [name, status, respond] of [['ProviderRejected', 'failed', () => Response.json({reason: 'duplicate content'}, {status: 422})],
+    ['OutcomeUnknown', 'unknown', () => new Response('{}', {status: 502})]] as const)
+    test(`externalActionTimes_${name}_CompletedAtSetAfterDispatchAndKept`, () => scenario(async ({h, provider}) => {
+        const {agent, actionId} = await approved(h);
+        const decidedAt = (await read(h, agent, actionId)).decidedAt!;
+        provider.respond = respond;
+        const result = await execute(h, agent, actionId) as Times;
+        assert.deepEqual([result.status, result.decidedAt], [status, decidedAt]);
+        notBefore(result.dispatchedAt!, decidedAt);
+        notBefore(result.completedAt!, result.dispatchedAt!);
+        provider.respond = completed;
+        const again = await execute(h, agent, actionId) as Times;
+        assert.deepEqual([again.status, again.decidedAt, again.completedAt], [status, decidedAt, result.completedAt]);
+        assert.equal(provider.calls.length, 1);
+    }));

@@ -86,6 +86,15 @@ fresh-sign-in set, the future-skew check, both window boundaries (`>` to `>=`), 
 the unknown-kind refusal. Equivalent, left unpinned: a case-insensitive grant ID (stored IDs are lowercase and the
 lookup compares exactly) and dropping the object check (a non-object has no `humanId`).
 
+The action's times, which Envoylet shows on its plan card (mailbox tests `externalActionTimes_*`, #449): `decidedAt` is
+set only by the owner's approve or reject (also a reject past expiry) and keeps that value through every execute;
+`completedAt` is set exactly when the action reaches `completed`, `failed` (including a refusal before dispatch, which
+leaves `dispatchedAt` null) or `unknown`, is kept on every repeated execute, and stays null while `pending`, `approved`,
+`rejected` or `expired`. Stamping `decided_at` on the outcome write, leaving `completed_at` off a pre-dispatch refusal,
+or stamping `completed_at` on approve or reject each fails a test. Stamping it on the `dispatching` write is an
+equivalent mutant on every path a test can reach: the outcome write overwrites it, and only an outcome that could not
+be recorded would show it.
+
 ## Limits
 
 - A relay without first-party OAuth returns `approvalUrl: null`: it has no Weave owner pages.

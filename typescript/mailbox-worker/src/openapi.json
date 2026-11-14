@@ -5907,7 +5907,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "When the owner approved or rejected the plan. Set only by that decision and never changed afterwards; null while pending and for a plan that expired undecided."
           },
           "dispatchedAt": {
             "anyOf": [
@@ -5920,7 +5921,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "When Weave committed the dispatch, just before calling the platform. Null if nothing was sent, including a refusal before dispatch."
           },
           "completedAt": {
             "anyOf": [
@@ -5933,7 +5935,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "When Weave recorded the result: set when the status becomes completed, failed (including a refusal before dispatch) or unknown, and never changed afterwards. Null while pending, approved or dispatching, and for rejected or expired plans."
           },
           "receipt": {
             "anyOf": [
