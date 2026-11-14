@@ -17,7 +17,8 @@ lost.
 
   ```json
   {"kind": "external-action", "actionId": "…", "status": "approved",
-   "credentialRef": "…", "operation": "publish_post", "createdAt": "…",
+   "credentialRef": "…", "provider": "…", "targetAccount": "…",
+   "credentialRevision": "…", "operation": "publish_post", "createdAt": "…",
    "expiresAt": "…", "decidedAt": "…", "completedAt": null}
   ```
 
@@ -93,6 +94,25 @@ provider-rejected tests (fourteen tests in all). Before the change six failed, e
 | Always report `failure: null` | 3 |
 | Report `failure` only for `failed`, not `unknown` | 1 |
 | Default a missing failure to a non-null value | 3 |
+
+**The action's account (2026-11-14, Envoylet request `notice-target` on #365).** Each notice also carries `provider`,
+`targetAccount` and `credentialRevision`, copied from the action's own row exactly as `GET /v1/external-actions/{actionId}`
+returns them. Envoylet's recent-posts list had only `credentialRef` to name an action's account, and a reference can
+outlive the account it named (YouTube's reference is the constant `youtube`, so a reconnect to another channel keeps it).
+The three values are fixed when the action is proposed; the notice never reads the credential's current row, so a
+reconnect does not rename an older action, and an app can compare `credentialRevision` with the revision
+`GET /v1/external-credentials` lists. None is secret, and each was already readable by the same credential, so no new
+data is exposed and no schema change is needed. `inbox_ProposedAction_PendingNoticeWithoutContent` checks the exact
+shape; `inbox_CredentialReconnectedAfterProposal_NoticeKeepsTheActionsAccount` reconnects the credential (new
+revision and account) after the proposal and checks that the notice still names the action's values, equal to the
+action read. Both failed before the change because the notice had none of the three members (fifteen tests in all).
+Mutations:
+
+| Mutation | Tests failing |
+| --- | --- |
+| Read `targetAccount` and `credentialRevision` from the credential's current row | 1 |
+| Report `credentialRef` as `provider` | 2 |
+| Read `provider` from the credential's current row (found surviving by the independent verifier; the test now also changes the provider) | 1 |
 
 The OpenAPI `Notice` schema gains the `external-action` variant. The inbox page's `notices` description, Agent Start
 and the Worker README are updated.
