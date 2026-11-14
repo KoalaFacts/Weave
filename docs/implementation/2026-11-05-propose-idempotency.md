@@ -175,6 +175,7 @@ Mutation checks: each of these fails at least one test:
   dispatched action.
 - Not deployable through the current `completed-only` release (see Storage). Envoylet's demo check (propose with a
   key, drop the response, repeat, see one plan on `/account`) waits for that path and an owner deploy.
-  (2026-11-12: the path exists; see "Release path" above. The owner deploy is still to run.)
+  (2026-11-12: the path exists, see "Release path" above; the owner's release run 43154439279 at `b0ae6f5` applied
+  the table at 04:24 UTC.)
 - The release path protects the permitted SQL; it does not lock out a concurrent administrator between its checks.
   Changes they make are caught by the re-plans before the ledger check, after the batch and before activation.
