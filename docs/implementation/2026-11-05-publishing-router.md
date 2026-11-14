@@ -182,7 +182,9 @@ pins the listed value (also for a provider this deployment cannot use),
 `createMediaUpload_PutThenPropose_PinsTheUploadedFile` that a proposed plan's `credentialRevision` equals it, and
 `connectExternalCredential_Reconnect_NewRevisionInvalidatesEarlierApproval` that the listing follows a reconnect.
 Mutation checks: the `revision` member dropped from the listing; `credential_ref` listed in its place (each fails these
-tests).
+tests). `listMyCredentials_EveryProviderShape_MatchesPublishedAgentCredentialSchema` checks every listed item, for each
+adapter family and on both routes, against OpenAPI `AgentCredential` (required members, no undocumented member, types,
+enums and nested rules); an undocumented member added to the listing fails only this test (mutation check, 2026-11-15).
 
 Adding a platform is now one adapter file plus one entry in `publishingAdapters`.
 Neither the authorization server, the owner page nor the RPC surface changes.
