@@ -115,7 +115,9 @@ publishing and external-credentials suites; it now fails the new test.
 Added later (2026-11-14): the owner's confirm now re-checks the credential's platform
 too, as execute already did. Before, a pending plan whose credential changed platform
 under the same reference, revision and target could still be approved, and execute then
-failed it with `credential-changed`. Confirming it is now `plan-changed` and leaves it
+failed it with `credential-changed`. No connect path writes that state (every connect
+mints a new revision), so this is defence in depth that keeps approve and execute in
+agreement. Confirming it is now `plan-changed` and leaves it
 pending, with nothing sent; dropping the platform comparison fails
 `confirmExternalAction_CredentialChangedWhilePending_reprovidered_PlanChangedAndStillPending`.
 
