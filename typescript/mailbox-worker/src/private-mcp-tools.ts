@@ -174,7 +174,9 @@ export const privateMcpTools = [
         + 'and write content exactly as its content field describes. A credential whose provider is unavailable here lists no operations.',
         'weave:actions.read', {}, [], out({items:{type:'array', items:out({
             credentialRef:str(64, 'Pass as credentialRef.'), provider:str(64), targetAccount:str(256, 'The provider-verified account the credential acts as.'),
-            targetDisplay:str(400, 'A readable name for the account.'), operations:{type:'array', items:str(64), description:'Operations you can propose now.'},
+            targetDisplay:str(400, 'A readable name for the account.'),
+            revision:str(64, 'The credential revision a plan proposed now is bound to (its credentialRevision); reconnecting the account changes it, and a plan bound to an earlier revision can no longer be approved or executed.'),
+            operations:{type:'array', items:str(64), description:'Operations you can propose now.'},
             content:nullable({type:'string', description:'The content format those operations take.'}),
             textRules:nullable({...out({max:{type:'integer', minimum:1}, unit:{type:'string', enum:['characters','graphemes','weighted characters']},
                 maxWithMedia:nullable({type:'integer', minimum:1}), maxBytes:nullable({type:'integer', minimum:1})}, ['max','unit','maxWithMedia','maxBytes']),
@@ -184,7 +186,7 @@ export const privateMcpTools = [
                 description:'The media limits content describes, as data: at most max files of these types, maxTotalBytes across them, alt at most maxAlt characters (0: this platform takes no alt; null: only the post format\'s 2000). null exactly when textRules is null.'}),
             settingRules:nullable({type:'object', additionalProperties:out({type:{type:'string', enum:['string','boolean','number']}, values:nullable({type:'array', items:{type:'string'}})}, ['type','values']),
                 description:'Settings checked beyond presence for this account, by name: the value must have this JSON type and, when values is a list, be one of them. Settings not listed are checked for presence only; any required setting that is null or a blank string is refused. {} when none; null exactly when textRules is null.'})
-        }, ['credentialRef','provider','targetAccount','targetDisplay','operations','content','textRules','mediaRules','settingRules'])}}, ['items']), {readOnly:true}),
+        }, ['credentialRef','provider','targetAccount','targetDisplay','revision','operations','content','textRules','mediaRules','settingRules'])}}, ['items']), {readOnly:true}),
     tool('create_media_upload', 'Get a one-use URL for uploading an image or video for a post: send one HTTP PUT of the file to uploadUrl with exactly this Content-Type and Content-Length within 15 minutes. '
         + 'The PUT response is the media record {mediaId, contentType, bytes, sha256}; reference it in content as {mediaId, bytes, sha256}. get_my_media reads it again.',
         'weave:actions.write', {contentType:{type:'string', enum:['video/mp4','video/quicktime','video/webm','image/jpeg','image/png','image/gif','image/webp']},

@@ -85,19 +85,19 @@ export async function ownedCredentials(tx: Transaction, agentIds: string[]): Pro
 }
 
 /** A live credential as its agent sees it: what to pass as credentialRef, which operations work now and the content they take. */
-export type AgentCredential = {credentialRef: string; provider: string; targetAccount: string; targetDisplay: string; operations: string[]; content: string | null;
+export type AgentCredential = {credentialRef: string; provider: string; targetAccount: string; targetDisplay: string; revision: string; operations: string[]; content: string | null;
     textRules: TextRules | null; mediaRules: MediaRules | null; settingRules: SettingRules | null};
 
 /** GET /v1/external-credentials: the agent's live credentials. A provider this deployment cannot use lists no operations. */
 export async function listAgentCredentials(env: Env, caller: ActionCaller): Promise<{items: AgentCredential[]}> {
     return atomic(env.db, async tx => {
         await caller.check(tx);
-        const rows = (await tx.db.prepare(`SELECT credential_ref,provider,target_account,target_display FROM external_credentials
+        const rows = (await tx.db.prepare(`SELECT credential_ref,provider,target_account,target_display,revision FROM external_credentials
             WHERE account_id=? AND revoked_at IS NULL ORDER BY credential_ref`).bind(caller.accountId)
-            .all<{credential_ref: string; provider: string; target_account: string; target_display: string}>()).results;
+            .all<{credential_ref: string; provider: string; target_account: string; target_display: string; revision: string}>()).results;
         return {items: rows.map(row => {
             const usable = provider(env, row.provider);
-            return {credentialRef: row.credential_ref, provider: row.provider, targetAccount: row.target_account, targetDisplay: row.target_display,
+            return {credentialRef: row.credential_ref, provider: row.provider, targetAccount: row.target_account, targetDisplay: row.target_display, revision: row.revision,
                 operations: usable ? [...usable.operations] : [], content: usable ? usable.describeContent(row.target_account) : null,
                 textRules: usable?.textRules?.(row.target_account) ?? null, mediaRules: usable?.mediaRules ?? null,
                 settingRules: usable?.settingRules?.(row.target_account) ?? null};
