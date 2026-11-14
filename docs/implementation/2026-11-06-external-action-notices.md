@@ -112,6 +112,7 @@ Mutations:
 | --- | --- |
 | Read `targetAccount` and `credentialRevision` from the credential's current row | 1 |
 | Report `credentialRef` as `provider` | 2 |
+| Read `provider` from the credential's current row (found surviving by the independent verifier; the test now also changes the provider) | 1 |
 
 The OpenAPI `Notice` schema gains the `external-action` variant. The inbox page's `notices` description, Agent Start
 and the Worker README are updated.

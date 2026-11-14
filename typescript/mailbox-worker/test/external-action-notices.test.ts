@@ -69,7 +69,8 @@ test('inbox_CredentialReconnectedAfterProposal_NoticeKeepsTheActionsAccount', ()
     const {agent} = await ownedAgent(h);
     const {actionId} = await propose(h, agent);
     // Reconnecting under the same reference writes a new revision and may name another account; the notice still names the plan's.
-    await h.db.prepare(`UPDATE external_credentials SET revision='rev-2',target_account='urn:li:person:beta',target_display='Desk Beta'
+    // The provider changes too (no write path does that today) so that reading any of the three from the credential fails here.
+    await h.db.prepare(`UPDATE external_credentials SET provider='other-http',revision='rev-2',target_account='urn:li:person:beta',target_display='Desk Beta'
         WHERE account_id=? AND credential_ref='linkedin-main'`).bind(agent.accountId).run();
     const read = await h.ok(`/v1/external-actions/${actionId}`, agent) as Record<string, unknown>;
     const [notice] = await actionNotices(h, agent);
