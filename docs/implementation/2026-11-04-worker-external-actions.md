@@ -112,6 +112,12 @@ names (the case propose answers `409 provider-unavailable`), with a matching dig
 and credential, fails with `plan-changed` and sends nothing on a first and a repeated
 execute. Treating the adapter as always present survived the external-actions,
 publishing and external-credentials suites; it now fails the new test.
+Added later (2026-11-14): the owner's confirm now re-checks the credential's platform
+too, as execute already did. Before, a pending plan whose credential changed platform
+under the same reference, revision and target could still be approved, and execute then
+failed it with `credential-changed`. Confirming it is now `plan-changed` and leaves it
+pending, with nothing sent; dropping the platform comparison fails
+`confirmExternalAction_CredentialChangedWhilePending_reprovidered_PlanChangedAndStillPending`.
 
 In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
 content in `<pre>`, verified account, credential revision, bound form tokens) and
