@@ -56,8 +56,9 @@ test('importMedia_UnsafeOrMalformedUrl_RefusedWithoutAnyRequest', () => scenario
         'https://cdn.example.com:8443/clip.mp4', 'https://user:pw@cdn.example.com/clip.mp4', 'https://media.weave.test/v1/external-media/x/content',
         'https://cdn.example.com/' + 'a'.repeat(2048), 'not a url', 42]) {
         const response = await importing(h, agent, {url});
-        assert.equal(response.status, 400, String(url));
-        assert.equal(((await response.json()) as any).field, 'url', String(url));
+        const body = await response.json() as any;
+        // Agents tell a link refusal from a post refusal by exactly this shape.
+        assert.deepEqual([response.status, body.code, body.field], [400, 'invalid', 'url'], String(url));
     }
     assert.equal((await importing(h, agent, {url: 'https://cdn.example.com/clip.mp4', contentType: 'video/mp4'})).status, 400, 'no other fields');
     assert.deepEqual(seen, []);
@@ -69,8 +70,10 @@ test('importMedia_SourceRefusesOrMisdescribes_NothingStored', () => scenario(asy
         ['/unsized.mp4', 'must state a Content-Length'], ['/empty.mp4', 'must state a Content-Length'], ['/huge.mp4', 'must state a Content-Length'],
         ['/other.mp4', 'answered 599, not 200']]) {
         const response = await importing(h, agent, {url: 'https://cdn.example.com' + path});
-        assert.equal(response.status, 400, path);
-        assert.ok(((await response.json()) as any).reason.startsWith(reason), path);
+        const body = await response.json() as any;
+        // A source that refuses is the link's fault: the same 400 invalid on field "url" as an unsafe link, never a post refusal.
+        assert.deepEqual([response.status, body.code, body.field], [400, 'invalid', 'url'], path);
+        assert.ok(body.reason.startsWith(reason), path + ': ' + body.reason);
     }
     assert.equal(await objects(h), 0);
     assert.equal(await h.db.prepare('SELECT count(*) n FROM external_media').first<number>('n'), 0);
@@ -104,6 +107,27 @@ test('importMediaFromUrl_McpGrant_ChecksAuthorityBeforeFetching', () => scenario
         assert.equal(fetched.length, 1, 'a revoked grant makes no outbound request');
         assert.equal(await objects(h), 1);
     } finally { globalThis.fetch = original; }
+}));
+
+test('importMediaFromUrl_SourceUnreachable_RefusedOnUrlAndNothingStored', () => scenario(async ({h}) => {
+    // Miniflare answers a failed outbound connection with a 500, so a rejected fetch is reached only in process.
+    const agent = await h.register();
+    await h.claim(agent);
+    const grantId = await testGrant(h.db, agent.accountId);
+    const env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
+        CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: mediaOrigin,
+        EXTERNAL_MEDIA: inProcessMedia(await h.mf.getR2Bucket('EXTERNAL_MEDIA'))} as unknown as Env;
+    let calls = 0;
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => { calls++; throw new TypeError('connection reset'); };
+    try {
+        const response = await executePrivateMcp(env, 'https://demo.test', agent.accountId, 'import_media_from_url', {url: 'https://cdn.example.com/clip.mp4'}, grantId);
+        const body = await response.json() as Record<string, any>;
+        assert.deepEqual([response.status, body.code, body.field, body.reason], [400, 'invalid', 'url', 'could not be fetched'], JSON.stringify(body));
+        assert.equal(calls, 1, 'one attempt, never retried');
+    } finally { globalThis.fetch = original; }
+    assert.equal(await objects(h), 0);
+    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_media').first<number>('n'), 0);
 }));
 
 test('importMediaFromUrl_SourceBreaksOffOrStorageFails_EachKeepsItsOwnMeaning', () => scenario(async ({h}) => {
