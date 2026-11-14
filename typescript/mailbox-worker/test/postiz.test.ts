@@ -278,6 +278,35 @@ test('publication_StillQueuedOrUnreachable_BacksOffWithoutChangingState', () => 
     assert.equal((await publication(h, actionId)).next_check_at, null);
 }));
 
+test('publication_StillQueued_RechecksCappedAtSixHoursAndStopSevenDaysAfterDue', () => scenario(async ({h, env}) => {
+    // Literal durations on purpose: these are the published contract (openapi `publication`), not the module's constants.
+    const minute = 60_000, hour = 60 * minute, day = 24 * hour;
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    const due = ms((await publication(h, actionId)).due_at);
+    const queued = listing([{id: 'post-1', state: 'QUEUE', releaseURL: null, error: null}]);
+    let at = due;
+    const delays: number[] = [];
+    for (let i = 0; i < 7; i++) {
+        await sweepWith(env, queued, at);
+        const next = ms((await publication(h, actionId)).next_check_at);
+        delays.push((next - at) / minute);
+        at = next;
+    }
+    assert.deepEqual(delays, [15, 30, 60, 120, 240, 360, 360], 'doubling from 15 minutes, never more than 6 hours apart');
+
+    // A check 7 days after the post was due still schedules one more; the check after that is the last.
+    await sweepWith(env, queued, due + 7 * day);
+    let row = await publication(h, actionId);
+    assert.equal(ms(row.next_check_at), due + 7 * day + 6 * hour, 'still tracked at the end of the window');
+    const asked = await sweepWith(env, queued, ms(row.next_check_at));
+    row = await publication(h, actionId);
+    assert.equal(asked.length, 1, 'the last check still asks Postiz');
+    assert.equal(row.next_check_at, null, 'never asked again once 7 days have passed since the post was due');
+    assert.equal(row.state, 'queued');
+    assert.equal((await h.ok(`/v1/external-actions/${actionId}`, agent)).publication.state, 'queued');
+}));
+
 test('publication_CheckedAt_StampedOnlyWhenPostizAnswers', () => scenario(async ({h, env}) => {
     const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
     await execute(h, agent, actionId);
