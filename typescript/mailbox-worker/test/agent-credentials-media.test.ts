@@ -54,7 +54,9 @@ test('listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider', 
     assert.equal(listed.status, 200, JSON.stringify(listed.body));
     const [postiz, postizX, youtube] = listed.body.items;
     assert.deepEqual(listed.body.items.map((item: any) => item.credentialRef), ['postiz:cm4tiktok', 'postiz:cm4x', 'youtube'], 'revoked and other agents\' credentials are not listed');
-    assert.deepEqual([postiz.provider, postiz.targetAccount, postiz.targetDisplay, postiz.operations], ['postiz', 'tiktok/cm4tiktok', 'Display postiz:cm4tiktok', ['publish_post']]);
+    assert.deepEqual([postiz.provider, postiz.targetAccount, postiz.targetDisplay, postiz.revision, postiz.operations],
+        ['postiz', 'tiktok/cm4tiktok', 'Display postiz:cm4tiktok', 'rev-1', ['publish_post']]);
+    assert.equal(youtube.revision, 'rev-1', 'an unusable provider still lists its revision');
     for (const setting of Object.keys(tiktok)) assert.ok(postiz.content.includes(`"${setting}"`), setting + ' is named in the content format');
     assert.deepEqual(postiz.textRules, {max: 7000, unit: 'characters', maxWithMedia: null, maxBytes: null}, 'the limits ruleBreak enforces, as data');
     const postizBytes = 100 * 1024 * 1024;
@@ -100,6 +102,8 @@ test('createMediaUpload_PutThenPropose_PinsTheUploadedFile', () => scenario(asyn
     const proposed = await mcp(env, agent.accountId, grantId, 'propose_external_action', {credentialRef: 'postiz:cm4tiktok', operation: 'publish_post', content});
     assert.equal(proposed.status, 200, JSON.stringify(proposed.body));
     assert.equal(proposed.body.status, 'pending');
+    const [listed] = (await mcp(env, agent.accountId, grantId, 'list_my_credentials')).body.items;
+    assert.equal(proposed.body.credentialRevision, listed.revision, 'the listed revision is the one a plan proposed now is bound to');
 }));
 
 test('signedUpload_TamperedExpiredOrMismatched_NothingStored', () => scenario(async ({h, env}) => {

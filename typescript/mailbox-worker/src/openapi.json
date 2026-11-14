@@ -6114,6 +6114,7 @@
           "provider",
           "targetAccount",
           "targetDisplay",
+          "revision",
           "operations",
           "content",
           "textRules",
@@ -6138,6 +6139,11 @@
           "targetDisplay": {
             "type": "string",
             "maxLength": 400
+          },
+          "revision": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The credential revision a plan proposed now is bound to: the credentialRevision of an action proposed with this credentialRef. Reconnecting the account writes a new revision; a plan bound to an earlier one can no longer be approved (the owner's confirm answers plan-changed) and is refused at execute (credential-changed), so an app can compare it with a waiting plan's credentialRevision."
           },
           "operations": {
             "type": "array",

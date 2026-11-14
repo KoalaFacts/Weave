@@ -172,6 +172,18 @@ whitespace or default-ignorable characters such as U+200C or a variation selecto
 becomes the provider-verified account id (2026-11-07). The owner overview, the approval page, the
 credential list and pending actions (joined to the live credential row) read that stored value.
 
+Each listed credential also carries its `revision` (Envoylet request `credential-revision`, 2026-11-14), on
+`GET /v1/external-credentials` and `list_my_credentials`: the value a plan proposed now carries as
+`credentialRevision`. Every connect, including a reconnect of the same account, writes a fresh random revision, so an
+app can compare a waiting plan's `credentialRevision` with the listing and see that the plan can no longer be approved
+(the owner's confirm answers `plan-changed`) or executed (`credential-changed`). The revision is a random UUID, not a
+secret, and the action view already showed it. `listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider`
+pins the listed value (also for a provider this deployment cannot use),
+`createMediaUpload_PutThenPropose_PinsTheUploadedFile` that a proposed plan's `credentialRevision` equals it, and
+`connectExternalCredential_Reconnect_NewRevisionInvalidatesEarlierApproval` that the listing follows a reconnect.
+Mutation checks: the `revision` member dropped from the listing; `credential_ref` listed in its place (each fails these
+tests).
+
 Adding a platform is now one adapter file plus one entry in `publishingAdapters`.
 Neither the authorization server, the owner page nor the RPC surface changes.
 

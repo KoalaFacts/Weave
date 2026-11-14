@@ -89,6 +89,9 @@ test('connectExternalCredential_Reconnect_NewRevisionInvalidatesEarlierApproval'
         await withGoogle({}, async () => { assert.equal((await connectExternalCredential(environment(h), input(humanId, agent.accountId))).ok, true); });
         const second = (await row(h, agent.accountId))!.revision;
         assert.notEqual(second, first);
+        // The agent's listing follows the reconnect, so an app can tell a plan bound to the first revision from a current one.
+        const listed = await h.ok('/v1/external-credentials', agent) as {items: {credentialRef: string; revision: string}[]};
+        assert.deepEqual(listed.items.map(item => [item.credentialRef, item.revision]), [['youtube', second]]);
     } finally { await h.close(); }
 });
 
