@@ -207,6 +207,50 @@ for (const change of ['revoked', 'retargeted', 'reprovidered'] as const)
         assert.equal(provider.calls.length, 0);
     }));
 
+// The approval-time plan re-check: the same adapter presence, contract revision and recomputed digest that execute's claim()
+// checks. Each case leaves the digest the page showed equal to the stored one, so only the re-check can refuse it.
+const pendingPlanChanges = {
+    // A stored field edited without its digest: the recomputed digest no longer matches.
+    contentEdited: async (h: Harness, _agent: AgentCredential, actionId: string) =>
+        h.db.prepare(`UPDATE external_actions SET content='Episode 13 is live.' WHERE action_id=?`).bind(actionId).run(),
+    // A deploy changed what the adapter sends; the stored digest still matches the stored (older) contract.
+    contractChanged: async (h: Harness, _agent: AgentCredential, actionId: string) => restamp(h, actionId, {contract_revision: 'test-http-v0'}),
+    // A deploy no longer runs the adapter the plan names; the credential follows so only the adapter lookup differs.
+    adapterRemoved: async (h: Harness, agent: AgentCredential, actionId: string) => {
+        await restamp(h, actionId, {provider: 'retired-platform'});
+        await h.db.prepare(`UPDATE external_credentials SET provider='retired-platform' WHERE account_id=? AND credential_ref='linkedin-main'`).bind(agent.accountId).run();
+    },
+} as const;
+
+/** Rewrites stored plan fields together with a digest that matches them, as a plan proposed under those fields would carry. */
+async function restamp(h: Harness, actionId: string, fields: Partial<Parameters<typeof planDigest>[0]>) {
+    const row = await h.db.prepare(`SELECT action_id,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,
+        target_account,CAST(expires_at AS TEXT) expires_at FROM external_actions WHERE action_id=?`).bind(actionId).first<Parameters<typeof planDigest>[0]>();
+    const changed = {...row!, ...fields};
+    await h.db.prepare(`UPDATE external_actions SET provider=?,contract_revision=?,plan_digest=? WHERE action_id=?`)
+        .bind(changed.provider, changed.contract_revision, await planDigest(changed), actionId).run();
+}
+
+for (const [change, apply] of Object.entries(pendingPlanChanges))
+    test(`confirmExternalAction_PlanNoLongerDispatchable_${change}_PlanChangedAndStillPending`, () => scenario(async ({h, provider}) => {
+        const {agent, humanId} = await ownedAgent(h);
+        const action = await (await propose(h, agent)).json() as {actionId: string};
+        await apply(h, agent, action.actionId);
+        const stored = await h.db.prepare('SELECT plan_digest FROM external_actions WHERE action_id=?').bind(action.actionId).first<{plan_digest: string}>();
+
+        assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: stored!.plan_digest}), {ok: false, reason: 'plan-changed'});
+        assert.equal((await execute(h, agent, action.actionId)).status, 'pending');
+        assert.equal(provider.calls.length, 0);
+    }));
+
+// Positive control for the re-check: an unchanged plan proposed through a configured adapter is approved.
+test('confirmExternalAction_UnchangedDispatchablePlan_Approved', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    const [shown] = await pendingFor(h, humanId);
+    assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: true});
+}));
+
 test('confirmExternalAction_PastExpiry_ExpiredWhileRejectStillDecides', () => scenario(async ({h, provider}) => {
     const {agent, humanId} = await ownedAgent(h);
     const action = await (await propose(h, agent)).json() as {actionId: string};

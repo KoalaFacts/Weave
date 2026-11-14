@@ -147,7 +147,7 @@ function validShape(input: unknown): OwnerAction | null {
 
 type DecidedAction = Exclude<OwnerAction, {kind: 'issue-recovery-code'}>;
 
-async function decide(tx: Transaction, input: DecidedAction, at: bigint): Promise<OwnerDecision> {
+async function decide(env: Env, tx: Transaction, input: DecidedAction, at: bigint): Promise<OwnerDecision> {
     const human = await tx.db.prepare('SELECT subject,frozen_at FROM humans WHERE human_id=?').bind(input.humanId).first<{subject: string; frozen_at: string | null}>();
     if (!human) return notFound;
     if (human.frozen_at !== null) return {ok: false, reason: 'frozen'};
@@ -156,7 +156,7 @@ async function decide(tx: Transaction, input: DecidedAction, at: bigint): Promis
         case 'reject-binding': return rejectBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
         case 'confirm-key': return confirmKeyRequest(tx, input.humanId, input.requestId, at);
         case 'reject-key': return rejectKeyRequest(tx, input.humanId, input.requestId, at);
-        case 'confirm-action': return confirmExternalAction(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.planDigest, at);
+        case 'confirm-action': return confirmExternalAction(env, tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.planDigest, at);
         case 'reject-action': return rejectExternalAction(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
         case 'revoke-key': return revokeKeyForOwner(tx, input.humanId, input.agentId, input.kid, at);
         // A protective action: no re-authentication window. The worst a stolen session does is disconnect the owner's own clients.
@@ -183,7 +183,7 @@ export async function ownerAction(env: Env, input: OwnerAction, clock: () => big
     try {
         if (action.kind === 'issue-recovery-code') return await issueRecoveryCode(env, {humanId: action.humanId, agentId: action.agentId}, clock);
         // The transaction time is the injected clock, so key rows and the churn window of confirm-key use the same time as every decision.
-        return await atomic(env.db, tx => decide(tx, action, tx.store.now), clock);
+        return await atomic(env.db, tx => decide(env, tx, action, tx.store.now), clock);
     } catch {
         console.error('owner-action: storage failure');
         return unavailable;

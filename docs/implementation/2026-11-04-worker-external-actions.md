@@ -120,6 +120,15 @@ mints a new revision), so this is defence in depth that keeps approve and execut
 agreement. Confirming it is now `plan-changed` and leaves it
 pending, with nothing sent; dropping the platform comparison fails
 `confirmExternalAction_CredentialChangedWhilePending_reprovidered_PlanChangedAndStillPending`.
+Added later (2026-11-14): confirm also re-checks the adapter's presence, its contract
+revision and the recomputed plan digest, the remaining checks execute's `claim()` makes
+before dispatch. A pending plan whose stored content changed without its digest, whose
+adapter contract changed since proposal, or whose adapter this deploy no longer runs is
+`plan-changed` at confirm and stays pending, with nothing sent; before, the owner could
+approve it and execute then failed it. Each comparison dropped (adapter treated as
+present, contract not compared, digest not recomputed) fails exactly one of
+`confirmExternalAction_PlanNoLongerDispatchable_{adapterRemoved,contractChanged,contentEdited}_PlanChangedAndStillPending`;
+`confirmExternalAction_UnchangedDispatchablePlan_Approved` is the positive control.
 
 In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
 content in `<pre>`, verified account, credential revision, bound form tokens) and

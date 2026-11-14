@@ -291,8 +291,11 @@ async function ownedByHuman(tx: Transaction, human: OwnerHuman, actionId: string
     return owner?.human_id === human.humanId ? row : null;
 }
 
-/** Owner approval of the exact plan the page showed. The approval adds no authority: the agent must still execute it. */
-export async function confirmExternalAction(tx: Transaction, human: OwnerHuman, actionId: string, digest: string, at: bigint): Promise<OwnerDecision> {
+/**
+ * Owner approval of the exact plan the page showed. The approval adds no authority: the agent must still execute it.
+ * It re-checks what execute's claim() checks before dispatch, so the owner is never asked to approve a plan that execute would refuse unsent.
+ */
+export async function confirmExternalAction(env: Env, tx: Transaction, human: OwnerHuman, actionId: string, digest: string, at: bigint): Promise<OwnerDecision> {
     const row = await ownedByHuman(tx, human, actionId);
     if (!row) return {ok: false, reason: 'not-found'};
     if (row.status !== 'pending') return {ok: false, reason: 'not-pending'};
@@ -301,6 +304,8 @@ export async function confirmExternalAction(tx: Transaction, human: OwnerHuman, 
     const credential = await readCredential(tx, row.account_id, row.credential_ref);
     if (!credential || credential.revoked_at !== null || credential.revision !== row.credential_revision
         || credential.provider !== row.provider || credential.target_account !== row.target_account) return {ok: false, reason: 'plan-changed'};
+    const provider = findProvider(env, row.provider);
+    if (!provider || provider.contractRevision !== row.contract_revision || await planDigest(row) !== row.plan_digest) return {ok: false, reason: 'plan-changed'};
     const stamp = at.toString();
     tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='approved',decided_at=CAST(? AS INTEGER),decided_by=?,updated_at=CAST(? AS INTEGER)
         WHERE action_id=? AND status='pending'`).bind(stamp, human.humanId, stamp, actionId));
