@@ -119,13 +119,13 @@ The scheduled Weave task (publishing router and governed actions, `typescript/ma
 [issue #365](https://github.com/KoalaFacts/Weave/issues/365), the channel with Envoylet. This section holds its run
 log. Records above stay the evidence for what each change delivered.
 
-Last docs housekeeping: 2026-11-13 (Sydney).
+Last docs housekeeping: 2026-11-15 (Sydney).
 
 ### Items
 
 | Item | Status |
 | --- | --- |
-| `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | merged, not deployed (#421, `66482d4`; owner approved `schema-366` on 2026-11-11; supersedes #366). Replay at full capacity and refused keyed proposals pinned by tests (#422). Release path added (#423): a manual production dispatch with `apply_external_action_keys_schema: true` applies exactly the approved table and index ([steps](2026-11-05-propose-idempotency.md#release-path-applying-the-table-to-production-2026-11-12)); applying it to production is owner-authorized (2026-11-12) and waits for that owner run |
+| `propose-idempotency` (Envoylet request): `Idempotency-Key` on `POST /v1/external-actions` | done, deployed (#421, `66482d4`; #422; release path #423; supersedes #366): the owner's release run 43154439279 at `b0ae6f5` applied the approved table on 2026-11-12 04:24 UTC ([record](2026-11-05-propose-idempotency.md#release-path-applying-the-table-to-production-2026-11-12)) |
 | Status-change notification for apps (shared plan step 4) | 1/2 done (#369, `0d2d22e`, deployed 2026-11-05 21:37 UTC): external-action notices on the inbox. 2/2, a push webhook, is blocked: storing a callback address is a schema change and needs an owner decision first |
 | `notice-target` (Envoylet request): name an external-action notice's account | done (#453, `af57dfd`; waiting for the owner's deploy): `provider`, `targetAccount` and `credentialRevision` on each `external-action` notice, copied from the action's own row; no schema change |
 | Native X adapter (shared plan step 4) | 1/2 (#370): text and up to 4 images over OAuth 1.0a user context. 2/2 (#372): up to 1000 characters of alt text per image through `POST /2/media/metadata`, verified from X's docs on 2026-11-06 |
@@ -142,7 +142,7 @@ Last docs housekeeping: 2026-11-13 (Sydney).
 | `execute` can fail with `credential-unreadable` before dispatch, but the `failure` descriptions in OpenAPI and the MCP tools did not list it | done (#409, `8ff277f`): both name it, and a test checks they name every code `execute` refuses with before dispatch |
 | An agent at its 5-per-24-hours binding-request limit got `429` with no `Retry-After`, so Envoylet's owner-binding panel (#70) could not say how long to wait | done (#412, `de7acdb`): the `429` sets `Retry-After` to the seconds until one request leaves the rolling window |
 | An agent at its 10-per-24-hours key-addition limit got `429` with no `Retry-After` | done (#413, `2d94b8a`): the `429` sets `Retry-After` to the seconds until one addition leaves the window; the 1000-row total sets none |
-| `submit-nuget` check (NETSDK1045) | open: GitHub's Automatic Dependency Submission (not a workflow here) fails with NETSDK1045. Unverified repository-side candidate ([#372's diagnosis](https://github.com/KoalaFacts/Weave/pull/372#issuecomment-6717426980)): the automatic setup reads `global.json` (`10.0.400`, `rollForward: latestMajor`) as an empty version and installs .NET 10, so selecting a compatible SDK explicitly in `global.json` might fix it; verify it in the automatic submission and the locked restore/build/tests. Otherwise the owner turns it off in Code Security settings; target frameworks and gates stay |
+| `submit-nuget` check (NETSDK1045) | intermittent: GitHub's Automatic Dependency Submission (not a workflow here) fails on runners with only SDK 10.0.x and passes on ones with .NET 11, so one commit can do either; handling and `[owner-decision] dependency-review-auto-nuget` in [advance-weave](../../.claude/skills/advance-weave/SKILL.md#gate). Untested candidate fix: an explicit compatible SDK in `global.json` ([#372](https://github.com/KoalaFacts/Weave/pull/372#issuecomment-6717426980)) |
 
 ### Run log
 
