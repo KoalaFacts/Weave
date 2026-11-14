@@ -91,7 +91,11 @@ set only by the owner's approve or reject (also a reject past expiry) and keeps 
 `completedAt` is set exactly when the action reaches `completed`, `failed` (including a refusal before dispatch, which
 leaves `dispatchedAt` null) or `unknown`, is kept on every repeated execute, and stays null while `pending`, `approved`,
 `rejected` or `expired`. Stamping `decided_at` on the outcome write, leaving `completed_at` off a pre-dispatch refusal,
-or stamping `completed_at` on approve or reject each fails a test. Stamping it on the `dispatching` write is an
+or stamping `completed_at` on approve or reject each fails a test. `dispatchedAt`, which Envoylet shows as "Weave
+started sending" (Envoylet #154), is stamped when the action enters `dispatching`, before the platform answers, and is
+kept on every read and repeated execute for `completed`, `failed` and `unknown`; the tests make the fake platform
+answer 25 ms late, so an outcome write that restamped `dispatched_at` (and returned it) fails them, where it passed the
+earlier `>=` checks. Stamping `completed_at` on the `dispatching` write is an
 equivalent mutant on every path a test can reach: the outcome write overwrites it, and only an outcome that could not
 be recorded would show it.
 

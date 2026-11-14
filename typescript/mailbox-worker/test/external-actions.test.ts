@@ -7,7 +7,7 @@ import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
 type Call = {operation: string; content: string; targetAccount: string; actionId: string};
-type Provider = {calls: Call[]; respond: (call: Call) => Response};
+type Provider = {calls: Call[]; respond: (call: Call) => Response | Promise<Response>};
 
 const endpoint = 'https://provider.test/post';
 const completed = (call: Call) => Response.json({externalId: 'post-' + call.actionId});
@@ -666,18 +666,24 @@ test('externalActionTimes_RefusedBeforeDispatch_CompletedAtSetWithoutDispatch', 
     assert.equal(provider.calls.length, 0);
 }));
 
-for (const [name, status, respond] of [['ProviderRejected', 'failed', () => Response.json({reason: 'duplicate content'}, {status: 422})],
+// Envoylet #154 shows dispatchedAt as "Weave started sending": it is stamped when the action enters dispatching, before the
+// provider call, and the outcome write never moves it. The provider answers late so the two stamps are distinguishable.
+const late = (respond: (call: Call) => Response) => async (call: Call) => { await new Promise(resolve => setTimeout(resolve, 25)); return respond(call); };
+for (const [name, status, respond] of [['Completed', 'completed', completed],
+    ['ProviderRejected', 'failed', () => Response.json({reason: 'duplicate content'}, {status: 422})],
     ['OutcomeUnknown', 'unknown', () => new Response('{}', {status: 502})]] as const)
-    test(`externalActionTimes_${name}_CompletedAtSetAfterDispatchAndKept`, () => scenario(async ({h, provider}) => {
+    test(`externalActionTimes_${name}_DispatchedAtBeforeProviderAnswerAndBothKept`, () => scenario(async ({h, provider}) => {
         const {agent, actionId} = await approved(h);
         const decidedAt = (await read(h, agent, actionId)).decidedAt!;
-        provider.respond = respond;
+        provider.respond = late(respond);
         const result = await execute(h, agent, actionId) as Times;
         assert.deepEqual([result.status, result.decidedAt], [status, decidedAt]);
         notBefore(result.dispatchedAt!, decidedAt);
-        notBefore(result.completedAt!, result.dispatchedAt!);
+        assert.ok(Date.parse(result.completedAt!) > Date.parse(result.dispatchedAt!),
+            `dispatchedAt ${result.dispatchedAt} must be stamped before the provider answered (completedAt ${result.completedAt})`);
         provider.respond = completed;
-        const again = await execute(h, agent, actionId) as Times;
-        assert.deepEqual([again.status, again.decidedAt, again.completedAt], [status, decidedAt, result.completedAt]);
+        for (const again of [await read(h, agent, actionId), await execute(h, agent, actionId) as Times])
+            assert.deepEqual([again.status, again.decidedAt, again.dispatchedAt, again.completedAt],
+                [status, decidedAt, result.dispatchedAt, result.completedAt]);
         assert.equal(provider.calls.length, 1);
     }));

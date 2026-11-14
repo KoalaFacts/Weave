@@ -5922,7 +5922,7 @@
                 "type": "null"
               }
             ],
-            "description": "When Weave committed the dispatch, just before calling the platform. Null if nothing was sent, including a refusal before dispatch."
+            "description": "When Weave committed the dispatch, just before calling the platform, and never changed afterwards (the recorded result does not move it). Null if nothing was sent, including a refusal before dispatch."
           },
           "completedAt": {
             "anyOf": [
