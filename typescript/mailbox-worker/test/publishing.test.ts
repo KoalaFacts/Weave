@@ -5,6 +5,7 @@ import { describePost, parsePost, publishingProvider, type PublishCall, type Pub
 import { postiz } from '../src/postiz-provider.ts';
 import { telegram } from '../src/telegram-provider.ts';
 import type { Env } from '../src/database.ts';
+import { publishingAdapters } from '../src/external-providers.ts';
 
 const file = (overrides: Record<string, unknown> = {}) => ({mediaId: crypto.randomUUID(), bytes: 10, sha256: 'a'.repeat(64), ...overrides});
 const future = (ms: number) => new Date(Date.now() + ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -221,4 +222,18 @@ test('postizSettingRules_InstagramYoutubeTiktok_DocumentedTypesAndValuesChecked'
     assert.deepEqual(provider.settingRules?.('instagram-standalone/cm4'), {post_type: {type: 'string', values: ['post', 'story']}});
     // The description says which settings take a boolean.
     assert.match(provider.describeContent('tiktok/cm4'), /"duet": true \| false/);
+});
+
+// Envoylet states a deadline from `publishAt` only for Postiz (#365, 2026-11-14): a provider that starts taking
+// `publishAt` must be announced on #365 before it ships, so this pin fails first.
+test('publishingAdapters_PublishAtAccepted_OnlyPostizAndOnlyWhereDescribed', async () => {
+    assert.deepEqual(publishingAdapters.filter(adapter => adapter.rules.schedule !== null).map(adapter => adapter.name), ['postiz'],
+        'a new scheduling provider needs a [weave→envoylet] note on #365 first');
+    for (const adapter of publishingAdapters) {
+        const target = adapter.name === 'postiz' ? 'mastodon/1' : 'account';
+        assert.equal(describePost(adapter.rules, target).includes('"publishAt"'), adapter.rules.schedule !== null, `${adapter.name} description`);
+        const verdict = await check(adapter, {text: 'hi', media: [], ...(adapter.name === 'postiz' ? {settings: {__type: 'mastodon'}} : {}), publishAt: future(3600_000)}, target);
+        if (adapter.rules.schedule === null) assert.equal(verdict, 'publishAt is not supported here; omit it to post on execution', adapter.name);
+        else assert.equal(verdict, null, adapter.name);
+    }
 });
