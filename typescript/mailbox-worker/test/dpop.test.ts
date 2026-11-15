@@ -39,12 +39,21 @@ test('verifyDpop_HtuNormalisation', async () => {
     const verify=async (htu: string) => (await verifyDpop(request([dpopProof(key,{method:'GET',url:htu,iat:now})],'GET',target),{now})).ok;
     assert.equal(await verify('https://relay.example/v1/inbox'),true);
     assert.equal(await verify('https://relay.example/v1/inbox?x=1#f'),true);
-    for(const htu of ['https://relay.example/v1/inbox/','http://relay.example/v1/inbox','https://other.example/v1/inbox','https://relay.example:8443/v1/inbox','https://user@relay.example/v1/inbox','not a url'])
+    for(const htu of ['https://relay.example/v1/inbox/','http://relay.example/v1/inbox','https://other.example/v1/inbox','https://relay.example:8443/v1/inbox','https://user@relay.example/v1/inbox','https://:secret@relay.example/v1/inbox','not a url'])
         assert.equal(await verify(htu),false,htu);
     assert.equal(htuOf('https://Relay.Example:443/v1/inbox?limit=1#x'),'https://relay.example/v1/inbox');
     assert.equal(htuOf('http://relay.example:80/'),'http://relay.example/');
     assert.equal(htuOf('not a url'),null);
     assert.equal(htuOf('data:text/plain,x'),null);
+    assert.equal(htuOf('https://:secret@relay.example/v1/inbox'),null);
+});
+
+test('verifyDpop_NonStringHtu_Fails', async () => {
+    const key=agentKey();
+    const verify=async (htu: unknown) => (await verifyDpop(request([dpopProof(key,{method:'GET',url,iat:now,claims:{htu}})]),{now})).ok;
+    assert.equal(await verify(url),true);
+    // new URL() stringifies its argument, so a one-element array would otherwise read as the target URL.
+    for(const htu of [[url],7,null,undefined]) assert.equal(await verify(htu),false,JSON.stringify(htu));
 });
 
 test('verifyDpop_MethodMismatch_Fails', async () => {
@@ -71,7 +80,8 @@ test('verifyDpop_JtiShape_Enforced', async () => {
     const verify=async (jti: unknown) => (await verifyDpop(request([dpopProof(key,{method:'GET',url,iat:now,claims:{jti}})]),{now})).ok;
     assert.equal(await verify('a'),true);
     assert.equal(await verify('x'.repeat(128)),true);
-    for(const jti of ['','x'.repeat(129),'café','line\nbreak',7,undefined]) assert.equal(await verify(jti),false,String(jti));
+    assert.equal(await verify(' ~'),true); // first and last printable ASCII characters
+    for(const jti of ['','x'.repeat(129),'café','line\nbreak','a\x1F','a\x7F',7,undefined]) assert.equal(await verify(jti),false,String(jti));
 });
 
 test('verifyDpop_JwkWithD_Fails', async () => {
