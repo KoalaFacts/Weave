@@ -129,13 +129,25 @@ approve it and execute then failed it. Each comparison dropped (adapter treated 
 present, contract not compared, digest not recomputed) fails exactly one of
 `confirmExternalAction_PlanNoLongerDispatchable_{adapterRemoved,contractChanged,contentEdited}_PlanChangedAndStillPending`;
 `confirmExternalAction_UnchangedDispatchablePlan_Approved` is the positive control.
+Added later (2026-11-15): confirming a pending plan whose credential was revoked,
+reconnected (new revision), re-pointed to another account or moved to another platform
+since the proposal is now `account-changed` instead of `plan-changed`, still with
+nothing approved or sent. A revision never returns, so such a plan can never be
+approved, and the owner page's `plan-changed` text ("review the current action and
+approve again") sent the owner round a loop that could only fail. The page now says the
+account was reconnected or disconnected, that the action can no longer be approved, and
+to reject it so the agent can propose again. A stale digest and the adapter, contract
+and recomputed-digest re-checks stay `plan-changed`. Mutation check: returning
+`plan-changed` for the credential mismatch again fails the four
+`confirmExternalAction_CredentialChangedWhilePending_*` / `_DigestOrCredentialChanged_*`
+cases and the workerd test below, which also rejects the plan from the reloaded page.
 
 In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
 content in `<pre>`, verified account, credential revision, bound form tokens) and
 `test/workerd-owner-page.test.ts` runs both Workers together: an owner approves on
 `/account` and the agent's execute sends exactly once; a stale sign-in is sent to
 GitHub with no effect; a credential rotated after the page was rendered is
-`plan-changed`.
+`account-changed` (before 2026-11-15, `plan-changed`), and the owner can still reject it.
 
 ## Limits
 

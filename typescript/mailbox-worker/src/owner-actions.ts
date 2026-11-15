@@ -42,7 +42,7 @@ export type OwnerAction = {humanId: string; authAt: number} & (
     | {kind: 'revoke-grant'; grantId: string}
     | {kind: 'revoke-credential'; agentId: string; credentialRef: string});
 export type OwnerFailureReason = 'stale-authentication' | 'frozen' | 'not-found' | 'not-pending' | 'expired' | 'agent-limit' | 'already-owned' | 'key-in-use'
-    | 'key-limit' | 'endorser-revoked' | 'requesting-key-revoked' | 'keys-changed' | 'plan-changed' | 'unavailable';
+    | 'key-limit' | 'endorser-revoked' | 'requesting-key-revoked' | 'keys-changed' | 'plan-changed' | 'account-changed' | 'unavailable';
 export type OwnerFailure = {ok: false; reason: OwnerFailureReason};
 /** What the human-side functions of the owning modules return; `ownerAction` adds the recovery code variant. */
 export type OwnerDecision = {ok: true} | OwnerFailure;

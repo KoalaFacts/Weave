@@ -150,13 +150,14 @@ test('proposeExternalAction_InvalidInput_Rejected', () => scenario(async ({h}) =
         assert.equal((await h.request('/v1/external-actions', agent, 'POST', input)).status, 400, JSON.stringify(input).slice(0, 80));
 }));
 
-test('confirmExternalAction_DigestOrCredentialChanged_PlanChanged', () => scenario(async ({h, provider}) => {
+// Another digest is a stale page (approve again after reloading); a reconnected account can never be approved again.
+test('confirmExternalAction_DigestOrCredentialChanged_PlanChangedOrAccountChanged', () => scenario(async ({h, provider}) => {
     const {agent, humanId} = await ownedAgent(h);
     const action = await (await propose(h, agent)).json() as {actionId: string};
     const [shown] = await pendingFor(h, humanId);
     assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: 'A'.repeat(43)}), {ok: false, reason: 'plan-changed'});
     await setCredential(h, agent.accountId, 'rev-2');
-    assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: false, reason: 'plan-changed'});
+    assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: false, reason: 'account-changed'});
     assert.equal((await execute(h, agent, action.actionId)).status, 'pending');
     assert.equal(provider.calls.length, 0);
 }));
@@ -193,7 +194,7 @@ test('confirmExternalAction_AnotherHumansAgent_NotFound', () => scenario(async (
 // The approval-time credential re-check: the owner reviewed the plan for one connected account, which no longer stands.
 // It matches execute's credential check, so the owner is never asked to approve a plan that execute would refuse unsent.
 for (const change of ['revoked', 'retargeted', 'reprovidered'] as const)
-    test(`confirmExternalAction_CredentialChangedWhilePending_${change}_PlanChangedAndStillPending`, () => scenario(async ({h, provider}) => {
+    test(`confirmExternalAction_CredentialChangedWhilePending_${change}_AccountChangedAndStillPending`, () => scenario(async ({h, provider}) => {
         const {agent, humanId} = await ownedAgent(h);
         const action = await (await propose(h, agent)).json() as {actionId: string};
         const [shown] = await pendingFor(h, humanId);
@@ -202,7 +203,7 @@ for (const change of ['revoked', 'retargeted', 'reprovidered'] as const)
         else if (change === 'reprovidered') await h.db.prepare(`UPDATE external_credentials SET provider='telegram' WHERE account_id=?`).bind(agent.accountId).run();
         else await h.db.prepare('UPDATE external_credentials SET revoked_at=CAST(? AS INTEGER) WHERE account_id=?').bind(ticks(), agent.accountId).run();
 
-        assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: false, reason: 'plan-changed'});
+        assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: false, reason: 'account-changed'});
         assert.equal((await execute(h, agent, action.actionId)).status, 'pending');
         assert.equal(provider.calls.length, 0);
     }));

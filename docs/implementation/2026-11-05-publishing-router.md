@@ -176,7 +176,7 @@ Each listed credential also carries its `revision` (Envoylet request `credential
 `GET /v1/external-credentials` and `list_my_credentials`: the value a plan proposed now carries as
 `credentialRevision`. Every connect, including a reconnect of the same account, writes a fresh random revision, so an
 app can compare a waiting plan's `credentialRevision` with the listing and see that the plan can no longer be approved
-(the owner's confirm answers `plan-changed`) or executed (`credential-changed`). The revision is a random UUID, not a
+(the owner's confirm answers `account-changed`, `plan-changed` before 2026-11-15) or executed (`credential-changed`). The revision is a random UUID, not a
 secret, and the action view already showed it. `listMyCredentials_LiveCredentials_OperationsAndContentFormatPerProvider`
 pins the listed value (also for a provider this deployment cannot use),
 `createMediaUpload_PutThenPropose_PinsTheUploadedFile` that a proposed plan's `credentialRevision` equals it, and
