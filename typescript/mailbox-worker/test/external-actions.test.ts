@@ -263,7 +263,35 @@ test('confirmExternalAction_PastExpiry_ExpiredWhileRejectStillDecides', () => sc
     assert.equal(provider.calls.length, 0);
 }));
 
-test('decideExternalAction_AlreadyDecided_NotPendingAndOutcomeKept', () => scenario(async ({h, provider}) => {
+// The owner page lists every live pending plan of the human's agents (each agent holds at most 20), never an expired one or another human's.
+test('ownerOverview_ExternalActions_EveryLivePendingPlanOfOwnedAgentsOnly', () => scenario(async ({h}) => {
+    const {agent: busy, humanId} = await ownedAgent(h);
+    const quiet = await h.register();
+    await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(humanId, quiet.accountId).run();
+    await setCredential(h, quiet.accountId);
+    const {agent: stranger} = await ownedAgent(h);
+    const proposeOk = async (as: AgentCredential, content: string) => {
+        const response = await propose(h, as, content);
+        assert.equal(response.status, 200, await response.clone().text());
+        return (await response.json() as {actionId: string}).actionId;
+    };
+    const busyIds: string[] = [];
+    for (let i = 0; i < 20; i++) busyIds.push(await proposeOk(busy, `Episode ${i} is live.`));
+    const quietId = await proposeOk(quiet, 'Quiet episode is live.');
+    const strangerId = await proposeOk(stranger, 'Not yours.');
+
+    const listed = await pendingFor(h, humanId);
+    assert.equal(listed.length, 21, 'a full agent does not crowd out another agent of the same owner');
+    assert.deepEqual(new Set(listed.map(action => action.actionId)), new Set([...busyIds, quietId]));
+    assert.ok(!listed.some(action => action.actionId === strangerId), "another human's plan is never listed");
+
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind((BigInt(ticks()) - 1n).toString(), quietId).run();
+    const afterExpiry = await pendingFor(h, humanId);
+    assert.equal(afterExpiry.length, 20);
+    assert.ok(!afterExpiry.some(action => action.actionId === quietId), 'an expired plan is not offered for approval');
+}));
+
+test('decideExternalAction_AlreadyDecided_NotPendingAndOutcomeKept',() => scenario(async ({h, provider}) => {
     const {agent, humanId, actionId} = await approved(h);
     const second = await (await propose(h, agent, 'Episode 13 is live.')).json() as {actionId: string};
     const [shown] = await pendingFor(h, humanId);
