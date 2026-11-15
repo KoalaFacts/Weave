@@ -294,6 +294,8 @@ async function ownedByHuman(tx: Transaction, human: OwnerHuman, actionId: string
 /**
  * Owner approval of the exact plan the page showed. The approval adds no authority: the agent must still execute it.
  * It re-checks what execute's claim() checks before dispatch, so the owner is never asked to approve a plan that execute would refuse unsent.
+ * A credential revoked, reconnected or re-pointed since the proposal is `account-changed`: unlike a stale page (`plan-changed`),
+ * approving again can never succeed, because a credential's revision never returns.
  */
 export async function confirmExternalAction(env: Env, tx: Transaction, human: OwnerHuman, actionId: string, digest: string, at: bigint): Promise<OwnerDecision> {
     const row = await ownedByHuman(tx, human, actionId);
@@ -303,7 +305,7 @@ export async function confirmExternalAction(env: Env, tx: Transaction, human: Ow
     if (digest !== row.plan_digest) return {ok: false, reason: 'plan-changed'};
     const credential = await readCredential(tx, row.account_id, row.credential_ref);
     if (!credential || credential.revoked_at !== null || credential.revision !== row.credential_revision
-        || credential.provider !== row.provider || credential.target_account !== row.target_account) return {ok: false, reason: 'plan-changed'};
+        || credential.provider !== row.provider || credential.target_account !== row.target_account) return {ok: false, reason: 'account-changed'};
     const provider = findProvider(env, row.provider);
     if (!provider || provider.contractRevision !== row.contract_revision || await planDigest(row) !== row.plan_digest) return {ok: false, reason: 'plan-changed'};
     const stamp = at.toString();

@@ -549,14 +549,20 @@ test("account_ApproveExternalAction_Stale_RedirectsToGithubNoEffect",{timeout:60
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
 });
 
-test("account_ApproveExternalAction_CredentialRotatedSincePage_PlanChanged",{timeout:60_000},async()=>{
+// A reconnected account can never make the plan approvable again, so the owner is told to reject it rather than to approve again.
+test("account_ApproveExternalAction_CredentialRotatedSincePage_AccountChangedAndRejectable",{timeout:60_000},async()=>{
   const human=await seedHuman(),{agent,action}=await proposeAction(human,"rotated "+randomUUID());
   const token=await tokenFor(human,"Approve and allow sending once");
   await (await db()).prepare("UPDATE external_credentials SET revision='rev-2' WHERE account_id=?").bind(agent.accountId).run();
   const response=await postAccount(token,await sessionCookie(human));
-  assert.equal(result(response),"plan-changed");
+  assert.equal(result(response),"account-changed");
+  const page=await (await shared.mf.dispatchFetch(issuer+response.headers.get("location")!,{redirect:"manual",headers:{Cookie:await sessionCookie(human)}})).text();
+  assert.ok(page.includes("was reconnected or disconnected after the action was proposed, so it can no longer be approved. Reject it;"),page);
   assert.equal((await executeAction(agent,action.actionId)).status,"pending");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
+  // What the message offers works: the reloaded page still rejects it.
+  assert.equal(result(await postAccount(await tokenFor(human,"Reject"),await sessionCookie(human))),"done");
+  assert.equal((await executeAction(agent,action.actionId)).status,"rejected");
 });
 
 // ---- the page for one action, which an app such as Envoylet links its owner to -------------------------------------------
