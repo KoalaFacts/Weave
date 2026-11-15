@@ -255,7 +255,9 @@ test('connectExternalCredential_ReconnectAfterRevoke_LiveAgainAndListedToItsAgen
         assert.deepEqual(await listed(), [['youtube', first]], 'positive control: a live credential is listed');
         assert.deepEqual(await ownerAction(environment(h), {humanId, authAt: 0, kind: 'revoke-credential', agentId: agent.accountId, credentialRef: 'youtube'} as OwnerAction), {ok: true});
         assert.deepEqual(await listed(), [], 'a revoked credential is not listed to its agent');
-        await withGoogle({}, async () => { assert.equal((await connectExternalCredential(environment(h), input(humanId, agent.accountId))).ok, true); });
+        // Without the reset of revoked_at the write would break the revoked-has-no-secret check and the connect would be `unavailable`.
+        await withGoogle({}, async () => assert.deepEqual(await connectExternalCredential(environment(h), input(humanId, agent.accountId)),
+            {ok: true, credentialRef: 'youtube', targetDisplay: 'HSC Beats'}, 'reconnecting after a revoke succeeds'));
         const stored = (await row(h, agent.accountId))!;
         assert.equal(stored.revoked_at, null, 'reconnecting clears the revocation');
         assert.ok(stored.secret, 'and stores a sealed secret again');
