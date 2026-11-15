@@ -34,7 +34,9 @@ export type ExternalActionView = {actionId: string; provider: string; operation:
 export type OwnerExternalAction = {actionId: string; agentId: string; provider: string; operation: string; content: string;
     credentialRef: string; credentialRevision: string; targetAccount: string; targetDisplay: string; planDigest: string; createdAt: string; expiresAt: string;
     /** Files the content names, for the owner page to preview through ownerActionMedia. */
-    media: {mediaId: string; contentType: string}[]};
+    media: {mediaId: string; contentType: string}[];
+    /** The credential was revoked, reconnected or re-pointed since the proposal: the owner's confirm answers `account-changed`, so only rejecting remains. */
+    accountChanged: boolean};
 
 type Row = {action_id: string; account_id: string; provider: string; contract_revision: string; operation: string; content: string;
     credential_ref: string; credential_revision: string; target_account: string; plan_digest: string; status: string; created_at: string;
@@ -99,6 +101,11 @@ const readRow = (tx: Transaction, actionId: string) =>
 const readCredential = (tx: Transaction, accountId: string, credentialRef: string) =>
     tx.db.prepare('SELECT provider,revision,target_account,target_display,CAST(revoked_at AS TEXT) revoked_at,secret FROM external_credentials WHERE account_id=? AND credential_ref=?')
         .bind(accountId, credentialRef).first<Credential>();
+/** Whether the credential is still the live one, at the revision, platform and account the plan was proposed with. */
+const credentialMatchesPlan = <C extends Pick<Credential, 'provider' | 'revision' | 'target_account' | 'revoked_at'>>(credential: C | null,
+    row: Pick<Row, 'provider' | 'credential_revision' | 'target_account'>): credential is C =>
+    credential !== null && credential.revoked_at === null && credential.revision === row.credential_revision
+    && credential.provider === row.provider && credential.target_account === row.target_account;
 
 /**
  * The authenticated agent and the check that its authority is still live, run inside every transaction of an operation:
@@ -206,8 +213,7 @@ async function claim(env: Env, caller: ActionCaller, actionId: string, clock: ()
         if (!owner || owner.human_id !== row.decided_by) return refuse('owner-changed');
         if (owner.frozen_at !== null) return refuse('owner-frozen');
         const credential = await readCredential(tx, caller.accountId, row.credential_ref);
-        if (!credential || credential.revoked_at !== null || credential.revision !== row.credential_revision
-            || credential.provider !== row.provider || credential.target_account !== row.target_account) return refuse('credential-changed');
+        if (!credentialMatchesPlan(credential, row)) return refuse('credential-changed');
         const provider = findProvider(env, row.provider);
         if (!provider || provider.contractRevision !== row.contract_revision || await planDigest(row) !== row.plan_digest) return refuse('plan-changed');
         // The sealed secret opens only for this row's agent, reference, provider and revision.
@@ -262,13 +268,14 @@ export async function executeExternalAction(env: Env, caller: ActionCaller, acti
 /** Pending actions of the human's agents, for the owner page. */
 export async function pendingForOwner(tx: Transaction, agentIds: string[], now: bigint): Promise<OwnerExternalAction[]> {
     if (agentIds.length === 0) return [];
-    // The display name is the credential's current one; the confirmation re-checks the revision and target it was proposed with.
+    // The display name is the credential's current one; accountChanged says whether that credential still matches the plan, as the confirmation re-checks.
     const rows = (await tx.db.prepare(`SELECT x.action_id,x.account_id,x.provider,x.operation,x.content,x.credential_ref,x.credential_revision,
-        x.target_account,x.plan_digest,CAST(x.created_at AS TEXT) created_at,CAST(x.expires_at AS TEXT) expires_at,c.target_display
+        x.target_account,x.plan_digest,CAST(x.created_at AS TEXT) created_at,CAST(x.expires_at AS TEXT) expires_at,c.target_display,
+        c.provider c_provider,c.revision c_revision,c.target_account c_target_account,CAST(c.revoked_at AS TEXT) c_revoked_at
         FROM external_actions x JOIN external_credentials c ON c.account_id=x.account_id AND c.credential_ref=x.credential_ref
         WHERE x.account_id IN (${agentIds.map(() => '?').join(',')}) AND x.status='pending' AND x.expires_at>CAST(? AS INTEGER)
         ORDER BY x.created_at,x.action_id LIMIT ?`)
-        .bind(...agentIds, now.toString(), pendingActionsPerAgent * agentIds.length).all<Row & {target_display: string}>()).results;
+        .bind(...agentIds, now.toString(), pendingActionsPerAgent * agentIds.length).all<Row & {target_display: string; c_provider: string; c_revision: string; c_target_account: string; c_revoked_at: string | null}>()).results;
     const actions: OwnerExternalAction[] = [];
     for (const row of rows) {
         const media: OwnerExternalAction['media'] = [];
@@ -278,7 +285,8 @@ export async function pendingForOwner(tx: Transaction, agentIds: string[], now: 
         }
         actions.push({actionId: row.action_id, agentId: row.account_id, provider: row.provider, operation: row.operation, content: row.content,
             credentialRef: row.credential_ref, credentialRevision: row.credential_revision, targetAccount: row.target_account, targetDisplay: row.target_display,
-            planDigest: row.plan_digest, createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!, media});
+            planDigest: row.plan_digest, createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!, media,
+            accountChanged: !credentialMatchesPlan({provider: row.c_provider, revision: row.c_revision, target_account: row.c_target_account, revoked_at: row.c_revoked_at}, row)});
     }
     return actions;
 }
@@ -304,8 +312,7 @@ export async function confirmExternalAction(env: Env, tx: Transaction, human: Ow
     if (exactInt64(row.expires_at) <= at) return {ok: false, reason: 'expired'};
     if (digest !== row.plan_digest) return {ok: false, reason: 'plan-changed'};
     const credential = await readCredential(tx, row.account_id, row.credential_ref);
-    if (!credential || credential.revoked_at !== null || credential.revision !== row.credential_revision
-        || credential.provider !== row.provider || credential.target_account !== row.target_account) return {ok: false, reason: 'account-changed'};
+    if (!credentialMatchesPlan(credential, row)) return {ok: false, reason: 'account-changed'};
     const provider = findProvider(env, row.provider);
     if (!provider || provider.contractRevision !== row.contract_revision || await planDigest(row) !== row.plan_digest) return {ok: false, reason: 'plan-changed'};
     const stamp = at.toString();

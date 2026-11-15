@@ -141,6 +141,16 @@ and recomputed-digest re-checks stay `plan-changed`. Mutation check: returning
 `plan-changed` for the credential mismatch again fails the four
 `confirmExternalAction_CredentialChangedWhilePending_*` / `_DigestOrCredentialChanged_*`
 cases and the workerd test below, which also rejects the plan from the reloaded page.
+Added later the same day: the owner page learns this before the owner tries. Each
+pending action in the owner overview carries `accountChanged`, computed by the same
+credential predicate as the confirm and execute re-checks (live, same revision,
+platform and account). A flagged plan stays listed with its content, shows the
+`account-changed` text in place of the approve form, and has no approval token minted;
+Reject is unchanged. On `/account/actions/{id}` the fresh-sign-in note is dropped for
+it. Mutations: the flag always false fails four mailbox cases and the workerd test
+`actionPage_AccountReconnectedBeforeOpening_OnlyRejectOfferedAndItWorks`; rendering the
+approve form, minting its token or showing the sign-in note anyway each fails
+`ownerPage_ActionWhoseAccountChanged_OffersOnlyRejectWithTheReason`.
 
 In the auth worker, `test/owner-page.test.ts` checks the action section (escaped
 content in `<pre>`, verified account, credential revision, bound form tokens) and

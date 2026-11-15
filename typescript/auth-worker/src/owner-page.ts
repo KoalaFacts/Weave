@@ -90,7 +90,8 @@ function actionsSection(actions:OwnerExternalAction[],agents:Extract<OwnerOvervi
         return file.contentType.startsWith("video/")?'<video controls preload="metadata" width="360" src="'+src+'"></video>':'<img alt="Attached file '+esc(file.mediaId)+'" width="360" src="'+src+'">';
       }).join(""),
       "<p>Requested "+esc(action.createdAt)+"; approval and sending must finish by "+esc(action.expiresAt)+"</p>",
-      form("Approve and allow sending once","confirm-action:"+action.actionId,tokens,target),
+      // A changed account can never be approved (the confirm answers account-changed), so only rejecting is offered.
+      action.accountChanged?"<p>"+esc(ownerResultText["account-changed"]!)+"</p>":form("Approve and allow sending once","confirm-action:"+action.actionId,tokens,target),
       form("Reject","reject-action:"+action.actionId,tokens,target),"</section>"].join("");
   }).join("");
 }
@@ -192,7 +193,7 @@ export function actionPage(overview:OwnerOverview,human:HumanSession,actionId:st
   if(!action)return shell("Approve an action",head+"<p>This action is not waiting for your approval. It may already be decided or expired.</p>"+all);
   const fresh=freshAuthentication(human,now);
   return shell("Approve an action",[head,
-    "<p>Approving needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":"You will be asked to sign in again first.")+"</p>",
+    action.accountChanged?"":"<p>Approving needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":"You will be asked to sign in again first.")+"</p>",
     actionsSection([action],overview.agents,tokens,actionPagePath(actionId)),all].join(""));
 }
 
@@ -221,7 +222,7 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
   }
   for(const action of overview.externalActions){
     // The approval is bound to the plan shown above it; the mailbox worker refuses it if anything in that plan changed.
-    await add("confirm-action:"+action.actionId,{kind:"confirm-action",requestId:action.actionId,planDigest:action.planDigest});
+    if(!action.accountChanged)await add("confirm-action:"+action.actionId,{kind:"confirm-action",requestId:action.actionId,planDigest:action.planDigest});
     await add("reject-action:"+action.actionId,{kind:"reject-action",requestId:action.actionId});
   }
   for(const agent of overview.agents){

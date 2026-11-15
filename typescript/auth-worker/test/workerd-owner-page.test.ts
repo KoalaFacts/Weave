@@ -629,6 +629,21 @@ test("actionPage_Reject_NothingSent",{timeout:60_000},async()=>{
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
 });
 
+// Opened after the account was reconnected, both pages say so and offer only Reject: no approval the confirm would refuse.
+test("actionPage_AccountReconnectedBeforeOpening_OnlyRejectOfferedAndItWorks",{timeout:60_000},async()=>{
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"reconnected "+randomUUID());
+  await (await db()).prepare("UPDATE external_credentials SET revision='rev-2' WHERE account_id=?").bind(agent.accountId).run();
+  const cookie=await sessionCookie(human);
+  for(const page of [await (await actionPage(action.actionId,cookie)).text(),
+    await (await shared.mf.dispatchFetch(issuer+"/account",{redirect:"manual",headers:{Cookie:cookie}})).text()]){
+    assert.ok(page.includes("was reconnected or disconnected after the action was proposed, so it can no longer be approved. Reject it;"),page);
+    assert.deepEqual(forms(page).filter(x=>x.label==="Approve and allow sending once"),[]);
+  }
+  assert.ok((await (await postActionPage(action.actionId,await pageToken(human,action.actionId,"Reject"),cookie)).text()).includes("Rejected. Nothing will be sent."));
+  assert.equal((await executeAction(agent,action.actionId)).status,"rejected");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
+});
+
 test("actionPage_ForgedResultQuery_ClaimsNoDecision",{timeout:60_000},async()=>{
   // A link cannot make the page claim an outcome: the query is ignored, whatever the action's real state.
   const human=await seedHuman(),{agent,action}=await proposeAction(human,"forged "+randomUUID());
