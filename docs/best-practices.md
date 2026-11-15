@@ -261,7 +261,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### Assertions and libraries
 
-**Assertions use Shouldly. Never FluentAssertions.** Enforced by [AGENTS.md](../AGENTS.md#build-and-verification). If you need a custom assertion, write an extension on the value type in the test project.
+**Assertions use Shouldly. Never FluentAssertions.** Enforced by [build details](contributing.md#build-and-verification-details). If you need a custom assertion, write an extension on the value type in the test project.
 
 **Nullable types are asserted non-null before property access.** `result.ShouldNotBeNull(); result.Name.ShouldBe("x");` — warnings-as-errors will reject `result!.Name` patterns. If the null-forgiving operator is the only option, leave a comment explaining why.
 

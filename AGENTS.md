@@ -1,12 +1,12 @@
 # Weave — shared contributor instructions
 
-This is the canonical repository instruction file for coding assistants and human contributors. It holds the rules every change needs; [contributor rules in detail](docs/contributing.md) holds the rest (Governed Tools state, project layout, plugins, engineering conventions, build details, documentation maintenance) and is equally binding.
+This is the canonical repository instruction file for coding assistants and human contributors. It holds the rules every change needs; [contributor rules in detail](docs/contributing.md) holds the rest (Governed Tools state, project layout, plugins, engineering conventions, build details, documentation maintenance) and is equally binding. Keep shared rules in these two files, not in parallel vendor-specific guides.
 
 ## Read the right source
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) for feature boundaries and target semantics (not a claim that every target feature exists); [product positioning](docs/product-positioning.md) for what Weave is; [README.md](README.md) for onboarding; code and tests for current behavior.
+- Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing feature boundaries or behavior. It defines the independent-agent network and separate Governed Tools boundaries, not a claim that every target feature exists. Use [product positioning](docs/product-positioning.md) for what Weave is; [README.md](README.md) for onboarding; code and tests for current behavior.
 - [Implementation records](docs/implementation/) for delivered scope, migrations and verification limits; the relevant sections of [best practices](docs/best-practices.md).
-- The flat architecture supersedes old Shared/Core/layer-first layouts in historical guides and review checklists. Keep their applicable security and testing rules; do not restore obsolete projects or paths.
+- The flat architecture and these rules supersede old Shared/Core/layer-first layouts in historical guides and review checklists. Keep their applicable security and testing rules; do not restore obsolete projects or paths.
 - Inspect the actual branch, diff, nearby code and applicable directory instructions before editing, and preserve unrelated or concurrent work. A previous conversation, PR description or successful run is not proof about the current commit.
 
 ## Product intent and implementation boundary
@@ -51,7 +51,7 @@ For a focused test run after building:
 dotnet test --project csharp/tests/Weave.Security.Tests/Weave.Security.Tests.csproj --no-build -c Release
 ```
 
-Tests use xunit.v3, Shouldly and NSubstitute. Add a regression that fails for the intended reason before fixing behavior. Keep warnings-as-errors and NuGet audit on; never suppress vulnerabilities, weaken assertions or remove tests to get green. Targeted tests are not the full suite. For documentation changes run `cd scripts/docs && npm ci && npm run typecheck && npm test && npm run check`.
+Test libraries, regression and coverage rules, browser tests, warnings and the documentation checker are in [build details](docs/contributing.md#build-and-verification-details); follow them for every change.
 
 Before completing non-trivial changes, apply the relevant [check-rules](.claude/skills/check-rules/SKILL.md) and [adversarial-review](.claude/skills/adversarial-review/SKILL.md) checklists. Before claiming a change works, follow [verification-first](.claude/skills/verification-first/SKILL.md) with [verify-weave](.claude/skills/verify-weave/SKILL.md), which maps each feature to the real boundary that exercises it. The scheduled Weave task also follows [advance-weave](.claude/skills/advance-weave/SKILL.md). These are readable repository procedures even without a tool-specific skill runner. Hooks and checklists supplement review; never fabricate review markers, independent reviewers, test results, or approvals.
 
