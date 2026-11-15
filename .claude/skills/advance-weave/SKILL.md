@@ -44,7 +44,7 @@ The real boundary is the workerd two-worker tests (mailbox-worker + auth-worker)
 
 ## Ledger
 
-The shared plan on #365 plus the "Weave scheduled-task ledger" section of [docs/implementation/README.md](../../../docs/implementation/README.md) and the existing records in `docs/implementation/`. The run log lives in PR bodies and the `[weave→envoylet] STATUS` comments. Records already on main are kept records: mark a superseded one at its top with a pointer to its successor; never delete or rewrite what it recorded. A new feature's record goes in a section of the closest existing record; a new record file only if AGENTS.md's "Documentation maintenance" section explicitly requires one per feature. OpenAPI and MCP tool schemas are code, not docs.
+The shared plan on #365 plus the "Weave scheduled-task ledger" section of [docs/implementation/README.md](../../../docs/implementation/README.md) and the existing records in `docs/implementation/`. The run log lives in PR bodies and the `[weave→envoylet] STATUS` comments. Records already on main are kept records: mark a superseded one at its top with a pointer to its successor; never delete or rewrite what it recorded. A new feature's record goes in a section of the closest existing record; a new record file only if the "Documentation maintenance" section of [contributor rules](../../../docs/contributing.md) explicitly requires one per feature. OpenAPI and MCP tool schemas are code, not docs.
 
 ## The channel (#365, every run)
 
@@ -82,7 +82,7 @@ Every PR keeps current: the area's implementation record (scope, behaviour, veri
 
 ## Docs scope (housekeeping)
 
-Once per Sydney calendar day, per `autonomous-dev` §6, over: README.md, AGENTS.md, ARCHITECTURE.md, `docs/` (including `docs/implementation/` and `docs/best-practices.md`), `typescript/*/README.md`, `agent-start.md`, `.github/workflows/README.md`. Look for stale statements, commands/options that no longer exist, broken links/anchors; duplicated rules kept at their owner per AGENTS.md's "Documentation maintenance" section; "planned/not yet" versus delivered; stale run IDs, test totals and dates. Never touch executed data-migration artifacts, checksums or licence text; remove an AGENTS.md rule only with evidence it is obsolete. State which commands were source-checked but not run. `docs/implementation/README.md` is not created if missing.
+Once per Sydney calendar day, per `autonomous-dev` §6, over: README.md, AGENTS.md, `docs/contributing.md`, ARCHITECTURE.md, `docs/` (including `docs/implementation/` and `docs/best-practices.md`), `typescript/*/README.md`, `agent-start.md`, `.github/workflows/README.md`. Look for stale statements, commands/options that no longer exist, broken links/anchors; duplicated rules kept at their owner per the "Documentation maintenance" section of `docs/contributing.md`; "planned/not yet" versus delivered; stale run IDs, test totals and dates. Never touch executed data-migration artifacts, checksums or licence text; remove an AGENTS.md rule only with evidence it is obsolete. State which commands were source-checked but not run. `docs/implementation/README.md` is not created if missing.
 
 ## Report extras
 
