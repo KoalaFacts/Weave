@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
-import { maxNotices } from '../src/notices.ts';
+import { accountNotices, maxNotices, noticeWindowTicks } from '../src/notices.ts';
+import { Transaction } from '../src/database.ts';
 import { mismatch, type Schema } from './openapi-schema.ts';
 import type { Env } from '../src/database.ts';
 
@@ -275,4 +276,39 @@ test('inbox_LapsedPlanNewerThanCappedRows_RankedByExpiry', () => scenario(async 
     assert.ok(position >= 0, 'the lapsed plan is among the newest 50 by its expiry');
     assert.equal(notices[position].status, 'expired');
     assert.equal(notices[1].actionId, lapsed.actionId, 'only the just-proposed template is newer');
+}));
+
+test('accountNotices_WindowAndExpiryEdges_ExactTicks', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const template = await propose(h, agent);
+    const now = nowTicks() + hourTicks, since = now - noticeWindowTicks;
+    const row = async (status: string, updatedAt: bigint, expiresAt: bigint) => {
+        const id = crypto.randomUUID(), created = (updatedAt - 1n).toString(), decided = status !== 'pending';
+        await h.db.prepare(`INSERT INTO external_actions(action_id,account_id,provider,contract_revision,operation,content,credential_ref,
+            credential_revision,target_account,plan_digest,status,created_at,expires_at,updated_at,decided_at,decided_by)
+            SELECT ?,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,target_account,plan_digest,
+            ?,CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER),? FROM external_actions WHERE action_id=?`)
+            .bind(id, status, created, expiresAt.toString(), updatedAt.toString(), decided ? updatedAt.toString() : null, decided ? humanId : null,
+                template.actionId).run();
+        return id;
+    };
+    const day = noticeWindowTicks;
+    // Settled actions: a last change exactly at the window's start is outside it, one tick later is inside.
+    const changedAtStart = await row('rejected', since, since + day);
+    const changedJustInside = await row('rejected', since + 1n, since + day);
+    // Live plans untouched since long before the window: they are reported at their expiry, only once it falls inside the window.
+    const lapsedAtStart = await row('pending', since - day, since);
+    const lapsedJustInside = await row('pending', since - day, since + 1n);
+    // A plan whose expiry is exactly now has lapsed, and is ranked by that expiry; one tick later it is still live and unchanged.
+    const lapsesNow = await row('approved', since - day, now);
+    const stillLive = await row('approved', since - day, now + 1n);
+    await h.db.prepare('DELETE FROM external_actions WHERE action_id=?').bind(template.actionId).run();
+    const notices = await accountNotices(new Transaction(h.db as never, now), agent.accountId, now) as Notice[];
+    assert.deepEqual(notices[0] && [notices[0].actionId, notices[0].status], [lapsesNow, 'expired'], 'ranked by its expiry, now');
+    // The other two share the instant one tick into the window, so their mutual order is not part of the contract.
+    assert.deepEqual(new Map(notices.slice(1).map(n => [n.actionId, n.status])),
+        new Map([[changedJustInside, 'rejected'], [lapsedJustInside, 'expired']]));
+    assert.equal(notices.length, 3);
+    for (const absent of [changedAtStart, lapsedAtStart, stillLive])
+        assert.ok(!notices.some(n => n.actionId === absent), absent);
 }));
