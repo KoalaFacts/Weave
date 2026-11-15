@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { agentKey, bindingRequest, keyEndorsement, keyProof } from './agent-key.ts';
 import { signInHuman } from '../src/humans.ts';
-import { createBindingRequest } from '../src/binding-requests.ts';
+import { createBindingRequest, getBindingRequest } from '../src/binding-requests.ts';
 import { Problem } from '../src/wire.ts';
 import type { Env } from '../src/database.ts';
 
@@ -124,7 +124,7 @@ test('createBinding_WrongAudOrSubOrStaleIat_400', async () => {
         const now = Math.floor(Date.now() / 1000), clock = () => BigInt(now) * 10000000n;
         const direct = (iat: number) => createBindingRequest(env(h), new Request(audience, {method: 'POST'}), {accountId: cred.accountId, kid: cred.key.kid},
             {request: bindingRequest(cred.key, {accountId: cred.accountId, audience, human: 'github:4242', iat})}, clock);
-        for (const iat of [now - 61, now + 61])
+        for (const iat of [now - 61, now + 61, now + 0.5])
             await assert.rejects(direct(iat), (error: unknown) => error instanceof Problem && error.status === 400 && error.detail?.field === 'request', 'iat ' + (iat - now));
         const malformed = await h.request('/v1/binding-requests', cred, 'POST', {request: 'not.a.jws'});
         await problem(malformed as unknown as Response, 400, {code: 'invalid', field: 'request'});
@@ -264,6 +264,17 @@ test('getBinding_ExpiredPending_ReportsExpired', async () => {
     } finally { await h.close(); }
 });
 
+test('getBinding_AtExpiresAt_ReportsExpiredOneTickEarlierPending', async () => {
+    const h = await start();
+    try {
+        const cred = await h.register(), view = await created(h, cred, 'github:4242');
+        const expiresAt = BigInt(await h.db.prepare('SELECT CAST(expires_at AS TEXT) e FROM binding_requests WHERE request_id=?').bind(view.requestId).first<string>('e') ?? '0');
+        const at = (tick: bigint) => getBindingRequest(env(h), {accountId: cred.accountId, kid: cred.key.kid}, view.requestId, () => tick);
+        assert.equal((await at(expiresAt - 1n)).status, 'pending');
+        assert.equal((await at(expiresAt)).status, 'expired');
+    } finally { await h.close(); }
+});
+
 test('getBinding_OtherAgentsRequest_404', async () => {
     const h = await start();
     try {
@@ -304,6 +315,25 @@ test('cancelBinding_Repeat_ReturnsCancelledUnchanged', async () => {
         assert.equal(expired.status, 200);
         assert.equal((await expired.json() as View).status, 'expired');
         assert.equal(await h.db.prepare('SELECT status FROM binding_requests WHERE request_id=?').bind(stale.requestId).first('status'), 'pending');
+    } finally { await h.close(); }
+});
+
+test('cancelBinding_CoolingKey_409CoolingAndStaysPending', async () => {
+    const h = await start();
+    try {
+        const cred = await h.register(), view = await created(h, cred, 'github:4242'), newKey = agentKey(), keysUrl = origin + '/v1/keys';
+        const added = await h.request('/v1/keys', cred, 'POST', {proof: keyProof(newKey, {accountId: cred.accountId, audience: keysUrl}),
+            endorsement: keyEndorsement(cred.key, {accountId: cred.accountId, audience: keysUrl, newKid: newKey.kid})});
+        assert.equal(added.status, 200, await added.clone().text());
+        const cooling = {accountId: cred.accountId, key: newKey};
+        await problem(await cancel(h, cooling, view.requestId), 409, {code: 'conflict', field: 'request', reason: 'cooling'});
+        assert.equal(await h.db.prepare('SELECT status FROM binding_requests WHERE request_id=?').bind(view.requestId).first('status'), 'pending');
+        // The cooling key still reads the request, and a settled one is returned unchanged without consulting the cooldown.
+        assert.equal((await (await read(h, cooling, view.requestId)).json() as View).status, 'pending');
+        assert.equal((await cancel(h, cred, view.requestId)).status, 200);
+        const settled = await cancel(h, cooling, view.requestId);
+        assert.equal(settled.status, 200, await settled.clone().text());
+        assert.equal((await settled.json() as View).status, 'cancelled');
     } finally { await h.close(); }
 });
 
