@@ -232,6 +232,9 @@ test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(
         }
         fake.answers = {};
         assert.deepEqual(await attempt({authAt: Date.now() - 11 * 60_000}), {ok: false, reason: 'stale-authentication'});
+        const before = fake.calls.length;
+        assert.deepEqual(await attempt({authAt: Date.now() + 2 * 60_000}), {ok: false, reason: 'stale-authentication'}, 'a sign-in time more than a minute ahead');
+        assert.equal(fake.calls.length, before, 'a stale sign-in never reaches Telegram');
         assert.deepEqual(await attempt({humanId: await h.claim(await h.register())}), {ok: false, reason: 'not-found'});
     });
     // A group's administrator needs no posting right of its own, and a chat's creator holds every right.
