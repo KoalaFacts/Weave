@@ -221,3 +221,49 @@ test('connectExternalCredential_YoutubeAnswerNotOneUsableChannel_RefusedAndNothi
             assert.deepEqual(await connectExternalCredential(environment(h), input(humanId, agent.accountId)), {ok: true, credentialRef: 'youtube', targetDisplay: 't'.repeat(200)}));
     } finally { await h.close(); }
 });
+
+test('connectExternalCredential_AuthAtOutsideWindowOrNotWhole_RefusedAtEachEdgeAndNothingExchanged', async () => {
+    // The owner's sign-in time must be a whole millisecond count within the last 10 minutes and at most one minute ahead
+    // (clock skew between the auth Worker and this one). The clock is fixed so each edge is exact.
+    const h = await start();
+    try {
+        const {agent, humanId} = await owned(h);
+        const nowMs = Date.now(), clock = () => BigInt(nowMs) * 10000n;
+        const connect = (authAt: number) => connectExternalCredential(environment(h), input(humanId, agent.accountId, {authAt}), clock);
+        await withGoogle({}, async requests => {
+            assert.deepEqual(await connect(nowMs + 60_001), {ok: false, reason: 'stale-authentication'}, 'more than a minute ahead');
+            assert.deepEqual(await connect(nowMs - 600_001), {ok: false, reason: 'stale-authentication'}, 'more than ten minutes ago');
+            assert.deepEqual(await connect(nowMs + 0.5), {ok: false, reason: 'not-found'}, 'a fractional sign-in time is an unknown form');
+            assert.equal(requests.length, 0, 'no refused callback exchanges the code');
+            assert.equal(await row(h, agent.accountId), null);
+            // Positive controls: exactly a minute ahead and exactly ten minutes ago are accepted.
+            assert.equal((await connect(nowMs + 60_000)).ok, true, 'exactly a minute ahead');
+            assert.equal((await connect(nowMs - 600_000)).ok, true, 'exactly ten minutes ago');
+        });
+    } finally { await h.close(); }
+});
+
+test('connectExternalCredential_ReconnectAfterRevoke_LiveAgainAndListedToItsAgent', async () => {
+    // Disconnecting hides the credential from its agent at once; connecting again makes it live with a fresh revision.
+    const h = await start();
+    try {
+        const {agent, humanId} = await owned(h);
+        const listed = async () => (await h.ok('/v1/external-credentials', agent) as {items: {credentialRef: string; revision: string}[]}).items
+            .map(item => [item.credentialRef, item.revision]);
+        await withGoogle({}, async () => { assert.equal((await connectExternalCredential(environment(h), input(humanId, agent.accountId))).ok, true); });
+        const first = (await row(h, agent.accountId))!.revision;
+        assert.deepEqual(await listed(), [['youtube', first]], 'positive control: a live credential is listed');
+        assert.deepEqual(await ownerAction(environment(h), {humanId, authAt: 0, kind: 'revoke-credential', agentId: agent.accountId, credentialRef: 'youtube'} as OwnerAction), {ok: true});
+        assert.deepEqual(await listed(), [], 'a revoked credential is not listed to its agent');
+        // Without the reset of revoked_at the write would break the revoked-has-no-secret check and the connect would be `unavailable`.
+        await withGoogle({}, async () => assert.deepEqual(await connectExternalCredential(environment(h), input(humanId, agent.accountId)),
+            {ok: true, credentialRef: 'youtube', targetDisplay: 'HSC Beats'}, 'reconnecting after a revoke succeeds'));
+        const stored = (await row(h, agent.accountId))!;
+        assert.equal(stored.revoked_at, null, 'reconnecting clears the revocation');
+        assert.ok(stored.secret, 'and stores a sealed secret again');
+        assert.notEqual(stored.revision, first);
+        assert.deepEqual(await listed(), [['youtube', stored.revision]]);
+        const overview = await ownerOverview(environment(h), humanId) as Extract<Awaited<ReturnType<typeof ownerOverview>>, {frozen: false}>;
+        assert.deepEqual(overview.agents[0].credentials.map(c => [c.credentialRef, c.revision]), [['youtube', stored.revision]]);
+    } finally { await h.close(); }
+});
