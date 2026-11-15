@@ -150,6 +150,50 @@ test('proposeExternalAction_InvalidInput_Rejected', () => scenario(async ({h}) =
         assert.equal((await h.request('/v1/external-actions', agent, 'POST', input)).status, 400, JSON.stringify(input).slice(0, 80));
 }));
 
+// Apps show the refused field and reason; a malformed reference must not read as an unknown one, and each limit admits its edge.
+test('proposeExternalAction_MalformedField_400NamesFieldAndReasonAndStoresNothing', () => scenario(async ({h, provider}) => {
+    const {agent} = await ownedAgent(h);
+    const refRule = 'must be 1 to 64 characters of letters, digits, ".", "_", ":" or "-"';
+    const contentRule = 'must be non-blank text of at most 8000 characters';
+    const base = {credentialRef: 'linkedin-main', operation: 'publish_text', content: 'x'};
+    const cases: [Record<string, unknown>, string | undefined, string | undefined][] = [
+        [{...base, credentialRef: 'a'.repeat(65)}, 'credentialRef', refRule],
+        [{...base, credentialRef: ''}, 'credentialRef', refRule],
+        [{...base, credentialRef: 'linkedin main'}, 'credentialRef', refRule],
+        [{...base, credentialRef: 'linkedin/main'}, 'credentialRef', refRule],
+        [{...base, credentialRef: 7}, 'credentialRef', refRule],
+        [{...base, credentialRef: 'missing'}, 'credentialRef', 'must name a live credential of this agent'],
+        [{...base, operation: 7}, 'operation', 'must be a supported operation'],
+        [{...base, operation: 'delete_everything'}, 'operation', 'must be a supported operation'],
+        [{...base, content: 7}, 'content', contentRule],
+        [{...base, content: ' \n\t '}, 'content', contentRule],
+        [{...base, content: 'x'.repeat(8001)}, 'content', contentRule],
+        // The body's shape is checked first and names no field.
+        [{credentialRef: 'linkedin-main', operation: 'publish_text'}, undefined, undefined],
+        [{...base, extra: true}, undefined, undefined],
+    ];
+    for (const [input, field, reason] of cases) {
+        const why = JSON.stringify(input).slice(0, 80);
+        const response = await h.request('/v1/external-actions', agent, 'POST', input);
+        assert.equal(response.status, 400, why);
+        const problem = await response.json() as {code: string; field?: string; reason?: string};
+        assert.deepEqual([problem.code, problem.field, problem.reason], ['invalid', field, reason], why);
+    }
+    const stored = await h.db.prepare('SELECT count(*) n FROM external_actions WHERE account_id=?').bind(agent.accountId).first<number>('n');
+    assert.equal(stored, 0, 'a refused proposal stores no plan');
+
+    // Positive controls at each edge: a 64-character reference and 8000 characters of content are admitted.
+    const longRef = 'L'.repeat(64);
+    await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
+        VALUES(?,?,'test-http','rev-1','urn:li:person:alpha','Desk Alpha',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(agent.accountId, longRef, ticks(), ticks()).run();
+    for (const input of [{...base, credentialRef: longRef}, {...base, content: 'x'.repeat(8000)}]) {
+        const response = await h.request('/v1/external-actions', agent, 'POST', input);
+        assert.equal(response.status, 200, await response.clone().text());
+        assert.equal((await response.json() as {status: string}).status, 'pending');
+    }
+    assert.equal(provider.calls.length, 0);
+}));
+
 // Another digest is a stale page (approve again after reloading); a reconnected account can never be approved again.
 test('confirmExternalAction_DigestOrCredentialChanged_PlanChangedOrAccountChanged', () => scenario(async ({h, provider}) => {
     const {agent, humanId} = await ownedAgent(h);
