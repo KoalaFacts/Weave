@@ -455,7 +455,38 @@ test('executeExternalAction_ConcurrentExecutes_SendOnce', () => scenario(async (
     assert.equal((await h.ok(`/v1/external-actions/${actionId}`, agent)).status, 'completed');
 }));
 
-test('getExternalAction_AnotherAgent_Unavailable', () => scenario(async ({h, provider}) => {
+// Envoylet #166 tells the owner that a plan still dispatching long after dispatchedAt will never be sent again, by Weave or by
+// Envoylet. That holds only if a provider call whose outcome write failed leaves the row 'dispatching' and no later execute,
+// expiry or cron sweep sends it again or reports it as finished. A trigger refuses the outcome write, so the real catch runs.
+test('executeExternalAction_OutcomeWriteFails_StaysDispatchingAndNeverResends', () => scenario(async ({h, provider}) => {
+    const {agent, actionId} = await approved(h);
+    await h.db.prepare(`CREATE TRIGGER refuse_outcome BEFORE UPDATE OF status ON external_actions WHEN OLD.status='dispatching'
+        BEGIN SELECT RAISE(ABORT,'outcome write refused'); END`).run();
+    const first = await execute(h, agent, actionId) as Times & {failure: unknown; receipt: unknown};
+    await h.db.prepare('DROP TRIGGER refuse_outcome').run();
+
+    assert.equal(provider.calls.length, 1, 'positive control: the provider was called once');
+    assert.deepEqual([first.status, first.failure, first.receipt, first.completedAt], ['dispatching', null, null, null]);
+    assert.notEqual(first.dispatchedAt, null);
+    const stored = await h.db.prepare('SELECT status,receipt,completed_at FROM external_actions WHERE action_id=?').bind(actionId)
+        .first<{status: string; receipt: string | null; completed_at: number | null}>();
+    assert.deepEqual({...stored}, {status: 'dispatching', receipt: null, completed_at: null});
+    const retried = await execute(h, agent, actionId) as Times;
+    assert.deepEqual([retried.status, retried.completedAt, provider.calls.length], ['dispatching', null, 1], 'a retry while the plan is live sends nothing');
+
+    // Hours later and past the plan's expiry: the row still reads as dispatching and nothing is sent again.
+    const hours = (BigInt(6 * 3600_000) * 10000n).toString();
+    await h.db.prepare(`UPDATE external_actions SET expires_at=expires_at-CAST(?1 AS INTEGER),dispatched_at=dispatched_at-CAST(?1 AS INTEGER),
+        decided_at=decided_at-CAST(?1 AS INTEGER),created_at=created_at-CAST(?1 AS INTEGER) WHERE action_id=?2`).bind(hours, actionId).run();
+    assert.equal((await (await h.mf.getWorker()).scheduled({cron: '*/5 * * * *', scheduledTime: Date.now()})).outcome, 'ok');
+    for (const again of [await execute(h, agent, actionId), await read(h, agent, actionId), await execute(h, agent, actionId)] as (Times & {failure: unknown})[]) {
+        assert.deepEqual([again.status, again.failure, again.completedAt], ['dispatching', null, null]);
+        assert.notEqual(again.dispatchedAt, null);
+    }
+    assert.equal(provider.calls.length, 1);
+}));
+
+test('getExternalAction_AnotherAgent_Unavailable',() => scenario(async ({h, provider}) => {
     const {actionId} = await approved(h);
     const stranger = await h.register();
     assert.equal((await h.request(`/v1/external-actions/${actionId}`, stranger)).status, 404);
