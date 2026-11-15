@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 import { start, testGrant } from './harness.ts';
 import { mismatch } from './openapi-schema.ts';
-import { createMediaUpload, mediaUrlLifetimeMs, signedMediaUrl, uploadUrlLifetimeMs } from '../src/external-media.ts';
+import { createMediaUpload, mediaUrlLifetimeMs, receiveSignedUpload, serveSignedMedia, signedMediaUrl, uploadUrlLifetimeMs } from '../src/external-media.ts';
+import { Problem } from '../src/wire.ts';
 import type { Env } from '../src/database.ts';
 // Evaluate the bundled production module, as the other private-tool tests do.
 const built = await build({entryPoints: ['src/remote-private.ts'], bundle: true, write: false, platform: 'node', format: 'esm', logLevel: 'silent'});
@@ -141,8 +142,10 @@ test('signedUpload_TamperedExpiredOrMismatched_NothingStored', () => scenario(as
         ['other agent', with_('account', other.agent.accountId), 404], ['other grant', with_('grant', other.grantId), 404],
         ['other media', otherMedia, 404], ['expired', expired, 404], ['extra parameter', url + '&x=1', 404]] as const)
         assert.equal((await put(h, target, file, new URL(target).searchParams.get('type')!)).status, status, name);
-    assert.equal((await put(h, url, file, 'image/jpeg')).status, 400, 'Content-Type must be the signed type');
-    assert.equal((await put(h, url, file.subarray(0, 512), 'image/png')).status, 400, 'Content-Length must be the signed size');
+    const refusal = async (response: Response) => { const body = await response.json() as Record<string, unknown>; return [response.status, body.code, body.field, body.reason]; };
+    assert.deepEqual(await refusal(await put(h, url, file, 'image/jpeg')), [400, 'invalid', 'Content-Type', 'must be image/png'], 'Content-Type must be the signed type');
+    assert.deepEqual(await refusal(await put(h, url, file.subarray(0, 512), 'image/png')), [400, 'invalid', 'Content-Length', 'must be 1024'],
+        'Content-Length must be the signed size, refused on the header before any body is stored');
     assert.equal(await objects(h), 0);
 
     // Revoking the grant after minting refuses the upload before any byte is stored.
@@ -163,8 +166,8 @@ test('signedMediaUrl_ExpiredAlteredOrExtraParameter_404', () => scenario(async (
     const url = await signedMediaUrl(env, agent.accountId, minted.mediaId, Date.now());
     const served = await h.mf.dispatchFetch(url);
     assert.equal(served.status, 200, 'positive control');
-    assert.deepEqual([served.headers.get('Content-Type'), served.headers.get('Cache-Control'), served.headers.get('Content-Disposition')],
-        ['image/png', 'no-store', 'attachment']);
+    assert.deepEqual([served.headers.get('Content-Type'), served.headers.get('Cache-Control'), served.headers.get('Content-Disposition'), served.headers.get('X-Content-Type-Options')],
+        ['image/png', 'no-store', 'attachment', 'nosniff']);
     assert.ok(Buffer.from(await served.arrayBuffer()).equals(file));
 
     const with_ = (name: string, value: string) => { const changed = new URL(url); changed.searchParams.set(name, value); return changed.href; };
@@ -182,6 +185,58 @@ test('signedMediaUrl_ExpiredAlteredOrExtraParameter_404', () => scenario(async (
     // A file no longer recorded is not served, even through a URL that is still valid.
     await h.db.prepare('DELETE FROM external_media WHERE media_id=?').bind(minted.mediaId).run();
     assert.equal((await h.mf.dispatchFetch(url)).status, 404, 'deleted record');
+}));
+
+test('signedUpload_ContentTypeParametersAndCase_AcceptedAsTheSignedType', () => scenario(async ({h, env}) => {
+    // Only the media type is compared: parameters and letter case do not change what was signed.
+    const {agent, grantId} = await owned(h);
+    for (const sent of ['image/png; charset=binary', 'IMAGE/PNG', ' image/png ;q=1']) {
+        const file = randomBytes(64);
+        const minted = (await mcp(env, agent.accountId, grantId, 'create_media_upload', {contentType: 'image/png', bytes: file.length})).body;
+        const uploaded = await put(h, minted.uploadUrl, file, sent);
+        assert.equal(uploaded.status, 200, sent + ': ' + await uploaded.clone().text());
+        assert.equal((await uploaded.json() as {contentType: string}).contentType, 'image/png', sent);
+    }
+}));
+
+const rejectsWith = (status: number, code: string) => (error: unknown) => error instanceof Problem && error.status === status && error.code === code;
+
+test('signedUrls_ExpiryTick_ValidUntilTheSignedInstantOnly', () => scenario(async ({h, env}) => {
+    // On a fixed clock: each signed URL passes its signature check up to the millisecond before its expiry and is refused from that instant.
+    const {agent, grantId} = await owned(h);
+    const now = Date.UTC(2026, 10, 16, 3, 0, 0), file = randomBytes(256);
+    const upload = await createMediaUpload(env, agent.accountId, grantId, 'image/png', file.length, now);
+    assert.equal(upload.expiresAt, new Date(now + 15 * 60_000).toISOString(), 'an upload URL lives 15 minutes');
+    const uploadUrl = new URL(upload.uploadUrl), uploadExpiry = now + uploadUrlLifetimeMs;
+    assert.equal(uploadUrl.searchParams.get('expires'), String(uploadExpiry));
+    // Storing needs the Worker's DigestStream, so outside it the probe sends the wrong type: a URL past its signature
+    // check answers 400 on Content-Type, one refused by its expiry answers 404 first.
+    const probe = new Request(upload.uploadUrl, {method: 'PUT', headers: {'Content-Type': 'image/jpeg', 'Content-Length': String(file.length)}});
+    await assert.rejects(receiveSignedUpload(env, upload.mediaId, uploadUrl, probe, uploadExpiry), rejectsWith(404, 'unavailable'), 'upload at its expiry');
+    await assert.rejects(receiveSignedUpload(env, upload.mediaId, uploadUrl, probe, uploadExpiry - 1),
+        (error: unknown) => error instanceof Problem && error.status === 400 && error.detail?.field === 'Content-Type', 'upload a tick before its expiry');
+
+    const minted = (await mcp(env, agent.accountId, grantId, 'create_media_upload', {contentType: 'image/png', bytes: file.length})).body;
+    assert.equal((await put(h, minted.uploadUrl, file, 'image/png')).status, 200);
+    const download = new URL(await signedMediaUrl(env, agent.accountId, minted.mediaId, now)), downloadExpiry = now + mediaUrlLifetimeMs;
+    assert.equal(download.searchParams.get('expires'), String(downloadExpiry));
+    await assert.rejects(serveSignedMedia(env, minted.mediaId, download, downloadExpiry), rejectsWith(404, 'unavailable'), 'download at its expiry');
+    const served = await serveSignedMedia(env, minted.mediaId, download, downloadExpiry - 1);
+    assert.equal(served.status, 200, 'download a tick before its expiry');
+    assert.ok(Buffer.from(await served.arrayBuffer()).equals(file));
+}));
+
+test('signedUploads_Maintenance_NeitherMintedNorReceived', () => scenario(async ({h, env}) => {
+    // A maintenance or recovery read-only window refuses minting and receiving with 503 maintenance before anything else.
+    const {agent, grantId} = await owned(h), now = Date.now();
+    const upload = await createMediaUpload(env, agent.accountId, grantId, 'image/png', 4, now);
+    const request = new Request(upload.uploadUrl, {method: 'PUT', headers: {'Content-Type': 'image/png', 'Content-Length': '4'}});
+    for (const flag of ['MAINTENANCE_MODE', 'RECOVERY_READ_ONLY']) {
+        const closed = {...env, [flag]: 'true'} as Env, maintenance = (error: unknown) => error instanceof Problem && error.status === 503 && error.code === 'maintenance' && error.retryAfter === 30;
+        await assert.rejects(createMediaUpload(closed, agent.accountId, grantId, 'image/png', 4, now), maintenance, flag + ' mint');
+        await assert.rejects(receiveSignedUpload(closed, upload.mediaId, new URL(upload.uploadUrl), request, now), maintenance, flag + ' receive');
+    }
+    assert.equal(await objects(h), 0);
 }));
 
 test('createMediaUpload_InvalidArguments_Refused', () => scenario(async ({h, env}) => {
