@@ -228,6 +228,16 @@ test('confirmExternalAction_StaleAuthentication_Refused', () => scenario(async (
     assert.deepEqual(stale, {ok: false, reason: 'stale-authentication'});
 }));
 
+// Rejecting is protective, like rejecting a binding or key request: it needs no fresh sign-in, so an owner can always stop a plan.
+test('rejectExternalAction_DayOldAuthentication_RejectedAndNeverSent', () => scenario(async ({h, provider}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    const old = await ownerAction(environment(h), {humanId, authAt: Date.now() - 86_400_000, kind: 'reject-action', requestId: action.actionId} as OwnerAction);
+    assert.deepEqual(old, {ok: true});
+    assert.equal((await execute(h, agent, action.actionId)).status, 'rejected');
+    assert.equal(provider.calls.length, 0);
+}));
+
 test('confirmExternalAction_AnotherHumansAgent_NotFound', () => scenario(async ({h}) => {
     const {agent} = await ownedAgent(h);
     const other = await ownedAgent(h);
