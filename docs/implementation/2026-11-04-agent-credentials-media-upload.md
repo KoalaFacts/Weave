@@ -113,7 +113,17 @@ How a file is deleted:
   - Invalid tool arguments are refused.
 - Mutation checks: restoring delete-on-refused-write fails the single-use test;
   skipping the grant re-check at PUT fails the revocation test; dropping the
-  parameter-count check fails the extra-parameter case.
+  parameter-count check fails the extra-parameter case. A mutation scan (2026-11-16)
+  found five more guards no test caught, now pinned: on a fixed clock each signed
+  upload and download URL passes its check up to the millisecond before its signed
+  expiry and is 404 `unavailable` from that instant, and an upload URL lives exactly
+  15 minutes; a wrong Content-Type or Content-Length is refused on that header by
+  field and reason before any body is stored; the upload compares only the media
+  type, so parameters and letter case are accepted; the download carries
+  `X-Content-Type-Options: nosniff`; and maintenance or recovery read-only refuses
+  minting and receiving with 503 `maintenance`. Each mutant (`<` for `<=` on both
+  expiries, a 16-minute lifetime, a whole-header type compare, no Content-Length
+  check, no nosniff, no maintenance check on either path) now fails a test.
 - `test/media-import.test.ts`, through the Worker with a fake web as its outbound
   service: the stored file is exactly what was fetched; unsafe or malformed URLs make
   no request; a redirect, 404, HTML, missing Content-Length or other status stores
