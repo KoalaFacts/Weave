@@ -16,12 +16,12 @@
       "reason": "Historical record: links the pair example as it existed when written; the example was later removed and records are not rewritten."
     },
     {
-      "file": "AGENTS.md",
+      "file": "docs/contributing.md",
       "target": "csharp/src/Weave/",
       "reason": "Named only to forbid recreating it."
     },
     {
-      "file": "AGENTS.md",
+      "file": "docs/contributing.md",
       "target": "csharp/src/Features/",
       "reason": "Named only to forbid recreating it."
     },

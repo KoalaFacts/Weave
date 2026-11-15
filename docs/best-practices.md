@@ -189,7 +189,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **`<remarks>` is the right tool for non-obvious context** (startup ordering, threading model, lifetime quirks, why a seemingly redundant call is necessary). It's distinct from `<summary>` precisely so `<summary>` can stay short. Use it when you'd otherwise feel pulled to make `<summary>` longer.
 
-**Extension classes in .NET follow `ExtensionsToXXX`**, sit in the target type's namespace, and suppress the namespace-mismatch analyzer inline. Do not invent new naming — the convention is already set in `CLAUDE.md`.
+**Extension classes in .NET follow `ExtensionsToXXX`**, sit in the target type's namespace, and suppress the namespace-mismatch analyzer inline. Do not invent new naming — the convention is already set in [contributor rules](contributing.md#engineering-conventions).
 
 **Classes over 200 lines require a design check.** Before growing a class beyond 200 lines, consider whether responsibilities should be split into smaller focused types. Do not mix multiple production classes in one file unless they are tightly coupled private helpers; one public or internal production class per file is the default.
 
@@ -261,7 +261,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### Assertions and libraries
 
-**Assertions use Shouldly. Never FluentAssertions.** Enforced by `CLAUDE.md`. If you need a custom assertion, write an extension on the value type in the test project.
+**Assertions use Shouldly. Never FluentAssertions.** Enforced by [build details](contributing.md#build-and-verification-details). If you need a custom assertion, write an extension on the value type in the test project.
 
 **Nullable types are asserted non-null before property access.** `result.ShouldNotBeNull(); result.Name.ShouldBe("x");` — warnings-as-errors will reject `result!.Name` patterns. If the null-forgiving operator is the only option, leave a comment explaining why.
 
@@ -271,7 +271,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### Mocking
 
-**`ILogger<T>` for internal types uses `NullLogger<T>.Instance`** — NSubstitute cannot proxy non-public generics. `CLAUDE.md` calls this out.
+**`ILogger<T>` for internal types uses `NullLogger<T>.Instance`** — NSubstitute cannot proxy non-public generics. [Build details](contributing.md#build-and-verification-details) call this out.
 
 **`AITool` cannot be substituted** — create a concrete stub that overrides `Name`. Same applies to any sealed or non-virtual surface.
 
@@ -295,7 +295,7 @@ Coverage alone is a **trailing** indicator of test quality. A suite can hit 95% 
 
 **Tests assert behaviour, not implementation.** `service.Method()` returning the right *value for the caller* is the bar. Asserting on private internal state or mock-call counts (`substitute.Received(3).Method(...)`) is a red flag — it locks in how the code works today and breaks any refactor. Prefer outcome-based assertions; if that's impossible, the code probably has too many collaborators.
 
-**One behaviour per test.** Name as `MethodName_Condition_ExpectedResult` (already in `CLAUDE.md`). Multiple `ShouldBe` calls that describe a single outcome are fine; multiple *scenarios* in one test body means split it — a failure must name the exact behaviour that broke.
+**One behaviour per test.** Name as `MethodName_Condition_ExpectedResult` (already in [build details](contributing.md#build-and-verification-details)). Multiple `ShouldBe` calls that describe a single outcome are fine; multiple *scenarios* in one test body means split it — a failure must name the exact behaviour that broke.
 
 **Arrange-Act-Assert, visible.** Each test is three sections: setup, the one call you're testing, and assertions. No interleaving. If you can't tell where Act ends and Assert begins, the test is testing too much.
 

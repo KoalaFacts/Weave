@@ -7,7 +7,8 @@
 | You want | Read |
 |----------|------|
 | What Weave is and how to try it | [README.md](../README.md) |
-| Shared development rules, current project layout and verification | [AGENTS.md](../AGENTS.md) |
+| Shared development rules and verification | [AGENTS.md](../AGENTS.md) |
+| Detailed rules: project layout, Governed Tools state, conventions, build details, documentation maintenance | [contributing.md](contributing.md) |
 | Target semantics (agent network, Governed Tools) | [ARCHITECTURE.md](../ARCHITECTURE.md) |
 | What each change delivered and how it was verified | [Implementation records](implementation/README.md) |
 | The mailbox and publishing Workers (demo) | [typescript/mailbox-worker](../typescript/mailbox-worker/README.md), [typescript/auth-worker](../typescript/auth-worker/README.md) |
@@ -23,7 +24,7 @@
 The C#/.NET code is flat by feature: product features are direct children of `csharp/src/` (for example `Agents`,
 `Authority`, `Contacts`, `Invocations`, `Mailboxes`, `Plugins`, `Resources`, `Workspaces`), hosts compose them in
 `csharp/hosts/`, and opt-in provider and runtime dependencies live in `csharp/extensions/`. The project table and the
-rules for adding code are in [AGENTS.md](../AGENTS.md#ownership-and-composition). TypeScript packages, including the demo
+rules for adding code are in [contributor rules](contributing.md#ownership-and-composition). TypeScript packages, including the demo
 Workers, are under `typescript/`.
 
 ## Historical subsystem guides

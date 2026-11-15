@@ -20,7 +20,7 @@ Precedence: trigger hard limits → `agent-harness/projects/weave.md` → [AGENT
 ## Setup
 
 - Node 24+ (the default image may carry Node 22: use `/opt/node24/bin` when present (2026-11 image), otherwise download the official Node 24 tarball, check its SHA-256 against `SHASUMS256.txt`, and put it first on `PATH` in the scratchpad). .NET 11 SDK and .NET 10 runtime only for C# changes. In the cloud sandbox, install them into the scratchpad with `dotnet-install.sh --channel 11.0 --quality ga` plus `--channel 10.0 --runtime dotnet` and `--runtime aspnetcore` (worked at 06:52 UTC on 2026-11-11; earlier that day the egress proxy refused the SDK hosts). If the hosts are refused, a C# change cannot pass gate step 3: leave it to a run that has the SDK rather than pushing it unbuilt. Never switch branches in a checkout while `dotnet test` runs from it; use `git worktree add` for parallel work. On the 7 GB sandbox the full `dotnet test --solution` ran out of memory (169 `OutOfMemoryException`s in Silo host fixtures, 2026-11-11), so its result there is not evidence; run test projects one at a time instead.
-- Read: AGENTS.md (binding), ARCHITECTURE.md, `typescript/mailbox-worker/README.md`, the records under `docs/implementation/` for the area (start with `2026-11-05-publishing-router.md` and `2026-11-05-action-approval-page.md`), and [check-rules](../check-rules/SKILL.md) and [adversarial-review](../adversarial-review/SKILL.md) (apply both before committing).
+- Read: AGENTS.md and `docs/contributing.md` (both binding), ARCHITECTURE.md, `typescript/mailbox-worker/README.md`, the records under `docs/implementation/` for the area (start with `2026-11-05-publishing-router.md` and `2026-11-05-action-approval-page.md`), and [check-rules](../check-rules/SKILL.md) and [adversarial-review](../adversarial-review/SKILL.md) (apply both before committing).
 - Focused mailbox-worker runs: `npm run test:files -- <files>` rebuilds `dist/` first; never test a mutation against a stale bundle.
 
 ## Gate
@@ -44,7 +44,7 @@ The real boundary is the workerd two-worker tests (mailbox-worker + auth-worker)
 
 ## Ledger
 
-The shared plan on #365 plus the "Weave scheduled-task ledger" section of [docs/implementation/README.md](../../../docs/implementation/README.md) and the existing records in `docs/implementation/`. The run log lives in PR bodies and the `[weave→envoylet] STATUS` comments. Records already on main are kept records: mark a superseded one at its top with a pointer to its successor; never delete or rewrite what it recorded. A new feature's record goes in a section of the closest existing record; a new record file only if AGENTS.md's "Documentation maintenance" section explicitly requires one per feature. OpenAPI and MCP tool schemas are code, not docs.
+The shared plan on #365 plus the "Weave scheduled-task ledger" section of [docs/implementation/README.md](../../../docs/implementation/README.md) and the existing records in `docs/implementation/`. The run log lives in PR bodies and the `[weave→envoylet] STATUS` comments. Records already on main are kept records: mark a superseded one at its top with a pointer to its successor; never delete or rewrite what it recorded. A new feature's record goes in a section of the closest existing record; a new record file only if the "Documentation maintenance" section of [contributor rules](../../../docs/contributing.md) explicitly requires one per feature. OpenAPI and MCP tool schemas are code, not docs.
 
 ## The channel (#365, every run)
 
@@ -82,7 +82,7 @@ Every PR keeps current: the area's implementation record (scope, behaviour, veri
 
 ## Docs scope (housekeeping)
 
-Once per Sydney calendar day, per `autonomous-dev` §6, over: README.md, AGENTS.md, ARCHITECTURE.md, `docs/` (including `docs/implementation/` and `docs/best-practices.md`), `typescript/*/README.md`, `agent-start.md`, `.github/workflows/README.md`. Look for stale statements, commands/options that no longer exist, broken links/anchors; duplicated rules kept at their owner per AGENTS.md's "Documentation maintenance" section; "planned/not yet" versus delivered; stale run IDs, test totals and dates. Never touch executed data-migration artifacts, checksums or licence text; remove an AGENTS.md rule only with evidence it is obsolete. State which commands were source-checked but not run. `docs/implementation/README.md` is not created if missing.
+Once per Sydney calendar day, per `autonomous-dev` §6, over: README.md, AGENTS.md, `docs/contributing.md`, ARCHITECTURE.md, `docs/` (including `docs/implementation/` and `docs/best-practices.md`), `typescript/*/README.md`, `agent-start.md`, `.github/workflows/README.md`. Look for stale statements, commands/options that no longer exist, broken links/anchors; duplicated rules kept at their owner per the "Documentation maintenance" section of `docs/contributing.md`; "planned/not yet" versus delivered; stale run IDs, test totals and dates. Never touch executed data-migration artifacts, checksums or licence text; remove an AGENTS.md or `docs/contributing.md` rule only with evidence it is obsolete. State which commands were source-checked but not run. `docs/implementation/README.md` is not created if missing.
 
 ## Report extras
 
