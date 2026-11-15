@@ -3,7 +3,7 @@ import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
 import type {OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import type {HumanSession} from "../src/human-session.ts";
-import {ownerFormTokens,ownerPage,ownerResultText,recoveryCodePage} from "../src/owner-page.ts";
+import {actionPage,ownerFormTokens,ownerPage,ownerResultText,recoveryCodePage} from "../src/owner-page.ts";
 import {publishingAdapters} from "../../mailbox-worker/src/external-providers.ts";
 import {ownerConnector,type OwnerConnector} from "../../mailbox-worker/src/publishing.ts";
 /** The platforms the mailbox offers, as its own adapters describe them. */
@@ -126,7 +126,7 @@ test("ownerPage_PendingAction_ShowsEscapedContentVerifiedAccountAndBoundForms",a
   const actionId=randomUUID(),agentId=randomUUID(),planDigest=kid();
   const overview=base({agents:[agent({agentId,displayName:"Publisher"})],externalActions:[{actionId,agentId,provider:"test-http",operation:"publish_text",
     content:'Episode 12\n<script>alert(1)</script>',credentialRef:"linkedin-main",credentialRevision:"rev-7",targetAccount:"urn:li:person:alpha",
-    targetDisplay:"Desk <b>Alpha</b>",planDigest,createdAt:iso(now),expiresAt:iso(now+3_600_000),media:[]}]});
+    targetDisplay:"Desk <b>Alpha</b>",planDigest,createdAt:iso(now),expiresAt:iso(now+3_600_000),media:[],accountChanged:false}]});
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
   assert.ok(tokens.has("confirm-action:"+actionId)&&tokens.has("reject-action:"+actionId));
   const body=await html(ownerPage(overview,human,tokens,null,now));
@@ -137,6 +137,27 @@ test("ownerPage_PendingAction_ShowsEscapedContentVerifiedAccountAndBoundForms",a
   assert.ok(body.includes("Approve and allow sending once")&&body.includes('value="'+tokens.get("confirm-action:"+actionId)+'"'));
   const none=await html(ownerPage(base(),human,new Map(),null,now));
   assert.ok(none.includes("No agent is waiting for an action to be approved."));
+});
+
+test("ownerPage_ActionWhoseAccountChanged_OffersOnlyRejectWithTheReason",async()=>{
+  const actionId=randomUUID(),agentId=randomUUID();
+  const action={actionId,agentId,provider:"test-http",operation:"publish_text",content:"Episode 12",credentialRef:"linkedin-main",credentialRevision:"rev-7",
+    targetAccount:"urn:li:person:alpha",targetDisplay:"Desk Alpha",planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+3_600_000),media:[],accountChanged:true};
+  const overview=base({agents:[agent({agentId,displayName:"Publisher"})],externalActions:[action]});
+  const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
+  assert.equal(tokens.has("confirm-action:"+actionId),false,"no approval token for a plan that can never be approved");
+  assert.ok(tokens.has("reject-action:"+actionId));
+  for(const body of [await html(ownerPage(overview,human,tokens,null,now)),await html(actionPage(overview,human,actionId,tokens,now))]){
+    assert.ok(!body.includes("Approve and allow sending once"));
+    assert.ok(!body.includes("Approving needs a GitHub sign-in"));
+    assert.ok(body.includes("<p>"+ownerResultText["account-changed"]+"</p>"));
+    assert.ok(body.includes(">Reject</button>")&&body.includes('value="'+tokens.get("reject-action:"+actionId)+'"'));
+    assert.ok(body.includes("<pre>Episode 12</pre>"),"the plan stays visible");
+  }
+  const live=base({agents:[agent({agentId})],externalActions:[{...action,accountChanged:false}]});
+  const liveTokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,live,now,false);
+  const liveBody=await html(actionPage(live,human,actionId,liveTokens,now));
+  assert.ok(liveBody.includes("Approve and allow sending once")&&liveBody.includes("Approving needs a GitHub sign-in")&&!liveBody.includes(ownerResultText["account-changed"]!));
 });
 
 test("ownerPage_ConnectedAccounts_ShowVerifiedChannelDisconnectAndConnectOnlyWhenConfigured",async()=>{
@@ -159,7 +180,7 @@ test("ownerPage_ActionWithMedia_PreviewsOnlyItsFilesAndOffersPostizConnect",asyn
   const actionId=randomUUID(),agentId=randomUUID(),image=randomUUID(),video=randomUUID();
   const overview=base({agents:[agent({agentId})],connectors,externalActions:[{actionId,agentId,provider:"postiz",operation:"publish_post",
     content:JSON.stringify({text:"New beat",media:[{mediaId:image},{mediaId:video}]}),credentialRef:"postiz:abc",credentialRevision:"r",targetAccount:"tiktok/abc",
-    targetDisplay:"tiktok · HSC Beats",planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1),media:[{mediaId:image,contentType:"image/png"},{mediaId:video,contentType:"video/mp4"}]}]});
+    targetDisplay:"tiktok · HSC Beats",planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1),media:[{mediaId:image,contentType:"image/png"},{mediaId:video,contentType:"video/mp4"}],accountChanged:false}]});
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
   const response=ownerPage(overview,human,tokens,null,now);
   assert.match(response.headers.get("content-security-policy")!,/img-src 'self'; media-src 'self'/);

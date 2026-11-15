@@ -157,6 +157,7 @@ test('confirmExternalAction_DigestOrCredentialChanged_PlanChangedOrAccountChange
     const [shown] = await pendingFor(h, humanId);
     assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: 'A'.repeat(43)}), {ok: false, reason: 'plan-changed'});
     await setCredential(h, agent.accountId, 'rev-2');
+    assert.equal((await pendingFor(h, humanId))[0].accountChanged, true, 'a reconnected account is flagged on the owner page');
     assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: false, reason: 'account-changed'});
     assert.equal((await execute(h, agent, action.actionId)).status, 'pending');
     assert.equal(provider.calls.length, 0);
@@ -198,11 +199,16 @@ for (const change of ['revoked', 'retargeted', 'reprovidered'] as const)
         const {agent, humanId} = await ownedAgent(h);
         const action = await (await propose(h, agent)).json() as {actionId: string};
         const [shown] = await pendingFor(h, humanId);
+        assert.equal(shown.accountChanged, false, 'a plan whose credential still matches can be approved');
         if (change === 'retargeted') await setCredential(h, agent.accountId, 'rev-1', 'urn:li:person:beta', 'Desk Beta');
         // Same reference, revision and target, but another platform.
         else if (change === 'reprovidered') await h.db.prepare(`UPDATE external_credentials SET provider='telegram' WHERE account_id=?`).bind(agent.accountId).run();
         else await h.db.prepare('UPDATE external_credentials SET revoked_at=CAST(? AS INTEGER) WHERE account_id=?').bind(ticks(), agent.accountId).run();
 
+        // The owner page learns it before the owner tries: the plan is still listed, flagged so only rejecting is offered.
+        const [listed] = await pendingFor(h, humanId);
+        assert.equal(listed.actionId, action.actionId);
+        assert.equal(listed.accountChanged, true);
         assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: false, reason: 'account-changed'});
         assert.equal((await execute(h, agent, action.actionId)).status, 'pending');
         assert.equal(provider.calls.length, 0);
