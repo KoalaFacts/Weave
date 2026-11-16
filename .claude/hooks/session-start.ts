@@ -49,11 +49,11 @@ async function main(): Promise<void> {
   const dotnet = join(dotnetInstallDir, 'dotnet');
 
   const existing = installedVersion(dotnet);
-  // global.json selects the newest SDK; anything older than .NET 11 still needs the preview install.
+  // global.json selects the newest SDK; the 11.0.100 baseline accepts only a GA .NET 11 SDK (allowPrerelease: false).
   if (existing?.startsWith('11.')) {
     stdout.write(`.NET SDK already installed: ${existing}\n`);
   } else {
-    stdout.write('Installing .NET 10 and .NET 11 preview SDKs...\n');
+    stdout.write('Installing .NET 10 and .NET 11 GA SDKs...\n');
     const response = await fetch('https://dot.net/v1/dotnet-install.sh');
     if (!response.ok) throw new HookFailure(`session-start: dotnet-install.sh download failed: HTTP ${response.status}`, 22);
     const installer = join(tmpdir(), 'dotnet-install.sh');
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
     chmodSync(installer, 0o755);
     // The .NET 10 SDK supplies the net10.0 runtime; global.json selects the .NET 11 SDK for net11.0 targets.
     run(installer, ['--channel', '10.0', '--install-dir', dotnetInstallDir]);
-    run(installer, ['--channel', '11.0', '--quality', 'preview', '--install-dir', dotnetInstallDir]);
+    run(installer, ['--channel', '11.0', '--quality', 'ga', '--install-dir', dotnetInstallDir]);
     rmSync(installer, { force: true });
     stdout.write(`.NET SDK installed: ${installedVersion(dotnet) ?? ''}\n`);
   }
