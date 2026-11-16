@@ -14,8 +14,7 @@
     <PackageVersion Include="Microsoft.OpenApi" Version="2.13.0" />
     <PackageVersion Include="MessagePack" Version="2.5.307" />
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.14" />
-    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
   <ItemGroup Label="Aspire">
     <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.5" />
@@ -51,7 +50,7 @@
   <ItemGroup Label="ADO.NET Providers">
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.1.2" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
   </ItemGroup>
   <ItemGroup Label="Microsoft.Extensions">
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
