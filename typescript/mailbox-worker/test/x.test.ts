@@ -274,6 +274,19 @@ test('executeXPost_UploadRefusedOrUnanswered_FailedWithNothingPosted', () => sce
     }
 }));
 
+test('executeXPost_UnlistedRefusalStatus_UnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
+    // X's 404 and 413 are not in its refusal list: like any other unlisted answer, a refusal-shaped body may follow a post.
+    for (const status of [404, 409, 413]) {
+        fake.answer = () => Response.json({title: 'refused', status}, {status});
+        const {agent, actionId} = await approvedPost(h, env, fake, {text: 'status ' + status, media: []});
+        assert.equal((await execute(h, agent, actionId)).status, 'unknown', String(status));
+        fake.answer = undefined;
+        assert.equal((await execute(h, agent, actionId)).status, 'unknown', String(status) + ': stays unknown');
+        assert.equal(tweets(fake).length, 1, 'never sent again: ' + status);
+        fake.calls.length = 0;
+    }
+}));
+
 test('executeXPost_RefusedOrUncertain_FailedOrUnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
     for (const [status, expected] of [[400, 'failed'], [401, 'failed'], [403, 'failed'], [429, 'failed'], [500, 'unknown'], [503, 'unknown']] as const) {
         fake.answer = () => Response.json({title: 'refused', status}, {status});

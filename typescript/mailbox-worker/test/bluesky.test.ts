@@ -256,6 +256,10 @@ const posted = (overrides: Record<string, unknown> = {}) => (method: string) =>
 test('publishBlueskyPost_AnswerNotOnePostOfThisAccount_UnconfirmedNeverCompleted', async () => {
     const answers: [string, () => Response][] = [
         ['a post URI on a non-2xx status', () => Response.json({uri: `at://${did}/app.bsky.feed.post/3kabc`}, {status: 500})],
+        // Only 400, 401, 403, 413 and 429 are definite refusals; an unlisted refusal-shaped answer may follow a post.
+        ['an unlisted 404 refusal', () => Response.json({error: 'NotFound'}, {status: 404})],
+        ['an unlisted 409 refusal', () => Response.json({error: 'Conflict'}, {status: 409})],
+        ['an unlisted 422 refusal', () => Response.json({error: 'InvalidRequest'}, {status: 422})],
         ['another account\'s post', () => Response.json({uri: `at://did:plc:${'b'.repeat(24)}/app.bsky.feed.post/3kabc`})],
         ['another collection', () => Response.json({uri: `at://${did}/app.bsky.feed.like/3kabc`})],
         ['a URI that is not a string', () => Response.json({uri: 7})],
