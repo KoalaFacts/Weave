@@ -494,6 +494,15 @@ test('publishPostizPost_DefiniteRefusal_RejectedWithTheStatus', async () => {
     }
 });
 
+test('publishPostizPost_UnlistedRefusalStatus_UnconfirmedNeverRejected', async () => {
+    // Only the statuses above are definite refusals; any other refusal-shaped answer may follow a post, so it stays unknown.
+    for (const status of [404, 409, 413, 500]) {
+        const {outcome, sent} = await publishDirect(usualPostiz({post: () => Response.json({message: 'no'}, {status})}));
+        assert.deepEqual(outcome, {thrown: 'Unconfirmed Postiz response.'}, String(status));
+        assert.deepEqual(calls(sent), ['POST /posts'], String(status));
+    }
+});
+
 test('publishPostizPost_UploadNotConfirmed_MediaUploadRefusedAndNothingPosted', async () => {
     for (const [name, upload] of [['an uploaded file on a server error', () => Response.json({id: 'media-1', path: 'https://uploads.postiz.com/a.png'}, {status: 500})],
         ['an upload with no id', () => Response.json({id: 7, path: 'https://uploads.postiz.com/a.png'})],

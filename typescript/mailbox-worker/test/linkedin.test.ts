@@ -255,6 +255,8 @@ test('executeLinkedInPost_DefinitePostRefusals_Rejected', () => scenario(async (
 
 test('executeLinkedInPost_UncertainPostOutcomes_UnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
     for (const [name, answer] of [['a server error', () => new Response('oops', {status: 500})],
+        ['an unlisted 404 refusal', () => Response.json({status: 404}, {status: 404})],
+        ['an unlisted 409 refusal', () => Response.json({status: 409}, {status: 409})],
         ['a 201 without an id', () => new Response(null, {status: 201})],
         ['a redirect, which is not followed', () => new Response(null, {status: 302, headers: {location: 'https://www.linkedin.com/feed/'}})],
         ['a dropped connection', () => { throw new TypeError('network connection lost'); }],

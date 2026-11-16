@@ -321,7 +321,9 @@ test('proposeTelegramPost_UnsupportedOrUnpinnedMedia_Refused', () => scenario(as
 }));
 
 test('executeTelegramPost_RefusedOrUncertain_FailedOrUnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
-    for (const [status, expected] of [[400, 'failed'], [403, 'failed'], [429, 'failed'], [502, 'unknown']] as const) {
+    // Exactly the listed statuses are definite refusals. Any other answer, even a refusal-shaped JSON body, may follow a post.
+    for (const [status, expected] of [[400, 'failed'], [401, 'failed'], [403, 'failed'], [404, 'failed'], [413, 'failed'], [429, 'failed'],
+        [409, 'unknown'], [500, 'unknown'], [502, 'unknown']] as const) {
         fake.answers = {sendMessage: () => status === 502 ? new Response('bad gateway', {status}) : refused(status)};
         const {agent, actionId} = await approvedPost(h, env, fake, {text: 'status ' + status, media: []});
         const result = await execute(h, agent, actionId);

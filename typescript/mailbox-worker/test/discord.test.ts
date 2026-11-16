@@ -174,7 +174,8 @@ test('proposeDiscordPost_UnsupportedOrUnpinnedMedia_Refused', () => scenario(asy
 }));
 
 test('executeDiscordPost_RefusedOrUncertain_FailedOrUnknownAndNeverResent', () => scenario(async ({h, fake, env}) => {
-    for (const [status, expected] of [[400, 'failed'], [401, 'failed'], [403, 'failed'], [404, 'failed'], [413, 'failed'], [429, 'failed'], [502, 'unknown']] as const) {
+    for (const [status, expected] of [[400, 'failed'], [401, 'failed'], [403, 'failed'], [404, 'failed'], [413, 'failed'], [429, 'failed'],
+        [409, 'unknown'], [500, 'unknown'], [502, 'unknown']] as const) {
         fake.answer = () => status === 502 ? new Response('bad gateway', {status}) : Response.json({message: 'refused'}, {status});
         const {agent, actionId} = await approvedPost(h, env, fake, {text: 'status ' + status, media: []});
         const result = await execute(h, agent, actionId);
