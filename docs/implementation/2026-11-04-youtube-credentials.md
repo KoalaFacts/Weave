@@ -147,6 +147,15 @@ listed in the PR.
   Dropping either type from the stored-media types, sending the stored type instead
   of `video/*` on either request, or accepting only `video/mp4` fails these tests;
   before them, the last three survived.
+- Upload plan and receipt checks (2026-11-17, mutation scan of 33 guards in
+  `src/youtube-provider.ts` against the four test files that drive it): a title or a
+  description with only `<` or only `>` is refused with its field's reason, and a video
+  ID answered with 202 or 206 (as well as 400) records `unknown` and is never uploaded
+  again. Before these cases, checking only one bracket in either field, or accepting
+  any 2xx upload answer as the receipt, survived every test. Two survivors stay outside
+  this change: dropping `EXTERNAL_MEDIA` or `EXTERNAL_CREDENTIAL_KEY` from the adapter's
+  availability check was not caught by those four files; the scan did not run the
+  other suites against them.
 
 ## Limits
 

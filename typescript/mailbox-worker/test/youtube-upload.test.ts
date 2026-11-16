@@ -119,9 +119,13 @@ test('proposeExternalAction_UploadPlanOutsideYoutubeLimits_NamesTheField', () =>
         [plan(media, {title: 7}), 'title must be a non-blank string'],
         [plan(media, {title: 't'.repeat(101)}), 'title must be at most 100 characters'],
         [plan(media, {title: 'a <b>'}), 'title must not contain < or >'],
+        // Each bracket is refused on its own, so dropping either one from the check fails here.
+        [plan(media, {title: 'a < b'}), 'title must not contain < or >'],
+        [plan(media, {title: 'a > b'}), 'title must not contain < or >'],
         [plan(media, {description: null}), 'description must be a string'],
         [plan(media, {description: 'é'.repeat(2501)}), 'description must be at most 5000 bytes'],
         [plan(media, {description: 'x > y'}), 'description must not contain < or >'],
+        [plan(media, {description: 'x < y'}), 'description must not contain < or >'],
         [plan(media, {privacyStatus: 'everyone'}), 'privacyStatus must be one of "private", "unlisted", "public"'],
         [plan(media, {mediaId: 'nope'}), 'mediaId must be the ID that PUT /v1/external-media returned'],
         [plan(media, {mediaId: 7}), 'mediaId must be the ID that PUT /v1/external-media returned'],
@@ -215,13 +219,15 @@ for (const [name, change, reason] of [
         assert.equal(g.uploads.length, 0);
     }));
 
-test('executeExternalAction_YoutubeUploadIdOnRefusedStatus_UnknownAndNeverReuploads', () => scenario(async ({h, g, env}) => {
-    const {agent, actionId} = await approvedUpload(h, env);
-    g.upload = () => Response.json({id: videoId}, {status: 400});
-    const first = await execute(h, agent, actionId), again = await execute(h, agent, actionId);
-    assert.deepEqual([first.status, again.status], ['unknown', 'unknown']);
-    assert.equal(g.uploads.length, 1);
-}));
+// Only 200 and 201 confirm the upload. A video ID under any other status, including another 2xx, is not a receipt.
+for (const status of [400, 202, 206])
+    test(`executeExternalAction_YoutubeUploadIdOnStatus${status}_UnknownAndNeverReuploads`, () => scenario(async ({h, g, env}) => {
+        const {agent, actionId} = await approvedUpload(h, env);
+        g.upload = () => Response.json({id: videoId}, {status});
+        const first = await execute(h, agent, actionId), again = await execute(h, agent, actionId);
+        assert.deepEqual([first.status, again.status], ['unknown', 'unknown']);
+        assert.equal(g.uploads.length, 1);
+    }));
 
 test('executeExternalAction_YoutubeUploadAnswered201_CompletedWithVideoId', () => scenario(async ({h, g, env}) => {
     const {agent, actionId} = await approvedUpload(h, env);
