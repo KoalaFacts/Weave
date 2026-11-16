@@ -22,7 +22,7 @@ function recordingDatabase() {
     const statement = (sql: string, bound: unknown[] = []): Statement => ({
         bind: (...values) => statement(sql, values),
         all: async () => { sent.push(`all ${sql} ${bound.join(',')}`); return { results: [] }; },
-        first: async () => { sent.push(`first ${sql} ${bound.join(',')}`); return null; },
+        first: async (column?: string) => { sent.push(`first ${sql} ${bound.join(',')} ${column ?? ''}`.trimEnd()); return null; },
         run: async () => { sent.push(`run ${sql} ${bound.join(',')}`); return {}; }
     });
     const db: Database = { prepare: sql => statement(sql), batch: async statements => { sent.push(`batch ${statements.length}`); return statements.map(() => ({})); } };
@@ -41,11 +41,12 @@ test('budgetDatabase_FortyEighthStatement_SentAndFortyNinthRefusedBeforeD1', asy
 });
 
 test('budgetDatabase_BoundStatement_StillChargedAndSentWithItsValues', async () => {
-    const budget = await budgetDatabase(), { db, sent } = recordingDatabase(), limited = budget(db, 1);
+    const budget = await budgetDatabase(), { db, sent } = recordingDatabase(), limited = budget(db, 2);
     await limited.prepare('SELECT ?').bind('a').bind('b').run();
-    assert.deepEqual(sent, ['run SELECT ? b']);
-    await assert.rejects(limited.prepare('SELECT ?').bind('c').first(), storage, 'binding does not escape the budget');
-    assert.deepEqual(sent, ['run SELECT ? b']);
+    await limited.prepare('SELECT ? AS n').bind('c').first('n');
+    assert.deepEqual(sent, ['run SELECT ? b', 'first SELECT ? AS n c n'], 'values and the column pass through unchanged');
+    await assert.rejects(limited.prepare('SELECT ?').bind('d').first(), storage, 'binding does not escape the budget');
+    assert.equal(sent.length, 2);
 });
 
 test('budgetDatabase_BatchFillingTheBudget_SentAndOneMoreRefusedWithNothingWritten', async () => {
