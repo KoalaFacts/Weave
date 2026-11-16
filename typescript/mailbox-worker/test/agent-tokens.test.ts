@@ -622,7 +622,7 @@ test('resource_DpopProof_CheckedAgainstTheSameClockAsTheToken', async () => {
         const at = BigInt(now + 120) * second, url = origin + '/v1/addresses';
         // A proof signed 61 seconds before the pinned instant is outside the 60-second DPoP window; 60 seconds is inside.
         const sent = (iat: number) => new Request(url, {headers: {Authorization: `DPoP ${accessToken}`, DPoP: dpopProof(cred.key, {method: 'GET', url, accessToken, iat})}});
-        await assert.rejects(authenticateAgent({db: h.db} as unknown as Env, sent(now + 59), () => at), (e: unknown) => e instanceof Problem && e.status === 401);
+        await assert.rejects(authenticateAgent({db: h.db} as unknown as Env, sent(now + 59), () => at), (e: unknown) => e instanceof Problem && e.status === 401 && e.code === 'unauthenticated');
         assert.deepEqual(await authenticateAgent({db: h.db} as unknown as Env, sent(now + 60), () => at), {accountId: cred.accountId, kid: cred.key.kid});
     } finally { await h.close(); }
 });
