@@ -239,6 +239,61 @@ test('inbox_MoreThanFiftyNotices_NewestFiftyAcrossSources', async () => {
     } finally { await h.close(); }
 });
 
+// Each source keeps only its newest 50 rows by the instant the notice is reported at, which is not the row's creation: a key's
+// revocation, a request's decision. Rows here are created oldest-first but changed newest-first, so a source ordered by creation
+// (or ascending) would hand the merge the wrong 50.
+test('inbox_SourceOverFiftyChangedOutOfCreationOrder_NewestFiftyByChange', async () => {
+    const h = await start();
+    try {
+        const step = 10_000_000n, now = BigInt(Date.now()) * 10000n, base = now - hours(20), old = now - hours(48);
+        const changedAt = (n: number) => base + BigInt(200 - n) * step;
+        const expected = Array.from({length: 50}, (_, n) => Number(changedAt(n) / 10000n));
+        const at = (value: bigint) => value.toString();
+
+        const keys = await h.register(), kids: string[] = [], keyRows = [];
+        for (let n = 0; n < 55; n++) {
+            const kid = agentKey().kid, created = at(old + BigInt(n) * step);
+            kids.push(kid);
+            keyRows.push(h.db.prepare('INSERT INTO agent_keys(kid,account_id,public_jwk,created_at,revoked_at,updated_at) VALUES(?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER))')
+                .bind(kid, keys.accountId, JSON.stringify({crv: 'Ed25519', kty: 'OKP', x: kid}), created, at(changedAt(n)), at(changedAt(n))));
+        }
+        await h.db.batch(keyRows);
+        const keyNotices = (await inbox(h, keys)).notices;
+        assert.ok(keyNotices.every(n => n.kind === 'key-revoked'));
+        assert.deepEqual(keyNotices.map(n => n.kid), kids.slice(0, 50), 'the 50 newest revocations, not the 50 newest keys');
+        assert.deepEqual(keyNotices.map(n => Date.parse(n.revokedAt as string)), expected);
+
+        const requests = await h.register(), requestIds: string[] = [], requestRows = [];
+        for (let n = 0; n < 55; n++) {
+            const requestId = crypto.randomUUID(), kid = agentKey().kid, created = base + BigInt(n) * step;
+            requestIds.push(requestId);
+            requestRows.push(h.db.prepare(`INSERT INTO key_requests(request_id,account_id,kid,public_jwk,label,endorsed_by,status,created_at,expires_at,updated_at,decided_at)
+                    VALUES(?,?,?,?,NULL,?,'rejected',CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER))`)
+                .bind(requestId, requests.accountId, kid, JSON.stringify({crv: 'Ed25519', kty: 'OKP', x: kid}), requests.key.kid,
+                    at(created), at(created + hours(1)), at(changedAt(n)), at(changedAt(n))));
+        }
+        await h.db.batch(requestRows);
+        const requestNotices = (await inbox(h, requests)).notices;
+        assert.ok(requestNotices.every(n => n.kind === 'key-request' && n.status === 'rejected'));
+        assert.deepEqual(requestNotices.map(n => n.requestId), requestIds.slice(0, 50), 'the 50 newest decisions, not the 50 oldest');
+        assert.deepEqual(requestNotices.map(n => Date.parse(n.decidedAt as string)), expected);
+
+        const bindings = await h.register(), bindingIds: string[] = [], bindingRows = [];
+        for (let n = 0; n < 55; n++) {
+            const requestId = crypto.randomUUID(), created = base + BigInt(n) * step;
+            bindingIds.push(requestId);
+            bindingRows.push(h.db.prepare(`INSERT INTO binding_requests(request_id,account_id,target_subject,kid,status,created_at,expires_at,updated_at,decided_at)
+                    VALUES(?,?,'4242',?,'rejected',CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER))`)
+                .bind(requestId, bindings.accountId, bindings.key.kid, at(created), at(created + hours(1)), at(changedAt(n)), at(changedAt(n))));
+        }
+        await h.db.batch(bindingRows);
+        const bindingNotices = (await inbox(h, bindings)).notices;
+        assert.ok(bindingNotices.every(n => n.kind === 'binding-request' && n.status === 'rejected'));
+        assert.deepEqual(bindingNotices.map(n => n.requestId), bindingIds.slice(0, 50), 'the 50 newest decisions, not the 50 oldest');
+        assert.deepEqual(bindingNotices.map(n => Date.parse(n.decidedAt as string)), expected);
+    } finally { await h.close(); }
+});
+
 test('sseInbox_ShapeUnchangedWithNoticesPending', async () => {
     const h = await start();
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
