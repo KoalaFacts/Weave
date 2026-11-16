@@ -104,6 +104,8 @@ posts made its batch exceed the budget, so the batch was refused whole every run
 those records were never recorded while they stayed first in line
 (`publication_ManyPostsOneAgent_EachRunFitsTheStatementBudgetAndTheQueueDrains` and
 `publication_FiveAgentsFiveEach_OneRunFitsTheStatementBudget` in `test/postiz.test.ts`).
+A revision retry caused by a concurrent write costs extra statements; the groups after it
+are then refused, logged and asked on the next run, which only postpones them.
 
 - `PUBLISHED` becomes `published` with `releaseURL` when it is an https URL.
 - `ERROR` becomes `failed`. Postiz's `error` is the platform's own text, so it is
