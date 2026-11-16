@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
-import { approvalOrigin, planDigest, proposalKey } from '../src/external-actions.ts';
+import { actionLifetimeTicks, approvalOrigin, executeExternalAction, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
+import { apiTime } from '../src/time.ts';
+import type { Problem } from '../src/wire.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -854,3 +856,85 @@ for (const [name, status, respond] of [['Completed', 'completed', completed],
                 [status, decidedAt, result.dispatchedAt, result.completedAt]);
         assert.equal(provider.calls.length, 1);
     }));
+
+// A plan's expiry is exact on one pinned clock: it is live until the tick before its stored expiry and expired from that tick,
+// for execute, for the owner's confirm, for the owner page's list and for the 20-waiting-plans count alike.
+const directCaller = (accountId: string): ActionCaller => ({accountId, check: async () => {}});
+const storedExpiry = async (h: Harness, actionId: string) =>
+    BigInt((await h.db.prepare('SELECT CAST(expires_at AS TEXT) e FROM external_actions WHERE action_id=?').bind(actionId).first<string>('e'))!);
+const storedState = (h: Harness, actionId: string) =>
+    h.db.prepare('SELECT status,CAST(decided_at AS TEXT) decided_at,CAST(dispatched_at AS TEXT) dispatched_at FROM external_actions WHERE action_id=?').bind(actionId)
+        .first<{status: string; decided_at: string | null; dispatched_at: string | null}>();
+
+test('executeExternalAction_AtTheExactExpiryTick_ExpiredAndUnsentWhileOneTickEarlierSends', () => scenario(async ({h}) => {
+    const {agent, actionId} = await approved(h);
+    const expiry = await storedExpiry(h, actionId);
+    const sent: string[] = [];
+    const realFetch = globalThis.fetch;
+    // A direct call runs in this process, so the provider's request is caught here; every other request passes through.
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url !== endpoint) return realFetch(input, init);
+        sent.push(url);
+        return Response.json({externalId: 'post-exact'});
+    }) as typeof fetch;
+    try {
+        const atExpiry = await executeExternalAction(environment(h), directCaller(agent.accountId), actionId, () => expiry);
+        assert.equal(atExpiry.status, 'expired');
+        assert.equal(sent.length, 0, 'nothing is sent at the expiry tick');
+        const kept = await storedState(h, actionId);
+        assert.equal(kept!.status, 'approved', 'an expired execute writes nothing');
+        assert.equal(kept!.dispatched_at, null);
+
+        const before = await executeExternalAction(environment(h), directCaller(agent.accountId), actionId, () => expiry - 1n);
+        assert.equal(before.status, 'completed', 'one tick before the expiry the plan is still live');
+        assert.equal(before.receipt, 'post-exact');
+        assert.equal(sent.length, 1);
+    } finally { globalThis.fetch = realFetch; }
+}));
+
+test('confirmExternalAction_AtTheExactExpiryTick_ExpiredWhileOneTickEarlierApproves', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    const [shown] = await pendingFor(h, humanId);
+    const expiry = await storedExpiry(h, action.actionId);
+    const confirmAt = (at: bigint) => ownerAction(environment(h), {humanId, authAt: Number(at / 10000n), kind: 'confirm-action',
+        requestId: action.actionId, planDigest: shown.planDigest} as OwnerAction, () => at);
+
+    assert.deepEqual(await confirmAt(expiry), {ok: false, reason: 'expired'});
+    assert.equal((await storedState(h, action.actionId))!.status, 'pending', 'a refused confirm writes nothing');
+    assert.deepEqual(await confirmAt(expiry - 1n), {ok: true});
+    const decided = await storedState(h, action.actionId);
+    assert.equal(decided!.status, 'approved');
+    assert.equal(decided!.decided_at, (expiry - 1n).toString(), 'the decision is stamped with the same clock');
+}));
+
+test('ownerOverview_PendingPlanAtItsExactExpiryTick_NoLongerListed', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    const expiry = await storedExpiry(h, action.actionId);
+    const listedAt = async (at: bigint) => {
+        const overview = await ownerOverview(environment(h), humanId, () => at);
+        assert.equal(overview.frozen, false);
+        return (overview as Extract<typeof overview, {frozen: false}>).externalActions.map(listed => listed.actionId);
+    };
+    assert.deepEqual(await listedAt(expiry - 1n), [action.actionId], 'listed until the tick before its expiry');
+    assert.deepEqual(await listedAt(expiry), [], 'not offered for approval from its expiry tick');
+}));
+
+test('proposeExternalAction_WaitingPlansAtTheirExactExpiryTick_NoLongerCountTowardTwenty', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    for (let i = 0; i < 20; i++) assert.equal((await propose(h, agent, `Post ${i}`)).status, 200, `proposal ${i} is admitted`);
+    const expiry = BigInt(ticks()) + 600_000_000n;
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE account_id=?').bind(expiry.toString(), agent.accountId).run();
+    const input = {credentialRef: 'linkedin-main', operation: 'publish_text', content: 'One more'};
+    const proposeAt = (at: bigint) => proposeExternalAction(environment(h), directCaller(agent.accountId), input, null, () => at);
+
+    await assert.rejects(proposeAt(expiry - 1n), (error: unknown) => (error as Problem).status === 429 && (error as Problem).code === 'capacity',
+        'twenty plans still wait one tick before their expiry');
+    assert.equal(await actionCount(h), 20, 'a refusal writes nothing');
+    const admitted = await proposeAt(expiry);
+    assert.equal(admitted.status, 'pending', 'at their expiry tick they no longer wait');
+    assert.equal(admitted.createdAt, apiTime(expiry.toString()));
+    assert.equal(admitted.expiresAt, apiTime((expiry + actionLifetimeTicks).toString()), 'the new plan expires one lifetime after the same tick');
+}));
