@@ -63,6 +63,7 @@ test('token_ValidAssertionAndProof_ReturnsDpopToken', async () => {
         const response = await token(h, cred);
         assert.equal(response.status, 200, await response.clone().text());
         assert.equal(response.headers.get('Cache-Control'), 'no-store');
+        assert.equal(response.headers.get('Pragma'), 'no-cache');
         const result = await response.json() as {access_token: string; token_type: string; expires_in: number};
         assert.deepEqual(Object.keys(result).sort(), ['access_token', 'expires_in', 'token_type']);
         assert.equal(result.token_type, 'DPoP');
@@ -434,4 +435,156 @@ test('token_OversizedFormBody_400ImmediatelyWithoutAwaitingCancel', {timeout: 30
     assert.notEqual(outcome, 'timed-out', 'an oversized form must not wait for a hung cancel()');
     await refusal(outcome as Response, 400, 'invalid_request');
     assert.equal(cancelled, 1);
+});
+
+/** Signs an assertion for `cred` and sends it straight to the handler on a clock pinned at `now`, with a proof signed at that instant. */
+function pinned(h: Harness, cred: Credential, now: number, options: AssertionOverrides = {}): Promise<Response> {
+    return direct(h, cred, clientAssertion(cred.key, {accountId: cred.accountId, audience: tokenUrl, iat: now, exp: now + 60, ...options}), clockOf(now), now);
+}
+
+test('token_AssertionExp_AcceptedAt300SecondsRefusedAt301', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds();
+        await refusal(await pinned(h, cred, now, {exp: now + 301}), 401, 'invalid_client');
+        assert.equal((await pinned(h, cred, now, {exp: now + 300})).status, 200);
+        assert.equal(await count(h, 'agent_access_tokens'), 1);
+    } finally { await h.close(); }
+});
+
+test('token_AssertionIat_SkewAndAgeEdges', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds();
+        // At most 60 seconds ahead of the server clock.
+        await refusal(await pinned(h, cred, now, {iat: now + 61}), 401, 'invalid_client');
+        assert.equal((await pinned(h, cred, now, {iat: now + 60})).status, 200);
+        // At most 300 seconds old.
+        await refusal(await pinned(h, cred, now, {iat: now - 301}), 401, 'invalid_client');
+        assert.equal((await pinned(h, cred, now, {iat: now - 300})).status, 200);
+        assert.equal(await count(h, 'agent_access_tokens'), 2);
+    } finally { await h.close(); }
+});
+
+test('token_AssertionNbf_SkewEdgeAndIntegerOnly', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds();
+        await refusal(await pinned(h, cred, now, {claims: {nbf: now + 61}}), 401, 'invalid_client');
+        // Neither a fraction nor a numeric string inside the window is accepted.
+        await refusal(await pinned(h, cred, now, {claims: {nbf: now + 0.5}}), 401, 'invalid_client');
+        await refusal(await pinned(h, cred, now, {claims: {nbf: String(now)}}), 401, 'invalid_client');
+        assert.equal((await pinned(h, cred, now, {claims: {nbf: now + 60}})).status, 200);
+        assert.equal(await count(h, 'agent_access_tokens'), 1);
+    } finally { await h.close(); }
+});
+
+test('token_FractionalExpOrIat_401', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds();
+        await refusal(await pinned(h, cred, now, {exp: now + 60.5}), 401, 'invalid_client');
+        await refusal(await pinned(h, cred, now, {iat: now - 0.5}), 401, 'invalid_client');
+        assert.equal(await count(h, 'agent_access_tokens'), 0);
+        assert.equal(await count(h, 'agent_assertions'), 0);
+        assert.equal((await pinned(h, cred, now)).status, 200);
+    } finally { await h.close(); }
+});
+
+test('token_AssertionJti_LengthAndCharacterEdges', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds();
+        for (const jti of ['j'.repeat(15), 'j'.repeat(129), 'control-char-jti\x1F', 'delete-char-jti-\x7F']) {
+            await refusal(await pinned(h, cred, now, {jti}), 401, 'invalid_client');
+        }
+        assert.equal(await count(h, 'agent_assertions'), 0);
+        for (const jti of ['a'.repeat(16), 'b'.repeat(128), 'space and tilde ~ edge']) assert.equal((await pinned(h, cred, now, {jti})).status, 200, jti);
+        assert.equal(await count(h, 'agent_access_tokens'), 3);
+    } finally { await h.close(); }
+});
+
+test('token_SubNamesAnotherAgent_401', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), other = await register(h), now = nowSeconds();
+        // iss still names the key's agent; only sub differs.
+        await refusal(await pinned(h, cred, now, {claims: {sub: other.accountId}}), 401, 'invalid_client');
+        assert.equal(await count(h, 'agent_access_tokens'), 0);
+        assert.equal((await pinned(h, cred, now, {claims: {sub: cred.accountId}})).status, 200);
+    } finally { await h.close(); }
+});
+
+test('token_FormContentTypeAndUtf8_ExactlyChecked', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h);
+        const assertion = () => clientAssertion(cred.key, {accountId: cred.accountId, audience: tokenUrl});
+        const proof = () => dpopProof(cred.key, {method: 'POST', url: tokenUrl});
+        const form = () => new URLSearchParams(grant(assertion())).toString();
+        await refusal(await h.mf.dispatchFetch(tokenUrl, post([], proof(), 'application/x-www-form-urlencoded-extra', form())), 400, 'invalid_request');
+        // A client_id ending in a byte that is not UTF-8 is refused as a malformed form, never decoded into a name to compare.
+        const invalid = new Uint8Array([...new TextEncoder().encode(form() + '&client_id=' + cred.accountId), 0xFF]);
+        await refusal(await h.mf.dispatchFetch(tokenUrl, {...post([], proof()), body: invalid}), 400, 'invalid_request');
+        assert.equal(await count(h, 'agent_access_tokens'), 0);
+        assert.equal((await h.mf.dispatchFetch(tokenUrl, post([], proof(), 'application/x-www-form-urlencoded; charset=utf-8', form()))).status, 200);
+    } finally { await h.close(); }
+});
+
+test('token_KeyRevokedAfterValidationBeforeCommit_401AndNothingStored', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds();
+        let revoked = 0;
+        // A concurrent revocation (with its own revision bump) lands between the assertion check and the issuing transaction's key read.
+        const racing = new Proxy(h.db, {get(target, property) {
+            if (property === 'prepare') return (sql: string) => {
+                const statement = target.prepare(sql);
+                if (!sql.startsWith('SELECT account_id FROM agent_keys WHERE kid=?')) return statement;
+                return {bind: (...values: unknown[]) => {
+                    const bound = statement.bind(...values);
+                    return {first: async (column: string) => {
+                        if (revoked++ === 0) await target.batch([target.prepare('UPDATE agent_keys SET revoked_at=created_at WHERE kid=?').bind(cred.key.kid),
+                            target.prepare('UPDATE mailbox_revision SET token=? WHERE singleton=1').bind(crypto.randomUUID())]);
+                        return bound.first(column);
+                    }};
+                }};
+            };
+            const value = Reflect.get(target, property, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+        }});
+        const assertion = clientAssertion(cred.key, {accountId: cred.accountId, audience: tokenUrl, iat: now, exp: now + 60});
+        const request = new Request(tokenUrl, post(grant(assertion), dpopProof(cred.key, {method: 'POST', url: tokenUrl, iat: now})));
+        await refusal(await issueAgentToken({db: racing} as unknown as Env, request, clockOf(now)), 401, 'invalid_client');
+        assert.equal(revoked >= 1, true);
+        assert.equal(await count(h, 'agent_access_tokens'), 0);
+        assert.equal(await count(h, 'agent_assertions'), 0);
+    } finally { await h.close(); }
+});
+
+test('resource_DpopSchemeInAnyCase_Authenticates', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), accessToken = await issue(h, cred);
+        // RFC 9110 §11.1: the authentication scheme is case-insensitive.
+        for (const scheme of ['dpop', 'DPOP']) assert.equal((await call(h, cred, accessToken, '/v1/addresses', 'GET', undefined, {}, scheme)).status, 200, scheme);
+        assert.equal((await call(h, cred, accessToken, '/v1/addresses', 'GET', undefined, {}, 'DPoPx')).status, 401);
+    } finally { await h.close(); }
+});
+
+test('token_Issue_PrunesAtMost100ExpiredAccessTokens', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds(), at = BigInt(now) * second;
+        const expired = Array.from({length: 101}, (_, i) => h.db.prepare('INSERT INTO agent_access_tokens(token_hash,account_id,kid,expires_at,created_at) VALUES(?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER))')
+            .bind(i.toString(16).padStart(64, '0'), cred.accountId, cred.key.kid, (at - BigInt(i % 2) * second).toString(), (at - 900n * second).toString()));
+        await h.db.batch([...expired, h.db.prepare('INSERT INTO agent_access_tokens(token_hash,account_id,kid,expires_at,created_at) VALUES(?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER))')
+            .bind('f'.repeat(64), cred.accountId, cred.key.kid, (at + 1n).toString(), at.toString())]);
+        assert.equal((await pinned(h, cred, now)).status, 200);
+        // One issuance deletes 100 rows expiring at or before now, never the live row or the new token.
+        const left = Number(await h.db.prepare('SELECT count(*) n FROM agent_access_tokens WHERE created_at=CAST(? AS INTEGER)').bind((at - 900n * second).toString()).first('n'));
+        assert.equal(left, 1);
+        assert.notEqual(await h.db.prepare('SELECT 1 x FROM agent_access_tokens WHERE token_hash=?').bind('f'.repeat(64)).first('x'), null);
+        assert.equal(await count(h, 'agent_access_tokens'), 3);
+    } finally { await h.close(); }
 });
