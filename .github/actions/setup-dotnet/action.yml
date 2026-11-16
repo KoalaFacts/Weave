@@ -29,10 +29,12 @@ runs:
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
         dotnet-quality: ${{ inputs.dotnet-quality }}
-        cache: ${{ inputs.cache }}
-        cache-dependency-path: '**/packages.lock.json'
+    # Caching runs `dotnet nuget locals`, which needs an SDK that satisfies the
+    # global.json 11.0.100 baseline, so it is enabled only once .NET 11 is installed.
     - name: Setup .NET 11 SDK
       uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
       with:
         dotnet-version: ${{ inputs.dotnet-next-version }}
         dotnet-quality: ${{ inputs.dotnet-next-quality }}
+        cache: ${{ inputs.cache }}
+        cache-dependency-path: '**/packages.lock.json'
