@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { start } from './harness.ts';
 import { sweepPublications, firstRecheckMs } from '../src/external-publications.ts';
+import { budgetDatabase } from '../src/budget.ts';
 import { connectAccount } from '../src/external-credentials.ts';
 import { postiz } from '../src/postiz-provider.ts';
 const connectPostiz = (env: Env, {apiKey, ...owner}: {humanId: string; authAt: number; agentId: string; apiKey: string}) =>
@@ -361,6 +362,54 @@ test('publication_SixAgentsDue_FiveAskedPerRunTheRestNextRun', () => scenario(as
     assert.deepEqual([states[5].checks, ms(states[5].next_check_at)], [0, tracked[5].due], 'the agent left out is neither counted nor postponed');
     assert.equal((await sweepWith(env, published, at)).length, 1, 'the next run asks for it');
     assert.equal((await publication(h, tracked[5].actionId)).state, 'published');
+}));
+
+test('publication_ManyPostsOneAgent_EachRunFitsTheStatementBudgetAndTheQueueDrains', () => scenario(async ({h, env}) => {
+    const {agent, actionId} = await approvedPost(h, env, {text: 'Live', media: [], settings: {__type: 'linkedin-page'}});
+    await execute(h, agent, actionId);
+    const due = ms((await publication(h, actionId)).due_at);
+    // 44 more tracked posts of the same agent, each with its own receipt, all due together.
+    const columns = (await h.db.prepare('PRAGMA table_info(external_actions)').all<{name: string}>()).results.map(c => c.name);
+    const copy = (column: string) => column === 'action_id' ? "?1||'-'||n.i" : column === 'receipt' ? "'posted:post-'||(n.i+1)" : column;
+    await h.db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<44)
+        INSERT INTO external_actions(${columns.join(',')}) SELECT ${columns.map(copy).join(',')} FROM external_actions, n WHERE action_id=?1`).bind(actionId).run();
+    await h.db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<44)
+        INSERT INTO external_publications(action_id,account_id,state,due_at,checks,next_check_at,updated_at)
+        SELECT action_id||'-'||n.i,account_id,state,due_at,checks,next_check_at,updated_at FROM external_publications, n WHERE action_id=?1`).bind(actionId).run();
+    const queued = async () => Number(await h.db.prepare("SELECT count(*) n FROM external_publications WHERE state='queued'").first('n'));
+    assert.equal(await queued(), 45);
+    const published = listing(Array.from({length: 45}, (_, i) => ({id: 'post-' + (i + 1), state: 'PUBLISHED', releaseURL: null})));
+    // Each cron sweep runs on its own 48-statement budget, as the Worker's scheduled handler gives it.
+    const budgeted = () => ({...env, db: budgetDatabase(env.db)});
+    assert.equal((await sweepWith(budgeted(), published, due + 1000)).length, 1);
+    assert.equal(await queued(), 20, 'one run records 25 answers within the budget instead of refusing all 45');
+    await sweepWith(budgeted(), published, due + 1000);
+    assert.equal(await queued(), 0, 'the next run records the rest');
+}));
+
+test('publication_FiveAgentsFiveEach_OneRunFitsTheStatementBudget', () => scenario(async ({h, env}) => {
+    const tracked: string[] = [];
+    let due = 0;
+    for (let i = 0; i < 5; i++) {
+        const {agent, actionId} = await approvedPost(h, env, {text: 'Live ' + i, media: [], settings: {__type: 'linkedin-page'}});
+        await execute(h, agent, actionId);
+        tracked.push(actionId);
+        due = Math.max(due, ms((await publication(h, actionId)).due_at));
+    }
+    const columns = (await h.db.prepare('PRAGMA table_info(external_actions)').all<{name: string}>()).results.map(c => c.name);
+    const copy = (column: string) => column === 'action_id' ? "?1||'-'||n.i" : column;
+    for (const actionId of tracked) {
+        await h.db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<4)
+            INSERT INTO external_actions(${columns.join(',')}) SELECT ${columns.map(copy).join(',')} FROM external_actions, n WHERE action_id=?1`).bind(actionId).run();
+        await h.db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<4)
+            INSERT INTO external_publications(action_id,account_id,state,due_at,checks,next_check_at,updated_at)
+            SELECT action_id||'-'||n.i,account_id,state,due_at,checks,next_check_at,updated_at FROM external_publications, n WHERE action_id=?1`).bind(actionId).run();
+    }
+    // 25 due records over the five agents asked per run: the worst case for one run's statements.
+    const answered = listing([{id: 'post-1', state: 'QUEUE', releaseURL: null}]);
+    assert.equal((await sweepWith({...env, db: budgetDatabase(env.db)}, answered, due + 1000)).length, 5);
+    assert.equal(Number(await h.db.prepare('SELECT count(*) n FROM external_publications WHERE checks=1').first('n')), 25,
+        'every record of every asked agent is recorded in one budgeted run');
 }));
 
 test('publication_SeveralPostsOneAgent_OneListingCall', () => scenario(async ({h, env}) => {

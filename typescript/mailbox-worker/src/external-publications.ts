@@ -12,8 +12,12 @@ export type PublicationView = {state: PublicationState['state']; url: string | n
 
 /** First re-check after an unfinished answer, doubling up to the cap; tracking stops this long after the effect was due. */
 export const firstRecheckMs = 15 * 60_000, maxRecheckMs = 6 * 3600_000, trackingWindowMs = 7 * 24 * 3600_000;
-/** Due records read per run, and credentials asked per run (Postiz allows 30 API calls per hour). */
-const duePerRun = 50, credentialsPerRun = 5;
+/**
+ * Due records read per run, and credentials asked per run (Postiz allows 30 API calls per hour). A run must fit the sweep's
+ * 48-statement budget: 3 to read what is due, then per credential 1 revision read and a batch of 3 guards plus 1 update
+ * per record, so 3 + 5 × 4 + 25 = 48. More records would make the batch refused whole, run after run.
+ */
+const duePerRun = 25, credentialsPerRun = 5;
 const ticks = (ms: number) => BigInt(ms) * 10000n;
 
 /** Records a newly completed effect for tracking, in the transaction that completes the action. */
