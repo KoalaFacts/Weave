@@ -96,7 +96,16 @@ Postiz queues every post, so a completed action only means Postiz accepted it. W
 is due) and the same transaction writes an `external_publications` row in `queued`.
 The 5-minute cron then asks Postiz with `GET /posts?startDate&endDate`. Postiz has no
 read by ID and allows 30 calls an hour, so one listing per agent covers all of that
-agent's due posts, and at most 5 agents are asked per run.
+agent's due posts, and at most 5 agents are asked per run. A run reads at most 25 due
+records, so its D1 statements fit the sweep's 48-statement budget (3 to read what is due,
+then per agent 1 revision read and a batch of 3 guards plus 1 update per record:
+3 + 5 × 4 + 25 = 48). Until 2026-11-16 a run read 50: one agent with 42 or more due
+posts made its batch exceed the budget, so the batch was refused whole every run and
+those records were never recorded while they stayed first in line
+(`publication_ManyPostsOneAgent_EachRunFitsTheStatementBudgetAndTheQueueDrains` and
+`publication_FiveAgentsFiveEach_OneRunFitsTheStatementBudget` in `test/postiz.test.ts`).
+A revision retry caused by a concurrent write costs extra statements; the groups after it
+are then refused, logged and asked on the next run, which only postpones them.
 
 - `PUBLISHED` becomes `published` with `releaseURL` when it is an https URL.
 - `ERROR` becomes `failed`. Postiz's `error` is the platform's own text, so it is
