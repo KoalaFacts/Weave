@@ -121,12 +121,12 @@ export async function issueAgentToken(env: Env, request: Request, clock: () => b
     }
 }
 
-/** Resolves `Authorization: DPoP <token>` plus its proof; null only when no Authorization header is sent. */
-export async function authenticateAgent(env: Env, request: Request): Promise<AgentAuth | null> {
+/** Resolves `Authorization: DPoP <token>` plus its proof; null only when no Authorization header is sent. `clock` is read once, for both the proof and the token expiry. */
+export async function authenticateAgent(env: Env, request: Request, clock: () => bigint = nowUtc): Promise<AgentAuth | null> {
     const header = request.headers.get('Authorization');
     if (header === null) return null;
     const accessToken = dpopAuthorization.exec(header)?.[1] ?? fail(401, 'unauthenticated');
-    const now = nowUtc();
+    const now = clock();
     const proof = await verifyDpop(request, {now: epochSeconds(now), accessToken});
     if (!proof.ok) fail(401, 'unauthenticated');
     // Joining the live key makes revocation effective on the next request.

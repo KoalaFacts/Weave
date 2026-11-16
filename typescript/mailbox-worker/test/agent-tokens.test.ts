@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { start } from './harness.ts';
 import { agentKey, clientAssertion, dpopProof, nowSeconds, type TestKey } from './agent-key.ts';
-import { issueAgentToken } from '../src/agent-tokens.ts';
+import { accessTokenSeconds, authenticateAgent, issueAgentToken } from '../src/agent-tokens.ts';
+import { Problem } from '../src/wire.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -586,5 +587,42 @@ test('token_Issue_PrunesAtMost100ExpiredAccessTokens', async () => {
         assert.equal(left, 1);
         assert.notEqual(await h.db.prepare('SELECT 1 x FROM agent_access_tokens WHERE token_hash=?').bind('f'.repeat(64)).first('x'), null);
         assert.equal(await count(h, 'agent_access_tokens'), 3);
+    } finally { await h.close(); }
+});
+
+/** Authenticates one resource request straight through `authenticateAgent` on a clock pinned at `at` ticks, with a proof signed in that second. */
+async function authenticatedAt(h: Harness, cred: Credential, accessToken: string, at: bigint): Promise<unknown> {
+    const url = origin + '/v1/addresses', iat = Number(at / second);
+    const request = new Request(url, {headers: {Authorization: `DPoP ${accessToken}`, DPoP: dpopProof(cred.key, {method: 'GET', url, accessToken, iat})}});
+    try { return await authenticateAgent({db: h.db} as unknown as Env, request, () => at); }
+    catch (error) { return error instanceof Problem ? `${error.status} ${error.code}` : error; }
+}
+
+test('resource_AccessToken_AcceptedUntilTickBeforeExpiryRefusedFromExpiry', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds(), issued = await pinned(h, cred, now);
+        assert.equal(issued.status, 200);
+        const {access_token: accessToken} = await issued.json() as {access_token: string};
+        const expiry = BigInt(now + accessTokenSeconds) * second, owner = {accountId: cred.accountId, kid: cred.key.kid};
+        // Stored expiry is exactly issue time plus the advertised lifetime, to the tick.
+        assert.equal(await h.db.prepare('SELECT CAST(expires_at AS TEXT) e FROM agent_access_tokens').first('e'), expiry.toString());
+        assert.deepEqual(await authenticatedAt(h, cred, accessToken, BigInt(now) * second), owner);
+        assert.deepEqual(await authenticatedAt(h, cred, accessToken, expiry - 1n), owner);
+        assert.equal(await authenticatedAt(h, cred, accessToken, expiry), '401 unauthenticated');
+        assert.equal(await authenticatedAt(h, cred, accessToken, expiry + second), '401 unauthenticated');
+    } finally { await h.close(); }
+});
+
+test('resource_DpopProof_CheckedAgainstTheSameClockAsTheToken', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds(), issued = await pinned(h, cred, now);
+        const {access_token: accessToken} = await issued.json() as {access_token: string};
+        const at = BigInt(now + 120) * second, url = origin + '/v1/addresses';
+        // A proof signed 61 seconds before the pinned instant is outside the 60-second DPoP window; 60 seconds is inside.
+        const sent = (iat: number) => new Request(url, {headers: {Authorization: `DPoP ${accessToken}`, DPoP: dpopProof(cred.key, {method: 'GET', url, accessToken, iat})}});
+        await assert.rejects(authenticateAgent({db: h.db} as unknown as Env, sent(now + 59), () => at), (e: unknown) => e instanceof Problem && e.status === 401);
+        assert.deepEqual(await authenticateAgent({db: h.db} as unknown as Env, sent(now + 60), () => at), {accountId: cred.accountId, kid: cred.key.kid});
     } finally { await h.close(); }
 });
