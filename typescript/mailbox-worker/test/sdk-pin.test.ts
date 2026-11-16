@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 const root=new URL('../../../',import.meta.url);
-test('repository SDK selection picks up the GA .NET 11 SDK from the .NET 10 generator baseline',()=>{
+test('repository SDK selection picks up the GA .NET 11 SDK from the 11.0.100 baseline that loads the Roslyn 5.12 generator',()=>{
     const config=JSON.parse(readFileSync(new URL('global.json',root),'utf8'));
-    assert.equal(config.sdk.version,'10.0.400');
+    assert.equal(config.sdk.version,'11.0.100');
     assert.equal(config.sdk.rollForward,'latestMajor');
     // .NET 11 reached GA in 2026-11: a prerelease SDK must never be selected again.
     assert.equal(config.sdk.allowPrerelease,false);
@@ -27,6 +27,6 @@ test('shared CI setup installs the .NET 10 channel with the requested quality an
     assert.match(quality,/^    default: 'ga'$/m);
     assert.match(action,/cache-dependency-path: '\*\*\/packages\.lock\.json'/);
     const publish=readFileSync(new URL('.github/workflows/publish-nuget.yml',root),'utf8');
-    assert.match(publish,/dotnet-version: '10\.x'/);
+    assert.match(publish,/dotnet-version: '11\.x'/);
     assert.match(publish,/dotnet-quality: 'ga'/);
 });
