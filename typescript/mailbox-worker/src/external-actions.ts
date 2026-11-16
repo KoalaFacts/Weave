@@ -129,8 +129,10 @@ async function ownAction(tx: Transaction, caller: ActionCaller, actionId: string
 /**
  * POST /v1/external-actions: records a pending plan. Nothing is sent to the provider. With a key, a repeat of the same
  * request returns the action that key first created, in its current state; the same key with another request conflicts.
+ * The clock is read once, so the waiting-plan count and the new plan's expiry use the same tick.
  */
-export async function proposeExternalAction(env: Env, caller: ActionCaller, input: unknown, key: string | null = null): Promise<ExternalActionView> {
+export async function proposeExternalAction(env: Env, caller: ActionCaller, input: unknown, key: string | null = null,
+    clock: () => bigint = nowUtc): Promise<ExternalActionView> {
     if (writesRefused(env)) fail(503, 'maintenance', 30);
     object(input, ['credentialRef', 'operation', 'content']);
     const {credentialRef, operation, content} = input as Record<string, unknown>;
@@ -177,7 +179,7 @@ export async function proposeExternalAction(env: Env, caller: ActionCaller, inpu
             request_hash: requestHash!, action_id: plan.action_id, created_at: at}));
         return view(env, {...plan, plan_digest: digest, status: 'pending', created_at: at.toString(), decided_at: null, decided_by: null,
             dispatched_at: null, completed_at: null, receipt: null, failure: null}, at);
-    });
+    }, clock);
 }
 
 /** GET /v1/external-actions/{actionId}. */

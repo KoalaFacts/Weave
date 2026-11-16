@@ -53,7 +53,12 @@ Two additive tables in `src/schema.ts`:
   `unknown`; if the outcome cannot be recorded the row stays `dispatching`. Neither
   is ever dispatched again. A 422 is the only confirmed rejection (`failed`).
 - The approval adds no authority; the plan expires one hour after creation, for
-  approval and execution together.
+  approval and execution together. The expiry is exact: a plan is live until the tick
+  before its stored `expiresAt` and expired from that tick, for execute (nothing sent,
+  nothing written), the owner's confirm, the owner page's pending list and the
+  20-waiting-plans count. Pinned on one injected clock (2026-11-16); the four `<=`/`>`
+  boundaries, the agent-facing `expired` status and propose's clock each survived every
+  earlier test, and changing any one now fails its new test.
 
 ## MCP tools
 
