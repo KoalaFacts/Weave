@@ -165,6 +165,14 @@ test('connectTelegram_TitleWithControlOrBidiCharacters_StoredDisplayVisibleAndWe
     assert.equal(display, 'HSC Beats ' + 'x'.repeat(107) + '\ufffd (@hscbeats)');
     assert.equal((await h.ok('/v1/external-credentials', agent)).items[0].targetDisplay, display);
 }));
+
+test('connectTelegram_UsernameOverTelegramsLimit_DisplayCutAt32', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    fake.answers.getChat = () => ok({id: chatId, type: 'channel', title: 'HSC Beats', username: 'u'.repeat(32) + 'v'.repeat(8)});
+    await withBotApi(fake, async () => assert.deepEqual(
+        await connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats'}),
+        {ok: true, accounts: ['HSC Beats (@' + 'u'.repeat(32) + ')']}));
+}));
 test('connectTelegram_TitleOnlyInvisibleCharacters_DisplayFallsBackToChatId', () => scenario(async ({h, fake, env}) => {
     const agent = await h.register(), humanId = await h.claim(agent);
     fake.answers.getChat = () => ok({id: chatId, type: 'channel', title: '\u200b\u202e\u2066'});
@@ -214,7 +222,8 @@ test('connectTelegram_NotAnAdminPosterOrBadInput_NothingStored', () => scenario(
     const agent = await h.register(), humanId = await h.claim(agent);
     const attempt = (overrides: Record<string, unknown> = {}) => connectTelegram(env, {humanId, authAt: Date.now(), agentId: agent.accountId, botToken: token, chat: '@hscbeats', ...overrides} as any);
     await withBotApi(fake, async () => {
-        for (const [name, input] of [['not a token', {botToken: 'my-password'}], ['not a chat', {chat: 'https://t.me/x'}]] as const)
+        for (const [name, input] of [['not a token', {botToken: 'my-password'}], ['not a chat', {chat: 'https://t.me/x'}],
+            ['a username over 32 characters', {chat: '@a' + 'b'.repeat(32)}], ['a username under 4 characters', {chat: '@abc'}]] as const)
             assert.deepEqual(await attempt(input), {ok: false, reason: 'provider-refused'}, name);
         assert.equal(fake.calls.length, 0, 'malformed inputs are never sent to Telegram');
         const cases: [string, Record<string, (call: Call) => Response>][] = [
@@ -342,6 +351,9 @@ test('executeTelegramPost_AnswerNotOneConfirmedPost_UnknownAndNeverResent', () =
         ['ok body on a non-200 status', () => Response.json({ok: true, result: {message_id: 40}}, {status: 202})],
         ['no message_id', () => ok({chat: {id: chatId}})],
         ['an answer over 64 KiB', () => ok({message_id: 40, text: 'x'.repeat(70_000)})],
+        ['ok: false on a 200 that names a message', () => Response.json({ok: false, result: {message_id: 40}})],
+        ['a 200 answer that is not UTF-8', () => new Response(Buffer.concat([Buffer.from('{"ok":true,"result":{"message_id":40,"text":"'), Buffer.from([0xff]), Buffer.from('"}}')]),
+            {headers: {'Content-Type': 'application/json'}})],
         ['an album confirmed for one file of two', call => ok([{message_id: 40}].concat(call.method === 'sendMediaGroup' ? [] : [{message_id: 41}]))],
     ];
     for (const [name, answer] of cases) {
