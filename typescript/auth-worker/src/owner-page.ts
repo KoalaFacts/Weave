@@ -223,7 +223,7 @@ function sentDetails(settled:SettledActionView):string{
   const parts:string[]=[];
   if(typeof settled.receipt==="string"&&settled.receipt)parts.push("<p>The platform's reference for it: <code>"+esc(settled.receipt)+"</code></p>");
   const publication=settled.publication;
-  if(publication?.state==="queued")parts.push("<p>The platform has not published it yet. Weave checks again later; nothing is sent again.</p>");
+  if(publication?.state==="queued")parts.push("<p>The platform has not reported it published yet. Nothing is sent again.</p>");
   else if(publication?.state==="published"){
     const url=publishedLink(publication.url);
     parts.push("<p>The platform published it."+(url?' <a href="'+esc(url)+'" rel="noopener noreferrer">View it on the platform</a>':"")+"</p>");

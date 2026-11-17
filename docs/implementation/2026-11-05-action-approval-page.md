@@ -48,7 +48,8 @@ remains possible later for chat channels.
   an auth Worker reading a mailbox without it shows the old sentence.
 - **Where it went (2026-11-18).** A sent action also shows the platform's reference for it (the stored receipt, escaped)
   and, for an effect the platform finishes later and Weave tracks (a queued or scheduled Postiz post), whether the
-  platform has not published it yet, published it, or reported a failure (its stored reason, escaped); a published
+  platform has not reported it published yet (promising no further check, since tracking stops after 7 days, on a
+  revoked credential or for an adapter that cannot report it), published it, or reported a failure (its stored reason, escaped); a published
   post's stored URL is a "View it on the platform" link (`rel="noopener noreferrer"`) only when it is an absolute
   `https://` URL, as the store already requires. `settled` gains `receipt` and `publication`, both null unless the
   status is `completed`; an auth Worker reading a mailbox without them shows "This action was sent." alone. Reading

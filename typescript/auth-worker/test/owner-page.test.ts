@@ -263,7 +263,7 @@ test("actionPage_SentWithReceiptAndPublication_ReferenceStateAndHttpsLinkOnly",a
   assert.ok(plain.includes("This action was sent.")&&plain.includes("<code>posted:&#60;b&#62;1</code>")&&!plain.includes("<b>1"),plain);
   assert.ok(!plain.includes("published")&&!plain.includes("<a href=\"https"),plain);
   const queued=await page({status:"completed",failure:null,receipt:"scheduled:1",publication:{state:"queued",url:null,error:null}});
-  assert.ok(queued.includes("The platform has not published it yet."),queued);
+  assert.ok(queued.includes("The platform has not reported it published yet. Nothing is sent again.")&&!queued.includes("checks again"),queued);
   const published=await page({status:"completed",failure:null,receipt:"posted:1",publication:{state:"published",url:"https://x.test/p?a=1&b=\"2",error:null}});
   assert.ok(published.includes('The platform published it. <a href="https://x.test/p?a=1&#38;b=&#34;2" rel="noopener noreferrer">View it on the platform</a>'),published);
   for(const url of ["javascript:alert(1)","http://x.test/p","//x.test/p","https://",null]){
