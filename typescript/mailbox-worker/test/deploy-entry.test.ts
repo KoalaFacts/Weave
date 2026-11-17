@@ -131,3 +131,19 @@ test('the external_action_keys schema opt-in is a default-off manual input gated
     assert.doesNotMatch(repository,/EXTERNAL_ACTION_KEYS/,'repository-scope and publish/demo releases never opt in');
     assert.equal((workflow.match(/WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA:/g)||[]).length,1);
 });
+
+test('the owner_grants schema opt-in is a default-off manual input gated twice and passed only to the production deploy',()=>{
+    const workflow=readFileSync(path,'utf8');
+    assert.match(workflow,/apply_owner_grants_schema:\n(?:\s+\w+:.*\n)*?\s+type: boolean\n\s+default: false/);
+    const verify=workflow.split(/^  verify:/m)[1].split(/^  deploy-repository:/m)[0];
+    const repository=workflow.split(/^  deploy-repository:/m)[1].split(/^  deploy-production:/m)[0];
+    const production=workflow.split(/^  deploy-production:/m)[1];
+    const gate=/WEAVE_RELEASE_OWNER_GRANTS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_owner_grants_schema \|\| 'false' \}\}/;
+    assert.match(verify,gate);assert.match(production,gate);
+    assert.ok(verify.indexOf('scripts/approved-owner-grants.ts')<verify.indexOf('require-ci-success.ts'),'gated before other release work');
+    assert.ok(production.indexOf('node scripts/approved-owner-grants.ts')<production.indexOf('node scripts/deploy.ts'),'revalidated inside production before the deploy');
+    assert.match(production,/WEAVE_APPROVED_OWNER_GRANTS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_owner_grants_schema == true && 'true' \|\| 'false' \}\}/,
+        'an owner comment can never opt in');
+    assert.doesNotMatch(repository,/OWNER_GRANTS/,'repository-scope and publish/demo releases never opt in');
+    assert.equal((workflow.match(/WEAVE_APPROVED_OWNER_GRANTS_SCHEMA:/g)||[]).length,1);
+});
