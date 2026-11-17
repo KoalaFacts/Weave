@@ -620,8 +620,14 @@ test("actionPage_Fresh_ShowsOnlyThisActionAndApprovingSendsOnce",{timeout:90_000
   // The owner who returns to the link sees what became of it; another human still learns nothing.
   const sent=await (await actionPage(action.actionId,await sessionCookie(human))).text();
   assert.ok(sent.includes("This action was sent.")&&!sent.includes("not waiting for your approval")&&forms(sent).length===0,sent);
+  assert.ok(sent.includes("The platform's reference for it: <code>post-"+action.actionId+"</code>")&&!sent.includes("published it"),sent);
+  // A publication the platform finishes later is tracked; the owner sees its state and an https link, from the mailbox's record.
+  await (await db()).prepare(`INSERT INTO external_publications(action_id,account_id,state,url,error,due_at,checks,next_check_at,updated_at,checked_at)
+    SELECT action_id,account_id,'published','https://example.test/p/1',NULL,created_at,1,NULL,created_at,created_at FROM external_actions WHERE action_id=?`).bind(action.actionId).run();
+  const published=await (await actionPage(action.actionId,await sessionCookie(human))).text();
+  assert.ok(published.includes('The platform published it. <a href="https://example.test/p/1" rel="noopener noreferrer">View it on the platform</a>'),published);
   const strangers=await (await actionPage(action.actionId,await sessionCookie(await seedHuman()))).text();
-  assert.ok(strangers.includes("not waiting for your approval")&&!strangers.includes("was sent"),strangers);
+  assert.ok(strangers.includes("not waiting for your approval")&&!strangers.includes("was sent")&&!strangers.includes("post-")&&!strangers.includes("example.test"),strangers);
   assert.equal((await executeAction(second.agent,second.action.actionId)).status,"pending","the other action is untouched");
 });
 

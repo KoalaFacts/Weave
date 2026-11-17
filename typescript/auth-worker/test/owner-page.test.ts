@@ -3,7 +3,7 @@ import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
 import type {OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import type {HumanSession} from "../src/human-session.ts";
-import {actionPage,ownerFormTokens,ownerPage,ownerResultText,recoveryCodePage} from "../src/owner-page.ts";
+import {actionPage,ownerFormTokens,ownerPage,ownerResultText,recoveryCodePage,type SettledActionView} from "../src/owner-page.ts";
 import {publishingAdapters} from "../../mailbox-worker/src/external-providers.ts";
 import {ownerConnector,type OwnerConnector} from "../../mailbox-worker/src/publishing.ts";
 /** The platforms the mailbox offers, as its own adapters describe them. */
@@ -252,4 +252,31 @@ test("actionPage_SettledMissingPendingOrUnlisted_GenericSentence",async()=>{
     assert.ok(body.includes("<p>"+generic+"</p>")&&!body.includes("undefined")&&!body.includes("function"),JSON.stringify(settled)+": "+body);
   }
   assert.ok((await html(actionPage({frozen:false,action:null,settled:{status:"completed",failure:null}},human,actionId,new Map(),now))).includes("This action was sent."));
+});
+
+// A sent action shows the platform's reference and its tracked publication, escaped; a link is offered only for an absolute https
+// URL, and none of it appears for an action that was not sent.
+test("actionPage_SentWithReceiptAndPublication_ReferenceStateAndHttpsLinkOnly",async()=>{
+  const actionId=randomUUID();
+  const page=async(settled:SettledActionView)=>html(actionPage({frozen:false,action:null,settled},human,actionId,new Map(),now));
+  const plain=await page({status:"completed",failure:null,receipt:"posted:<b>1",publication:null});
+  assert.ok(plain.includes("This action was sent.")&&plain.includes("<code>posted:&#60;b&#62;1</code>")&&!plain.includes("<b>1"),plain);
+  assert.ok(!plain.includes("published")&&!plain.includes("<a href=\"https"),plain);
+  const queued=await page({status:"completed",failure:null,receipt:"scheduled:1",publication:{state:"queued",url:null,error:null}});
+  assert.ok(queued.includes("The platform has not published it yet."),queued);
+  const published=await page({status:"completed",failure:null,receipt:"posted:1",publication:{state:"published",url:"https://x.test/p?a=1&b=\"2",error:null}});
+  assert.ok(published.includes('The platform published it. <a href="https://x.test/p?a=1&#38;b=&#34;2" rel="noopener noreferrer">View it on the platform</a>'),published);
+  for(const url of ["javascript:alert(1)","http://x.test/p","//x.test/p","https://",null]){
+    const body=await page({status:"completed",failure:null,receipt:"posted:1",publication:{state:"published",url,error:null}});
+    assert.ok(body.includes("The platform published it.</p>")&&!body.includes("View it on the platform"),String(url)+": "+body);
+  }
+  const failed=await page({status:"completed",failure:null,receipt:"posted:1",publication:{state:"failed",url:null,error:"quota <exceeded>"}});
+  assert.ok(failed.includes("The platform reported that publishing failed: quota &#60;exceeded&#62;. Weave will not send it again."),failed);
+  // Only a sent action shows these details, whatever the mailbox sends with another status; an older mailbox omits them.
+  for(const status of ["failed","unknown","approved"]){
+    const body=await page({status,failure:null,receipt:"posted:1",publication:{state:"published",url:"https://x.test/p",error:null}});
+    assert.ok(!body.includes("posted:1")&&!body.includes("published it"),status+": "+body);
+  }
+  const older=await page({status:"completed",failure:null});
+  assert.ok(older.includes("This action was sent.")&&!older.includes("reference"),older);
 });
