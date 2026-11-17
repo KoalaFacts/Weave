@@ -17,7 +17,7 @@ refused. The SDK's browser-bound `beginConsent` handle is linked to an
 independently random 256-bit nonce kept in a per-handle SQLite Durable Object.
 The consent page identifies the client, redirect domain, requested scopes and
 the signed-in GitHub login, and offers an **agent picker**: one of the human's
-own agents, or a new agent (at most 10 per human, with hourly creation limits).
+own agents, or a new agent (at most `OWNED_AGENTS_PER_HUMAN` per human, 10 when unset, with hourly creation limits). The picker lists the first 20 agents; an owner with more can name another of their agents by its account ID. `/account` shows 20 agents at a time with links to the next page and back to the first; pending actions and binding requests are listed for all agents on every page.
 The user explicitly chooses Allow or Deny. On Allow the AS validates the SDK
 consent cookie, re-reads the human session, atomically consumes the nonce in a
 DO transaction, then creates the new agent or confirms the chosen one is owned

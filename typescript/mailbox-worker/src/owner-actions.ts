@@ -1,7 +1,7 @@
 import { atomic, type Env, type Transaction } from './database.ts';
 import { confirmKeyRequest, revokeKeyForOwner } from './agent-keys.ts';
 import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, rejectBindingRequest } from './binding-requests.ts';
-import { maxAgentsPerHuman, requireReadable, writesRefused } from './humans.ts';
+import { ownedAgentLimit, ownedAgentPage, requireReadable, writesRefused } from './humans.ts';
 import { rejectKeyRequest } from './key-requests.ts';
 import { revokeGrantIn } from './client-grants.ts';
 import { confirmExternalAction, pendingForOwner, rejectExternalAction, type OwnerExternalAction } from './external-actions.ts';
@@ -14,7 +14,7 @@ import { apiTime, nowUtc } from './time.ts';
 /** A signed-in human may not decide on a session older than this, or one dated further ahead than the skew. */
 export const reauthWindowMs = 600_000;
 export const reauthFutureSkewMs = 60_000;
-const maxGrantsPerAgent = 50, maxAddressesPerAgent = 20, maxRevokedGrantIds = 20;
+const maxGrantsPerAgent = 50, maxAddressesPerAgent = 20, maxRevokedGrantIds = 20, maxRevokedGrantsShown = 200;
 /** 30 days of 100 ns ticks: how long the authorization server keeps retrying SDK clean-up of a revoked grant. */
 const revokedGrantWindowTicks = 25_920_000_000_000n;
 
@@ -23,15 +23,18 @@ export type OwnerBindingRequest = {requestId: string; agentId: string; displayNa
 export type OwnerKeyRequest = {requestId: string; kid: string; label: string | null; endorsedBy: string; createdAt: string; expiresAt: string};
 export type OwnerGrant = {grantId: string; clientId: string; clientName: string | null; createdAt: string};
 export type OwnerAddress = {addressId: string; label: string | null; isPublic: boolean; hasAgentCard: boolean; createdAt: string};
-/** `revokedGrantIds` are grants revoked in the last 30 days, for the authorization server's token clean-up retry; never rendered. */
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[];
-    grants: OwnerGrant[]; addresses: OwnerAddress[]; credentials: OwnerCredential[]; revokedGrantIds: string[]};
+    grants: OwnerGrant[]; addresses: OwnerAddress[]; credentials: OwnerCredential[]};
+/** Grants of one agent revoked in the last 30 days, for the authorization server's token clean-up retry; never rendered. */
+export type RevokedAgentGrants = {agentId: string; revokedGrantIds: string[]};
 /**
- * `externalActions` are the pending governed actions of the human's agents, each confirmed by its `planDigest`.
+ * `agents` is one page of the human's agents, oldest first; `nextAgents` is the cursor of the following page, null on the last.
+ * `externalActions` are the pending governed actions of all the human's agents, each confirmed by its `planDigest`, and
+ * `revokedGrants` the recent revocations of all of them, whichever page is shown.
  * `connectors` are the publishing platforms an owner can connect an agent to, with the fields each asks for.
  */
-export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]; externalActions: OwnerExternalAction[];
-    connectors: OwnerConnector[]};
+export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]; nextAgents: string | null;
+    externalActions: OwnerExternalAction[]; revokedGrants: RevokedAgentGrants[]; connectors: OwnerConnector[]};
 
 export type OwnerAction = {humanId: string; authAt: number} & (
     | {kind: 'confirm-binding'; requestId: string; keysDigest: string}
@@ -64,11 +67,14 @@ type KeyRecord = {account_id: string; kid: string; label: string | null; created
 const ownerKey = (row: KeyRecord): OwnerKey => ({kid: row.kid, label: row.label, createdAt: apiTime(row.created_at)!, lastUsedAt: apiTime(row.last_used_at), coolingUntil: apiTime(row.cooling_until)});
 const placeholders = (values: unknown[]) => values.map(() => '?').join(',');
 
-/** Pending requests and the keys of the human's agents. An unknown human sees nothing; a frozen one sees only that. */
-export async function ownerOverview(env: Env, humanId: string, clock: () => bigint = nowUtc): Promise<OwnerOverview> {
+/**
+ * Pending requests, and the keys of one page of the human's agents after the agent `after` names. An unknown human, or a
+ * cursor that is not one of this human's agents, sees no agents; a frozen human sees only that.
+ */
+export async function ownerOverview(env: Env, humanId: string, after: string | null = null, clock: () => bigint = nowUtc): Promise<OwnerOverview> {
     requireReadable(env);
-    const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: [], externalActions: [], connectors: []};
-    if (typeof humanId !== 'string' || !uuidPattern.test(humanId)) return empty;
+    const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: [], nextAgents: null, externalActions: [], revokedGrants: [], connectors: []};
+    if (typeof humanId !== 'string' || !uuidPattern.test(humanId) || (after !== null && (typeof after !== 'string' || !uuidPattern.test(after)))) return empty;
     return atomic(env.db, async tx => {
         const nowTicks = clock(), now = nowTicks.toString();
         const human = await tx.db.prepare('SELECT subject,frozen_at FROM humans WHERE human_id=?').bind(humanId).first<{subject: string; frozen_at: string | null}>();
@@ -78,8 +84,7 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
             FROM binding_requests b JOIN accounts a ON a.account_id=b.account_id
             WHERE b.target_subject=? AND b.status='pending' AND b.expires_at>CAST(? AS INTEGER) ORDER BY b.created_at,b.request_id LIMIT ?`)
             .bind(human.subject, now, pendingBindingRequestsPerHuman).all<{request_id: string; account_id: string; display_name: string | null; kid: string; created_at: string; expires_at: string}>()).results;
-        const owned = (await tx.db.prepare('SELECT account_id,display_name FROM accounts WHERE human_id=? ORDER BY created_at,rowid LIMIT ?')
-            .bind(humanId, maxAgentsPerHuman).all<{account_id: string; display_name: string | null}>()).results;
+        const {page: owned, next: nextAgents} = await ownedAgentPage(tx, humanId, after);
         const accountIds = [...new Set([...bindings.map(row => row.account_id), ...owned.map(row => row.account_id)])];
         const keys = accountIds.length === 0 ? [] : (await tx.db.prepare(`SELECT account_id,kid,label,CAST(created_at AS TEXT) created_at,CAST(last_used_at AS TEXT) last_used_at,
             CAST(cooling_until AS TEXT) cooling_until FROM agent_keys WHERE account_id IN (${placeholders(accountIds)}) AND revoked_at IS NULL ORDER BY created_at,kid`)
@@ -92,11 +97,18 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
             SELECT *,row_number() OVER (PARTITION BY account_id ORDER BY created_at DESC,grant_id) rank FROM client_grants WHERE human_id=? AND revoked_at IS NULL AND account_id IN (${placeholders(ownedIds)}))
             WHERE rank<=? ORDER BY account_id,rank`)
             .bind(humanId, ...ownedIds, maxGrantsPerAgent).all<{account_id: string; grant_id: string; client_id: string; client_name: string | null; created_at: string}>()).results;
-        const revoked = ownedIds.length === 0 ? [] : (await tx.db.prepare(`SELECT account_id,grant_id FROM (
+        // Every agent's, not only this page's, so a revocation is cleaned up whichever page the owner opens; bounded per agent
+        // so one busy agent cannot starve another.
+        const revoked = (await tx.db.prepare(`SELECT account_id,grant_id FROM (
             SELECT *,row_number() OVER (PARTITION BY account_id ORDER BY revoked_at DESC,grant_id) rank FROM client_grants
-            WHERE human_id=? AND revoked_at IS NOT NULL AND revoked_at>CAST(? AS INTEGER) AND account_id IN (${placeholders(ownedIds)}))
-            WHERE rank<=? ORDER BY account_id,rank`)
-            .bind(humanId, (nowTicks - revokedGrantWindowTicks).toString(), ...ownedIds, maxRevokedGrantIds).all<{account_id: string; grant_id: string}>()).results;
+            WHERE human_id=? AND revoked_at IS NOT NULL AND revoked_at>CAST(? AS INTEGER))
+            WHERE rank<=? ORDER BY revoked_at DESC,grant_id LIMIT ?`)
+            .bind(humanId, (nowTicks - revokedGrantWindowTicks).toString(), maxRevokedGrantIds, maxRevokedGrantsShown).all<{account_id: string; grant_id: string}>()).results;
+        const revokedGrants: RevokedAgentGrants[] = [];
+        for (const row of revoked) {
+            const agent = revokedGrants.find(entry => entry.agentId === row.account_id);
+            if (agent) agent.revokedGrantIds.push(row.grant_id); else revokedGrants.push({agentId: row.account_id, revokedGrantIds: [row.grant_id]});
+        }
         const addresses = ownedIds.length === 0 ? [] : (await tx.db.prepare(`SELECT account_id,address_id,label,is_public,hasCard,CAST(created_at AS TEXT) created_at FROM (
             SELECT a.*,EXISTS(SELECT 1 FROM address_agent_cards c WHERE c.address_id=a.address_id) hasCard,
             row_number() OVER (PARTITION BY a.account_id ORDER BY a.created_at,a.address_id) rank FROM account_addresses a WHERE a.revoked_at IS NULL AND a.account_id IN (${placeholders(ownedIds)}))
@@ -108,12 +120,14 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
             bindingRequests.push({requestId: row.request_id, agentId: row.account_id, displayName: row.display_name, requestingKid: row.kid, liveKeys,
                 keysDigest: await liveKeysDigest(liveKeys.map(key => key.kid)), createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!});
         }
-        const externalActions = await pendingForOwner(tx, ownedIds, nowTicks);
+        const externalActions = await pendingForOwner(tx, humanId, nowTicks);
         const credentials = await ownedCredentials(tx, ownedIds);
         return {
             frozen: false as const,
             bindingRequests,
+            nextAgents,
             externalActions,
+            revokedGrants,
             connectors: publishingAdapters.filter(adapter => publishingAdapter(env, adapter.name)).map(ownerConnector),
             agents: owned.map(agent => ({agentId: agent.account_id, displayName: agent.display_name,
                 keys: keys.filter(key => key.account_id === agent.account_id).map(ownerKey),
@@ -122,8 +136,7 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
                 grants: grants.filter(row => row.account_id === agent.account_id).map(row => ({grantId: row.grant_id, clientId: row.client_id, clientName: row.client_name, createdAt: apiTime(row.created_at)!})),
                 addresses: addresses.filter(row => row.account_id === agent.account_id).map(row => ({addressId: row.address_id, label: row.label, isPublic: row.is_public === 1,
                     hasAgentCard: row.hasCard === 1, createdAt: apiTime(row.created_at)!})),
-                credentials: credentials.filter(row => row.agentId === agent.account_id).map(({agentId: _agentId, ...credential}) => credential),
-                revokedGrantIds: revoked.filter(row => row.account_id === agent.account_id).map(row => row.grant_id)})),
+                credentials: credentials.filter(row => row.agentId === agent.account_id).map(({agentId: _agentId, ...credential}) => credential)})),
         };
     });
 }
@@ -153,7 +166,7 @@ async function decide(env: Env, tx: Transaction, input: DecidedAction, at: bigin
     if (!human) return notFound;
     if (human.frozen_at !== null) return {ok: false, reason: 'frozen'};
     switch (input.kind) {
-        case 'confirm-binding': return confirmBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.keysDigest, at);
+        case 'confirm-binding': return confirmBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.keysDigest, ownedAgentLimit(env), at);
         case 'reject-binding': return rejectBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
         case 'confirm-key': return confirmKeyRequest(tx, input.humanId, input.requestId, at);
         case 'reject-key': return rejectKeyRequest(tx, input.humanId, input.requestId, at);

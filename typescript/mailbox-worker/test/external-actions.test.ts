@@ -4,6 +4,7 @@ import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
 import { actionLifetimeTicks, approvalOrigin, executeExternalAction, listWaitingExternalActions, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
 import { apiTime } from '../src/time.ts';
+import { createOwnedAgent } from '../src/humans.ts';
 import type { Problem } from '../src/wire.ts';
 import type { Env } from '../src/database.ts';
 
@@ -915,7 +916,7 @@ test('ownerOverview_PendingPlanAtItsExactExpiryTick_NoLongerListed', () => scena
     const action = await (await propose(h, agent)).json() as {actionId: string};
     const expiry = await storedExpiry(h, action.actionId);
     const listedAt = async (at: bigint) => {
-        const overview = await ownerOverview(environment(h), humanId, () => at);
+        const overview = await ownerOverview(environment(h), humanId, null, () => at);
         assert.equal(overview.frozen, false);
         return (overview as Extract<typeof overview, {frozen: false}>).externalActions.map(listed => listed.actionId);
     };
@@ -999,4 +1000,23 @@ test('listWaitingExternalActions_PlanAtItsExactExpiryTick_NoLongerListed', () =>
     const listedAt = async (at: bigint) => (await listWaitingExternalActions(environment(h), caller, () => at)).actions.map(a => a.actionId + ':' + a.status);
     assert.deepEqual(await listedAt(expiry - 1n), [action.actionId + ':pending'], 'listed until the tick before its expiry');
     assert.deepEqual(await listedAt(expiry), [], 'not listed from its expiry tick, never as expired');
+}));
+
+// The owner's pending actions are every agent's, named, whichever page of agents the overview shows.
+test('ownerOverview_ActionOfAgentBeyondFirstPage_ListedWithItsName', () => scenario(async ({h}) => {
+    const {agent: first, humanId} = await ownedAgent(h);
+    const many = environment(h, {OWNED_AGENTS_PER_HUMAN: '50', REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '1000'});
+    for (let i = 0; i < 25; i++) assert.equal((await createOwnedAgent(many, {humanId, displayName: 'filler ' + i, sourceIp: '203.0.113.7'})).ok, true);
+    const late = await h.register({displayName: 'Late desk'});
+    await h.db.prepare('UPDATE accounts SET human_id=?,created_at=created_at+1000000000 WHERE account_id=?').bind(humanId, late.accountId).run();
+    await setCredential(h, late.accountId);
+    const response = await propose(h, late, 'From the last page.');
+    assert.equal(response.status, 200, await response.clone().text());
+    const {actionId} = await response.json() as {actionId: string};
+    const overview = await ownerOverview(environment(h), humanId);
+    if (overview.frozen) throw Error('frozen');
+    assert.ok(!overview.agents.some(agent => agent.agentId === late.accountId), 'the proposing agent is not on the first page');
+    assert.ok(overview.agents.some(agent => agent.agentId === first.accountId));
+    const listed = overview.externalActions.find(action => action.actionId === actionId);
+    assert.equal(listed?.agentDisplayName, 'Late desk');
 }));

@@ -1,5 +1,5 @@
 import type {ConsentDescription} from "@cloudflare/workers-oauth-provider";
-import type {AgentSummary} from "../../mailbox-worker/src/humans.ts";
+import type {AgentPage,AgentSummary} from "../../mailbox-worker/src/humans.ts";
 import {replaceInvisible} from "../../mailbox-worker/src/visible-text.ts";
 const esc=(s:string)=>s.replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
 // HTML escaping cannot neutralize bidirectional reordering in client metadata.
@@ -12,20 +12,28 @@ const agentLabel=(agent:AgentSummary)=>(agent.displayName??"Unnamed agent")+" (a
  * Each choice is its own form because a browser submits every text input, and the
  * consent reader accepts an agent name only beside agent=new.
  */
+/** `agents` is the first page of the human's agents; when there are more, another can be named by its account ID. */
 export function consentPage(details:ConsentDescription,handle:string,human:{login:string},
-  agents:AgentSummary[],suggestedName:string):Response{
+  agents:AgentPage,suggestedName:string):Response{
   const scopeItems=details.scope.map(s=>"<li><code>"+visible(s)+"</code></li>").join("")||
     "<li>No tool scope requested; private operations require step-up.</li>";
   const verified=details.clientDomain?"Published by "+visible(details.clientDomain):
     "Self-registered client; its name is not independently verified";
   const handleField='<input type="hidden" name="handle" value="'+esc(handle)+'">';
-  const existing=agents.length?[
+  const existing=agents.agents.length?[
     '<form action="/authorize" method="post" autocomplete="off">',handleField,
     "<fieldset><legend>Use one of your agents</legend>",
-    ...agents.map((agent,i)=>'<label><input type="radio" name="agent" value="'+esc(agent.accountId)+'"'+
+    ...agents.agents.map((agent,i)=>'<label><input type="radio" name="agent" value="'+esc(agent.accountId)+'"'+
       (i===0?" checked":"")+"> "+visible(agentLabel(agent))+"</label><br>"),
     '</fieldset><button name="decision" value="approve">Allow as the selected agent</button></form>'
   ].join(""):"";
+  // Only the first page is listed; the server still checks that a typed ID is one of this human's agents.
+  const another=agents.next===null?"":[
+    '<form action="/authorize" method="post" autocomplete="off">',handleField,
+    '<label for="agentId">Or another of your agents, by its account ID</label> ',
+    '<input type="text" name="agent" id="agentId" required pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"> ',
+    '<button name="decision" value="approve">Allow as that agent</button></form>'
+  ].join("");
   const html=[
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
@@ -36,7 +44,7 @@ export function consentPage(details:ConsentDescription,handle:string,human:{logi
     "<p>Tokens will return to <strong>"+visible(details.redirectHost)+"</strong>.</p>",
     details.redirectIsLoopback?"<p><strong>Local app:</strong> verify that you started this client on your own computer.</p>":"",
     "<h2>Requested permissions</h2><ul>"+scopeItems+"</ul>",
-    existing,
+    existing,another,
     '<form action="/authorize" method="post" autocomplete="off">',handleField,
     '<input type="hidden" name="agent" value="new">',
     '<label for="agentName">Create a new agent named</label> ',

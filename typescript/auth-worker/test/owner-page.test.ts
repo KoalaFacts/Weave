@@ -13,7 +13,7 @@ const now=1_800_000_000_000;
 const kid=()=>randomBytes(32).toString("base64url");
 const human:HumanSession={humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now};
 const iso=(ms:number)=>new Date(ms).toISOString();
-const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],externalActions:[],connectors:[],...over});
+const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],nextAgents:null,externalActions:[],revokedGrants:[],connectors:[],...over});
 const html=(response:Response)=>response.text();
 
 test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
@@ -21,7 +21,7 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   const requestId=randomUUID(),agentId=randomUUID();
   const overview=base({bindingRequests:[{requestId,agentId,displayName:'<script>alert(1)</script>',requestingKid:requesting,
     liveKeys:[{kid:live,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:iso(now+3_600_000)}],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+86_400_000)}],
-    agents:[{agentId:randomUUID(),displayName:null,keys:[{kid:kid(),label,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],keyRequests:[],grants:[],addresses:[],credentials:[],revokedGrantIds:[]}]});
+    agents:[{agentId:randomUUID(),displayName:null,keys:[{kid:kid(),label,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],keyRequests:[],grants:[],addresses:[],credentials:[]}]});
   const tokens=new Map([["confirm-binding:"+requestId,"tok-confirm"],["reject-binding:"+requestId,"tok-reject"]]);
   const response=ownerPage(overview,human,tokens,null,now);
   assert.equal(response.status,200);
@@ -42,13 +42,13 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
 });
 
 const agent=(over:Partial<Extract<OwnerOverview,{frozen:false}>["agents"][number]>={})=>({agentId:randomUUID(),displayName:"a",keys:[],keyRequests:[],
-  grants:[],addresses:[],credentials:[],revokedGrantIds:[],...over});
+  grants:[],addresses:[],credentials:[],...over});
 
 test("ownerPage_ConnectedClients_EscapedUnverifiedWithRevoke",async()=>{
   const hostile=randomUUID(),unnamed=randomUUID(),revoked=randomUUID();
   const overview=base({agents:[agent({grants:[
     {grantId:hostile,clientId:'javascript:alert(1)//"><script>x</script>',clientName:'<script>alert(1)</script><a href="javascript:alert(2)">x</a>',createdAt:iso(now)},
-    {grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now-1000)}],revokedGrantIds:[revoked]})]});
+    {grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now-1000)}]})],revokedGrants:[{agentId:randomUUID(),revokedGrantIds:[revoked]}]});
   const tokens=new Map([["revoke-grant:"+hostile,"tok-hostile"],["revoke-grant:"+unnamed,"tok-unnamed"],["revoke-grant:"+revoked,"tok-revoked"]]);
   const body=await html(ownerPage(overview,human,tokens,null,now));
   assert.ok(body.includes("<h4>Connected clients</h4>"));
@@ -105,7 +105,7 @@ test("ownerFormTokens_CoversEveryFormTheOverviewRenders",async()=>{
   const overview=base({bindingRequests:[{requestId,agentId:randomUUID(),displayName:null,requestingKid:kid(),liveKeys:[],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1)}],
     agents:[{agentId,displayName:"a",keys:[{kid:keyId,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],
       keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}],
-      grants:[{grantId,clientId:"https://client.example/cimd.json",clientName:"c",createdAt:iso(now)}],addresses:[],credentials:[],revokedGrantIds:[randomUUID()]}],connectors});
+      grants:[{grantId,clientId:"https://client.example/cimd.json",clientName:"c",createdAt:iso(now)}],addresses:[],credentials:[]}],revokedGrants:[{agentId,revokedGrantIds:[randomUUID()]}],connectors});
   const tokens=await ownerFormTokens(signingKey,human.humanId,overview,now,false);
   assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,...connectors.map(c=>"connect-account:"+agentId+":"+c.provider),"issue-recovery-code:"+agentId,
     "reject-binding:"+requestId,"reject-key:"+keyRequestId,"revoke-grant:"+grantId,"revoke-key:"+agentId+":"+keyId].sort());
@@ -124,7 +124,7 @@ test("recoveryCodePage_ShowsCodeNoStoreAndRedeemInstructions",async()=>{
 
 test("ownerPage_PendingAction_ShowsEscapedContentVerifiedAccountAndBoundForms",async()=>{
   const actionId=randomUUID(),agentId=randomUUID(),planDigest=kid();
-  const overview=base({agents:[agent({agentId,displayName:"Publisher"})],externalActions:[{actionId,agentId,provider:"test-http",operation:"publish_text",
+  const overview=base({agents:[agent({agentId,displayName:"Publisher"})],externalActions:[{actionId,agentId,agentDisplayName:"Publisher",provider:"test-http",operation:"publish_text",
     content:'Episode 12\n<script>alert(1)</script>',credentialRef:"linkedin-main",credentialRevision:"rev-7",targetAccount:"urn:li:person:alpha",
     targetDisplay:"Desk <b>Alpha</b>",planDigest,createdAt:iso(now),expiresAt:iso(now+3_600_000),media:[],accountChanged:false}]});
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
@@ -141,7 +141,7 @@ test("ownerPage_PendingAction_ShowsEscapedContentVerifiedAccountAndBoundForms",a
 
 test("ownerPage_ActionWhoseAccountChanged_OffersOnlyRejectWithTheReason",async()=>{
   const actionId=randomUUID(),agentId=randomUUID();
-  const action={actionId,agentId,provider:"test-http",operation:"publish_text",content:"Episode 12",credentialRef:"linkedin-main",credentialRevision:"rev-7",
+  const action={actionId,agentId,agentDisplayName:"Publisher",provider:"test-http",operation:"publish_text",content:"Episode 12",credentialRef:"linkedin-main",credentialRevision:"rev-7",
     targetAccount:"urn:li:person:alpha",targetDisplay:"Desk Alpha",planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+3_600_000),media:[],accountChanged:true};
   const overview=base({agents:[agent({agentId,displayName:"Publisher"})],externalActions:[action]});
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
@@ -178,7 +178,7 @@ test("ownerPage_ConnectedAccounts_ShowVerifiedChannelDisconnectAndConnectOnlyWhe
 
 test("ownerPage_ActionWithMedia_PreviewsOnlyItsFilesAndOffersPostizConnect",async()=>{
   const actionId=randomUUID(),agentId=randomUUID(),image=randomUUID(),video=randomUUID();
-  const overview=base({agents:[agent({agentId})],connectors,externalActions:[{actionId,agentId,provider:"postiz",operation:"publish_post",
+  const overview=base({agents:[agent({agentId})],connectors,externalActions:[{actionId,agentId,agentDisplayName:null,provider:"postiz",operation:"publish_post",
     content:JSON.stringify({text:"New beat",media:[{mediaId:image},{mediaId:video}]}),credentialRef:"postiz:abc",credentialRevision:"r",targetAccount:"tiktok/abc",
     targetDisplay:"tiktok · HSC Beats",planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1),media:[{mediaId:image,contentType:"image/png"},{mediaId:video,contentType:"video/mp4"}],accountChanged:false}]});
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
@@ -203,4 +203,23 @@ test("ownerPage_ConnectForm_BuiltFromThePlatformsFieldsAndEscaped",async()=>{
   assert.ok(body.includes('<label>User &#60;i&#62; <input type="text" name="user" autocomplete="off" required placeholder="a&#34;b"></label>'));
   assert.ok(body.includes('<input type="password" name="key" autocomplete="off" required pattern="[a-z]+&#34;">'),"a secret field is a password input");
   assert.ok(body.includes("Connect &#60;b&#62;Demo&#60;/b&#62;</button>")&&body.includes("<p>Use &#34;x&#34; &#38; &#60;y&#62;</p>"));
+});
+
+test("ownerPage_AgentPages_LinksToMoreAndFirstAgents",async()=>{
+  const next=randomUUID();
+  const first=await html(ownerPage(base({agents:[agent()],nextAgents:next}),human,new Map(),null,now));
+  assert.ok(first.includes('<a href="/account?agents='+next+'">More agents</a>')&&!first.includes("First agents"));
+  const middle=await html(ownerPage(base({agents:[agent()],nextAgents:next}),human,new Map(),null,now,randomUUID()));
+  assert.ok(middle.includes('<a href="/account">First agents</a>')&&middle.includes("More agents"));
+  const last=await html(ownerPage(base({agents:[agent()]}),human,new Map(),null,now,randomUUID()));
+  assert.ok(last.includes("First agents")&&!last.includes("More agents"));
+  const none=await html(ownerPage(base(),human,new Map(),null,now));
+  assert.ok(none.includes("You do not own any agents yet.")&&!none.includes("<a "));
+});
+
+test("ownerPage_ActionOfAnAgentNotOnThisPage_NamedFromTheAction",async()=>{
+  const actionId=randomUUID();
+  const overview=base({agents:[agent()],externalActions:[{actionId,agentId:randomUUID(),agentDisplayName:"Late desk",provider:"test-http",operation:"publish_text",
+    content:"x",credentialRef:"c",credentialRevision:"r",targetAccount:"t",targetDisplay:"T",planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1),media:[],accountChanged:false}]});
+  assert.ok((await html(ownerPage(overview,human,new Map(),null,now))).includes("Late desk (self-reported, not verified) wants to publish_text"));
 });

@@ -127,3 +127,44 @@ It is not repeated here. The preceding slice is the
   attacker with many source addresses.
 - The owner page was exercised with simulated GitHub sign-in, not a real GitHub
   OAuth app.
+
+## Owners with many agents (2026-11-17)
+
+Owner decision of 2026-11-17: a person may own thousands of agents (an app that
+manages them, such as an office of many roles, is Weave's next consumer). This
+section changes only how many agents a human may own and how their agents are
+listed; binding, keys and the unclaimed limits above are unchanged.
+
+- **The limit is a setting.** `OWNED_AGENTS_PER_HUMAN` (1 to 100000) replaces
+  the fixed 10; unset keeps 10, so a deployment changes nothing until the
+  operator sets it. A malformed value fails closed: creating an owned agent and
+  confirming a binding answer 503 and write nothing. Both still count the human's
+  agents in the same optimistic transaction as the write. Hourly registration
+  limits are unchanged, so creating many agents still takes as many hours as
+  `REGISTRATION_PER_IP_PER_HOUR` dictates.
+- **Lists are paged.** D1 refuses a statement with more than 100 bound
+  parameters, and the owner overview passed every owned agent's ID into `IN (…)`
+  lists, so with the limit raised it would have failed past about 90 agents
+  (checked: 150 parameters answer `too many SQL variables`). `listHumanAgents`
+  (the consent picker) and `ownerOverview` (the owner page) now take one page of
+  20 agents, oldest first, keyed by creation time and row, with the next page's
+  cursor; a cursor that is not one of the human's agents yields an empty page.
+- **What stays human-wide.** Pending external actions are read through the
+  owning human, not a list of IDs, so every page shows them all (the oldest 200),
+  each now carrying its agent's display name. Recently revoked grants for SDK
+  clean-up are read the same way (at most 20 per agent, 200 in all), so a
+  revocation is cleaned up whichever page the owner opens. The RPC result moved
+  them from each agent to `revokedGrants`.
+- **Pages.** `/account?agents=<cursor>` shows the next 20 agents with links to
+  the following page and back to the first; an unusable cursor shows the first
+  page. The consent picker lists the first 20 agents and, when there are more,
+  lets the owner name another of their agents by its account ID; the existing
+  ownership check still decides.
+
+Verification: mailbox-worker `humans`, `owner-actions` and `external-actions`
+tests (a configured limit of 25 and 11, malformed values, paging 25 and 120
+agents through every page once, foreign and malformed cursors, an action of an
+agent beyond the first page named on the first); auth-worker portable tests for
+the page links and picker, and a workerd two-worker test that walks 25 agents
+through `/account` pages over the real `HumanDirectory` RPC. Not verified
+against a deployment; no deployed configuration sets the new variable.

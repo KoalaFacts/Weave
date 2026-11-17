@@ -1,5 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentSummary } from './humans.ts';
+import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentPage } from './humans.ts';
 import { demo, connect } from './demo';
 import { agentStart } from './agent-start';
 import { registry } from './registry';
@@ -38,10 +38,10 @@ import { validatePayload } from './protocol';
 const scopedEnv = (env: Env): Env => ({ ...env, db: budgetDatabase(env.db) });
 export class HumanDirectory extends WorkerEntrypoint<Env> {
     signIn(input: HumanSignIn): Promise<SignInResult> { return signInHuman(scopedEnv(this.env), input); }
-    listAgents(humanId: string): Promise<AgentSummary[]> { return listHumanAgents(scopedEnv(this.env), humanId); }
+    listAgents(humanId: string, after: string | null = null): Promise<AgentPage> { return listHumanAgents(scopedEnv(this.env), humanId, after); }
     createAgent(input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> { return createOwnedAgent(scopedEnv(this.env), input); }
     hasAgent(humanId: string, accountId: string): Promise<boolean> { return humanHasAgent(scopedEnv(this.env), humanId, accountId); }
-    ownerOverview(humanId: string): Promise<OwnerOverview> { return ownerOverview(scopedEnv(this.env), humanId); }
+    ownerOverview(humanId: string, after: string | null = null): Promise<OwnerOverview> { return ownerOverview(scopedEnv(this.env), humanId, after); }
     ownerAction(input: OwnerAction): Promise<OwnerActionResult> { return ownerAction(scopedEnv(this.env), input); }
     connectCredential(input: ConnectCredentialInput): Promise<ConnectCredentialResult> { return connectExternalCredential(scopedEnv(this.env), input); }
     connectAccount(input: ConnectAccountInput): Promise<ConnectAccountResult> { return connectAccount(scopedEnv(this.env), input); }

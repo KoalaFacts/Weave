@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start } from './harness.ts';
-import { createOwnedAgent, humanHasAgent, listHumanAgents, maxAgentsPerHuman, signInHuman, type HumanSignIn } from '../src/humans.ts';
+import { agentPageSize, createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type HumanSignIn } from '../src/humans.ts';
+
+const defaultOwnedLimit = 10;
 import type { Env } from '../src/database.ts';
 
 const environment = (h: { db: unknown }, overrides: Partial<Env> = {}) => ({
@@ -84,7 +86,7 @@ test('createOwnedAgent_NewHuman_AgentListedWithoutKey', async () => {
         const created = await create(env, id);
         assert.equal(created.ok, true);
         const accountId = (created as { accountId: string }).accountId;
-        assert.deepEqual(await listHumanAgents(env, id), [{ accountId, displayName: 'Claude Code' }]);
+        assert.deepEqual((await listHumanAgents(env, id)).agents, [{ accountId, displayName: 'Claude Code' }]);
         assert.equal(await humanHasAgent(env, id, accountId), true);
         assert.equal(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(accountId).first('human_id'), id);
         assert.equal(await h.db.prepare('SELECT count(*) n FROM agent_keys WHERE account_id=?').bind(accountId).first('n'), 0);
@@ -98,9 +100,9 @@ test('createOwnedAgent_EleventhAgent_ReturnsAgentLimit', async () => {
     const h = await start();
     try {
         const env = environment(h), id = await humanId(env);
-        for (let i = 0; i < maxAgentsPerHuman; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
+        for (let i = 0; i < defaultOwnedLimit; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
         assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
-        assert.equal((await listHumanAgents(env, id)).length, 10);
+        assert.equal((await listHumanAgents(env, id)).agents.length, 10);
     } finally { await h.close(); }
 });
 
@@ -112,7 +114,7 @@ test('createOwnedAgent_ConcurrentAtNine_OnlyOneSucceeds', async () => {
         const results = await Promise.all([create(env, id, 'left'), create(env, id, 'right')]);
         assert.equal(results.filter(r => r.ok).length, 1);
         assert.deepEqual(results.find(r => !r.ok), { ok: false, reason: 'agent-limit' });
-        assert.equal((await listHumanAgents(env, id)).length, 10);
+        assert.equal((await listHumanAgents(env, id)).agents.length, 10);
     } finally { await h.close(); }
 });
 
@@ -121,7 +123,7 @@ test('listHumanAgents_ManyAgents_OldestFirst', async () => {
     try {
         const env = environment(h), id = await humanId(env);
         for (const name of ['first', 'second', 'third']) await create(env, id, name);
-        assert.deepEqual((await listHumanAgents(env, id)).map(a => a.displayName), ['first', 'second', 'third']);
+        assert.deepEqual((await listHumanAgents(env, id)).agents.map(a => a.displayName), ['first', 'second', 'third']);
     } finally { await h.close(); }
 });
 
@@ -140,7 +142,7 @@ test('createOwnedAgent_InvalidName_ReturnsInvalid', async () => {
     try {
         const env = environment(h), id = await humanId(env);
         for (const name of ['', '   ', '\u00a0\u2003', 'a'.repeat(129), 'a\u0007']) assert.deepEqual(await create(env, id, name), { ok: false, reason: 'invalid' });
-        assert.deepEqual(await listHumanAgents(env, id), []);
+        assert.deepEqual((await listHumanAgents(env, id)).agents, []);
     } finally { await h.close(); }
 });
 
@@ -154,7 +156,7 @@ test('createOwnedAgent_BidiFormattingControls_CannotSpoofAgentPickerName', async
             'Safe\u200Fhidden', 'Safe\u061Chidden']) {
             assert.deepEqual(await create(env, id, name), { ok: false, reason: 'invalid' }, JSON.stringify(name));
         }
-        assert.deepEqual(await listHumanAgents(env, id), []);
+        assert.deepEqual((await listHumanAgents(env, id)).agents, []);
         // Legitimate multilingual names and emoji sequences must remain usable.
         assert.equal((await create(env, id, '合作助手 👩‍💻')).ok, true);
     } finally { await h.close(); }
@@ -171,7 +173,7 @@ test('createOwnedAgent_InvisibleDefaultIgnorables_CannotHideOrSpoofPickerName', 
             assert.deepEqual(await create(env, id, name), { ok: false, reason: 'invalid' },
                 JSON.stringify(name));
         }
-        assert.deepEqual(await listHumanAgents(env, id), [],
+        assert.deepEqual((await listHumanAgents(env, id)).agents, [],
             'rejected invisible-name attempts must not consume the ten-agent quota');
         // Ordinary non-Latin text and the ZWJ in an emoji sequence still work.
         assert.equal((await create(env, id, 'مرحبا 👩‍💻')).ok, true);
@@ -209,7 +211,7 @@ test('createOwnedAgent_GlobalAccountCapReached_StillCreatesUpToPerHumanLimit', a
         const env = environment(h, { REGISTRATION_MAX_ACCOUNTS: '1' }), id = await humanId(env);
         await h.register();
         await h.register();
-        for (let i = 0; i < maxAgentsPerHuman; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
+        for (let i = 0; i < defaultOwnedLimit; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
         assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
     } finally { await h.close(); }
 });
@@ -223,7 +225,7 @@ test('humanDirectory_MaintenanceMode_RefusesWritesAndReads', async () => {
         assert.deepEqual(await create(env, id), { ok: false, reason: 'unavailable' });
         await assert.rejects(listHumanAgents(env, id), { status: 503 });
         await assert.rejects(humanHasAgent(env, id, created.accountId), { status: 503 });
-        assert.equal((await listHumanAgents(open, id)).length, 1);
+        assert.equal((await listHumanAgents(open, id)).agents.length, 1);
     } finally { await h.close(); }
 });
 
@@ -234,7 +236,7 @@ test('humanDirectory_RecoveryReadOnly_RefusesWritesButAllowsReads', async () => 
         const env = environment(h, { RECOVERY_READ_ONLY: 'true' });
         assert.deepEqual(await signInHuman(env, github('999')), { ok: false, reason: 'unavailable' });
         assert.deepEqual(await create(env, id), { ok: false, reason: 'unavailable' });
-        assert.equal((await listHumanAgents(env, id)).length, 1);
+        assert.equal((await listHumanAgents(env, id)).agents.length, 1);
         assert.equal(await humanHasAgent(env, id, created.accountId), true);
     } finally { await h.close(); }
 });
@@ -244,7 +246,7 @@ test('createOwnedAgent_RegistrationDisabled_ReturnsUnavailable', async () => {
     try {
         const open = environment(h), id = await humanId(open);
         assert.deepEqual(await create(environment(h, { REGISTRATION_ENABLED: 'false' }), id), { ok: false, reason: 'unavailable' });
-        assert.deepEqual(await listHumanAgents(open, id), []);
+        assert.deepEqual((await listHumanAgents(open, id)).agents, []);
     } finally { await h.close(); }
 });
 
@@ -254,11 +256,58 @@ test('humanDirectory_FrozenAfterCreatingAgent_RefusesManagement', async () => {
         const env = environment(h), id = await humanId(env), other = await humanId(env, '456');
         const created = await create(env, id) as { accountId: string };
         await h.db.prepare("UPDATE humans SET frozen_at=updated_at WHERE human_id=?").bind(id).run();
-        assert.deepEqual(await listHumanAgents(env, id), []);
+        assert.deepEqual((await listHumanAgents(env, id)).agents, []);
         assert.equal(await humanHasAgent(env, id, created.accountId), false);
         assert.deepEqual(await create(env, id, 'Another'), { ok: false, reason: 'frozen' });
         assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(id).first('n'), 1);
         // Over-correction guard: an unfrozen human is unaffected.
         assert.equal((await create(env, other)).ok, true);
+    } finally { await h.close(); }
+});
+
+test('createOwnedAgent_ConfiguredLimit_AllowsThatManyThenAgentLimit', async () => {
+    const h = await start();
+    try {
+        const env = environment(h, { OWNED_AGENTS_PER_HUMAN: '25', REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '1000' }), id = await humanId(env);
+        for (let i = 0; i < 25; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true, 'agent ' + i);
+        assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
+    } finally { await h.close(); }
+});
+
+test('createOwnedAgent_MalformedLimit_FailsClosedWithoutCreating', async () => {
+    const h = await start();
+    try {
+        const open = environment(h), id = await humanId(open);
+        for (const value of ['0', '-1', '1.5', '100001', 'many', ' 5', '05'])
+            await assert.rejects(create(environment(h, { OWNED_AGENTS_PER_HUMAN: value }), id), { status: 503 }, value);
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(id).first('n'), 0);
+    } finally { await h.close(); }
+});
+
+test('listHumanAgents_MoreThanOnePage_PagesOldestFirstWithCursor', async () => {
+    const h = await start();
+    try {
+        const env = environment(h, { OWNED_AGENTS_PER_HUMAN: '100', REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '1000' }), id = await humanId(env);
+        const created: string[] = [];
+        for (let i = 0; i < agentPageSize + 5; i++) created.push((await create(env, id, 'agent ' + i) as { accountId: string }).accountId);
+        const first = await listHumanAgents(env, id);
+        assert.deepEqual(first.agents.map(a => a.accountId), created.slice(0, agentPageSize));
+        assert.equal(first.next, created[agentPageSize - 1]);
+        const second = await listHumanAgents(env, id, first.next);
+        assert.deepEqual(second.agents.map(a => a.accountId), created.slice(agentPageSize));
+        assert.equal(second.next, null);
+    } finally { await h.close(); }
+});
+
+test('listHumanAgents_CursorOfAnotherHumansAgent_EmptyPage', async () => {
+    const h = await start();
+    try {
+        const env = environment(h), id = await humanId(env), other = await humanId(env, '456');
+        // Theirs is older than mine, so a cursor read without the owner check would list mine after it.
+        const theirs = await create(env, other, 'theirs') as { accountId: string };
+        await create(env, id, 'mine');
+        assert.deepEqual(await listHumanAgents(env, id, theirs.accountId), { agents: [], next: null });
+        assert.deepEqual(await listHumanAgents(env, id, crypto.randomUUID()), { agents: [], next: null });
+        await assert.rejects(listHumanAgents(env, id, 'not-a-uuid'), { status: 400 });
     } finally { await h.close(); }
 });

@@ -457,7 +457,7 @@ test("account_HumanAtTenAgents_ShowsAgentLimit",{timeout:120_000},async()=>{
   const response=await postAccount(await tokenFor(human,"Confirm binding"),await sessionCookie(human));
   assert.equal(result(response),"agent-limit");
   const page=await (await shared.mf.dispatchFetch(issuer+response.headers.get("location")!,{redirect:"manual",headers:{Cookie:await sessionCookie(human)}})).text();
-  assert.ok(page.includes("maximum of 10 agents"));
+  assert.ok(page.includes("You already own as many agents as this server allows."));
   assert.equal(await ownerOf(agent),null);
   assert.equal(await bindingStatus(agent,view.requestId),"pending");
 });
@@ -837,4 +837,21 @@ test("ownerMedia_OnlyTheOwnerSeesFilesTheActionNames",{timeout:90_000},async()=>
   await bucket.put(agent.accountId+"/"+mediaId,bytes);
   await humans.prepare("DELETE FROM external_media WHERE media_id=?").bind(mediaId).run();
   assert.equal((await preview(human,mediaId)).status,404,"media record gone: the object alone is not served");
+});
+
+// More agents than one page: the owner walks the pages through the real mailbox RPC; nothing is lost or repeated.
+test("account_MoreAgentsThanOnePage_LinksThroughEveryAgent",{timeout:180_000},async()=>{
+  const human=await seedHuman(),cookie=await sessionCookie(human),ids:string[]=[];
+  for(let i=0;i<25;i++)ids.push((await ownedAgent(human,"paged"+i)).accountId);
+  const first=await (await account(cookie)).text();
+  const more=/<a href="(\/account\?agents=[0-9a-f-]{36})">More agents<\/a>/.exec(first);
+  assert.ok(more,"the first page links to the next one");
+  assert.ok(!first.includes("First agents"));
+  assert.deepEqual(ids.filter(id=>first.includes(id)),ids.slice(0,20));
+  const second=await (await shared.mf.dispatchFetch(issuer+more[1],{redirect:"manual",headers:{Cookie:cookie}})).text();
+  assert.deepEqual(ids.filter(id=>second.includes(id)),ids.slice(20));
+  assert.ok(second.includes('<a href="/account">First agents</a>')&&!second.includes("More agents"));
+  const odd=await shared.mf.dispatchFetch(issuer+"/account?agents=not-a-cursor",{redirect:"manual",headers:{Cookie:cookie}});
+  assert.equal(odd.status,200,"an unusable cursor shows the first page");
+  assert.ok((await odd.text()).includes(ids[0]!));
 });
