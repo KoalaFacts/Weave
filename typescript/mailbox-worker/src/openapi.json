@@ -441,6 +441,50 @@
       }
     },
     "/v1/external-actions": {
+      "get": {
+        "operationId": "listWaitingExternalActions",
+        "summary": "List this agent's waiting external actions",
+        "description": "Every pending or approved action of this agent that has not expired, oldest first: at most 20, the waiting-plan limit, so there is no cursor. Use it to find a plan whose propose answer or action ID was lost while it can still be approved or executed. Settled and expired actions are not listed; read one by its ID. Nothing is sent to any provider.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "actions"
+                  ],
+                  "properties": {
+                    "actions": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": {
+                        "$ref": "#/components/schemas/ExternalActionView"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      },
       "post": {
         "operationId": "proposeExternalAction",
         "summary": "Propose a governed external action",

@@ -168,9 +168,30 @@ Mutation checks: each of these fails at least one test:
 - dropping the replayed action's account check;
 - re-checking waiting-plan capacity on replay (only the full-capacity replay test fails).
 
+## Listing waiting plans (2026-11-17)
+
+Request option 2, added after the key: a proposal sent without a key, or an action ID an app lost, could only be found
+in the inbox notices, whose 50 slots other changes can fill.
+
+- `GET /v1/external-actions` returns `{actions: [...]}`: every `pending` or `approved` action of the calling agent
+  whose expiry is still ahead, oldest first by creation (then action ID), each exactly as
+  `GET /v1/external-actions/{actionId}` returns it (a waiting plan has no `publication`). The 20-waiting-plans limit
+  bounds it, so there is no cursor; query parameters are ignored. Completed, failed, unknown, rejected and expired
+  actions are read by ID. One indexed read (`external_actions_account`); no schema change; nothing is sent.
+- HTTP only; the MCP tools are unchanged (`get_external_action` reads by ID).
+- Verification: `listWaitingExternalActions_PendingAndApprovedOfThisAgentOnly_OldestFirstUntilSettledOrExpired`
+  (empty list, order by stored creation tick, another agent's plan absent, entry equal to the by-ID read, approved still
+  listed without `approvalUrl`, completed/rejected/expired dropped, nothing sent), the capacity test (all 20 listed) and
+  `listWaitingExternalActions_RevokedKey_Unauthenticated`, through the worker's HTTP entry.
+- Mutation checks, each caught: listing settled statuses, dropping the expiry filter, listing a plan at its exact expiry tick (`>=`), ordering by ID only, ordering
+  newest first, a limit of 10, dropping the agent filter, reading views at a later clock. Dropping the in-transaction
+  key check is not caught: request authentication already refuses a revoked key, so the check is defence in depth, as
+  for the by-ID read.
+
 ## Limits
 
 - No list endpoint (`GET /v1/external-actions?status=pending`); the key is the reconciliation path.
+  (2026-11-17: `GET /v1/external-actions` now lists waiting plans; see "Listing waiting plans" above.)
 - The key identifies a proposal, not an execution. `execute` was already safe to repeat: it never re-sends a
   dispatched action.
 - Not deployable through the current `completed-only` release (see Storage). Envoylet's demo check (propose with a
