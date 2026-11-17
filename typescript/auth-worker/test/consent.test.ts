@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type {AgentPage,AgentSummary} from "../../mailbox-worker/src/humans.ts";
 import {randomUUID} from "node:crypto";
 import {test} from "node:test";
 import {createChallenge,validChallenge,readConsent} from "../src/challenge.ts";
@@ -13,6 +14,8 @@ const details={
   redirectHost:"127.0.0.1",redirectIsLoopback:true,
   scope:['weave:messages.send"><svg onload=x>']
 } as Parameters<typeof consentPage>[0];
+
+const agentPage=(agents:AgentSummary[],next:string|null=null):AgentPage=>({agents,next});
 
 test("256-bit canonical challenges are unique and reject alternate encodings",()=>{
   const nonces=Array.from({length:80},createChallenge);
@@ -52,7 +55,7 @@ test("readConsent_ValidChoices_ReturnForm",async()=>{
 test("consentPage_OwnerWithAgents_ListsEscapedAgentsAndSignedInLogin",async()=>{
   const first=randomUUID(),second=randomUUID();
   const response=consentPage(details,createChallenge(),{login:"alice"},
-    [{accountId:first,displayName:"<b>Claude</b>"},{accountId:second,displayName:null}],"Claude Code");
+    agentPage([{accountId:first,displayName:"<b>Claude</b>"},{accountId:second,displayName:null}]),"Claude Code");
   const html=await response.text();
   assert.equal(response.status,200);
   assert.match(html,/Signed in as @alice/);
@@ -70,10 +73,10 @@ test("consentPage_DuplicateNames_ShowsFullAccountIdentityBesideEveryChoice",asyn
   // A human can own several agents with the same display name. Choosing the
   // wrong radio button must not silently authorize a different private mailbox.
   const first=randomUUID(),second=randomUUID();
-  const response=consentPage(details,createChallenge(),{login:"alice"},[
+  const response=consentPage(details,createChallenge(),{login:"alice"},agentPage([
     {accountId:first,displayName:"Shared agent"},
     {accountId:second,displayName:"Shared agent"}
-  ],"New agent");
+  ]),"New agent");
   const html=await response.text();
   const choices=html.match(/<label><input type="radio"[^>]*>[^<]*<\/label>/g)??[];
   assert.equal(choices.length,2);
@@ -89,7 +92,7 @@ test("consentPage_DuplicateNames_ShowsFullAccountIdentityBesideEveryChoice",asyn
 
 test("consentPage_EachForm_SubmitsOnlyFieldsReadConsentAccepts",async()=>{
   const html=await consentPage(details,createChallenge(),{login:"alice"},
-    [{accountId:randomUUID(),displayName:"A"}],"Claude Code").text();
+    agentPage([{accountId:randomUUID(),displayName:"A"}]),"Claude Code").text();
   const forms=html.match(/<form[\s\S]*?<\/form>/g)??[];
   assert.ok(forms.length>=2);
   for(const form of forms){
@@ -102,7 +105,7 @@ test("consentPage_EachForm_SubmitsOnlyFieldsReadConsentAccepts",async()=>{
 });
 
 test("consentPage_UntrustedClient_EscapesMetadataAndKeepsHeaders",async()=>{
-  const response=consentPage(details,createChallenge(),{login:"alice"},[],"Claude Code");
+  const response=consentPage(details,createChallenge(),{login:"alice"},agentPage([]),"Claude Code");
   const html=await response.text();
   assert.doesNotMatch(html,/<script>alert\(1\)<\/script>|<svg onload=x>|<img src=x>/);
   assert.match(html,/&#60;script&#62;/);assert.match(html,/&#60;svg/);
@@ -112,7 +115,7 @@ test("consentPage_UntrustedClient_EscapesMetadataAndKeepsHeaders",async()=>{
   assert.match(response.headers.get("content-security-policy")??"",/form-action 'self'/);
   assert.equal(response.headers.get("referrer-policy"),"no-referrer");
   assert.equal(response.headers.get("x-frame-options"),"DENY");
-  const unverified=await consentPage({...details,clientDomain:undefined},createChallenge(),{login:"alice"},[],"x").text();
+  const unverified=await consentPage({...details,clientDomain:undefined},createChallenge(),{login:"alice"},agentPage([]),"x").text();
   assert.match(unverified,/Self-registered client; its name is not independently verified/);
 });
 
@@ -141,7 +144,7 @@ test("consentPage_UntrustedUnicodeDirections_CannotSpoofDisplayedOAuthMetadata",
     redirectHost:"client\u200F.example",
     scope:["weave:messages.send\u061C"]
   },createChallenge(),{login:"alice"},
-  [{accountId:randomUUID(),displayName:"Agent\u202Ehidden"}],"New\u200Eagent");
+  agentPage([{accountId:randomUUID(),displayName:"Agent\u202Ehidden"}]),"New\u200Eagent");
   const html=await page.text();
   assert.doesNotMatch(html,/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u,
     "direction formatting must not reach consent text or form values");
@@ -182,4 +185,13 @@ test("readConsent_CancelNeverSettles_StillReturnsAtDeadline",{timeout:6_000},asy
   const start=performance.now();
   assert.equal(await readConsent(request),null);
   assert.ok(performance.now()-start<5_500,"cleanup must not defeat the upload deadline");
+});
+
+test("consentPage_MoreAgentsThanOnePage_OffersAnAgentIdThatReadConsentAccepts",async()=>{
+  const listed=randomUUID();
+  const html=await consentPage(details,createChallenge(),{login:"alice"},agentPage([{accountId:listed,displayName:"A"}],listed),"Claude Code").text();
+  assert.ok(html.includes("Or another of your agents, by its account ID"));
+  assert.match(html,/<input type="text" name="agent" id="agentId" required pattern="\[0-9a-f\]\{8\}/);
+  const one=await consentPage(details,createChallenge(),{login:"alice"},agentPage([{accountId:listed,displayName:"A"}]),"Claude Code").text();
+  assert.ok(!one.includes("agentId"),"no ID field when every agent is listed");
 });

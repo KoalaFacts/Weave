@@ -24,7 +24,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "not-found":"That request, key or connected client was not found.",
   "not-pending":"That request was already decided or cancelled.",
   expired:"That request has expired.",
-  "agent-limit":"You already own the maximum of 10 agents.",
+  "agent-limit":"You already own as many agents as this server allows.",
   "already-owned":"That agent already belongs to a person.",
   "key-in-use":"That key is already in use.",
   "key-limit":"The agent already has the maximum number of live keys.",
@@ -76,12 +76,10 @@ function bindingSection(requests:OwnerBindingRequest[],tokens:ReadonlyMap<string
  * Each pending action shows exactly what the approval binds: the full content, the provider-verified account it acts as and the
  * credential revision. The content is agent-supplied text, escaped and shown verbatim.
  */
-function actionsSection(actions:OwnerExternalAction[],agents:Extract<OwnerOverview,{frozen:false}>["agents"],tokens:ReadonlyMap<string,string>,
-  target="/account"):string{
+function actionsSection(actions:OwnerExternalAction[],tokens:ReadonlyMap<string,string>,target="/account"):string{
   if(actions.length===0)return "<p>No agent is waiting for an action to be approved.</p>";
   return actions.map(action=>{
-    const agent=agents.find(candidate=>candidate.agentId===action.agentId);
-    return ["<section><h3>"+agentName(action.agentId,agent?.displayName??null)+" wants to "+esc(action.operation)+" on "+esc(action.provider)+"</h3>",
+    return ["<section><h3>"+agentName(action.agentId,action.agentDisplayName)+" wants to "+esc(action.operation)+" on "+esc(action.provider)+"</h3>",
       "<p>As "+esc(action.targetDisplay)+" (<code>"+esc(action.targetAccount)+"</code>), verified by "+esc(action.provider)+
         "; credential <code>"+esc(action.credentialRef)+"@"+esc(action.credentialRevision)+"</code></p>",
       "<p>Content, exactly as it will be sent:</p><pre>"+esc(action.content)+"</pre>",
@@ -129,8 +127,13 @@ function addressesSection(addresses:OwnerAddress[]):string{
     (address.hasAgentCard?"has an agent card":"no agent card")+"; created "+esc(address.createdAt)+"</li>").join("")+"</ul>";
 }
 
-function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:ReadonlyMap<string,string>):string{
-  if(overview.agents.length===0)return "<p>You do not own any agents yet.</p>";
+/** Where the owner page shows the agents after `after`; the first page has no cursor. */
+export const agentsPagePath=(after:string|null)=>after===null?"/account":"/account?agents="+encodeURIComponent(after);
+function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:ReadonlyMap<string,string>,after:string|null):string{
+  const paging=[after===null?"":'<a href="'+esc(agentsPagePath(null))+'">First agents</a>',
+    overview.nextAgents===null?"":'<a href="'+esc(agentsPagePath(overview.nextAgents))+'">More agents</a>'].filter(Boolean).join(" · ");
+  const nav=paging===""?"":"<p>"+paging+"</p>";
+  if(overview.agents.length===0)return (after===null?"<p>You do not own any agents yet.</p>":"<p>No more agents.</p>")+nav;
   return overview.agents.map(agent=>[
     "<section><h3>"+agentName(agent.agentId,agent.displayName)+"</h3>",
     "<p>Agent ID <code>"+esc(agent.agentId)+"</code></p>",
@@ -145,11 +148,14 @@ function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:Read
     grantsSection(agent.grants,tokens),addressesSection(agent.addresses),credentialsSection(agent.agentId,agent.credentials,overview.connectors,tokens),
     "<h4>Lost every key?</h4><p>A recovery code lets the agent add a new key without any existing key. It replaces any earlier code.</p>",
     form("Issue recovery code","issue-recovery-code:"+agent.agentId,tokens),"</section>"
-  ].join("")).join("");
+  ].join("")).join("")+nav;
 }
 
-/** The owner's page. `tokens` maps each form to its signed action token; a form without a token is not rendered. */
-export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:ReadonlyMap<string,string>,result:string|null,now:number):Response{
+/**
+ * The owner's page, showing the page of agents after `after`. `tokens` maps each form to its signed action token; a form without
+ * a token is not rendered.
+ */
+export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:ReadonlyMap<string,string>,result:string|null,now:number,after:string|null=null):Response{
   const shown=result!==null&&Object.hasOwn(ownerResultText,result)?ownerResultText[result]:null;
   const head=(shown===null?"":"<p role=\"status\">"+esc(shown)+"</p>")+"<h1>Your Weave agents</h1><p>Signed in as @"+esc(human.login)+"</p>";
   if(overview.frozen)return shell("Your Weave agents",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
@@ -158,10 +164,12 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
     "<p>Confirming, approving an action, connecting an account, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":
       "Your current sign-in is older, so you will be asked to sign in again first.")+" Revoking a connected client's access or disconnecting an account does not.</p>",
     "<h2>Binding requests</h2>",bindingSection(overview.bindingRequests,tokens,now),
-    "<h2>Actions waiting for approval</h2>",actionsSection(overview.externalActions,overview.agents,tokens),
-    "<h2>Your agents</h2>",agentSection(overview,tokens)].join(""));
+    "<h2>Actions waiting for approval</h2>",actionsSection(overview.externalActions,tokens),
+    "<h2>Your agents</h2>",agentSection(overview,tokens,after)].join(""));
 }
 
+/** What the mailbox answers for one pending action of the signed-in human. */
+export type PendingActionView={frozen:true}|{frozen:false;action:OwnerExternalAction|null};
 /** The address of the page for one action: what an app such as Envoylet links to so its owner can decide there. */
 export const actionPagePath=(actionId:string)=>"/account/actions/"+actionId;
 /** The outcome of a decision on the page for one action; failure reasons share the owner page's text. */
@@ -185,16 +193,16 @@ export function actionDecisionPage(human:HumanSession,actionId:string,result:str
  * owner page, posting back to this address. An action that is not pending for this human is described the same way whether it
  * was decided, expired or belongs to someone else.
  */
-export function actionPage(overview:OwnerOverview,human:HumanSession,actionId:string,tokens:ReadonlyMap<string,string>,now:number):Response{
+export function actionPage(view:PendingActionView,human:HumanSession,actionId:string,tokens:ReadonlyMap<string,string>,now:number):Response{
   const head="<h1>Approve an action</h1><p>Signed in as @"+esc(human.login)+"</p>";
-  if(overview.frozen)return shell("Approve an action",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
-  const action=overview.externalActions.find(candidate=>candidate.actionId===actionId);
+  if(view.frozen)return shell("Approve an action",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
+  const action=view.action?.actionId===actionId?view.action:null;
   const all='<p><a href="/account">All your agents and actions</a></p>';
   if(!action)return shell("Approve an action",head+"<p>This action is not waiting for your approval. It may already be decided or expired.</p>"+all);
   const fresh=freshAuthentication(human,now);
   return shell("Approve an action",[head,
     action.accountChanged?"":"<p>Approving needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":"You will be asked to sign in again first.")+"</p>",
-    actionsSection([action],overview.agents,tokens,actionPagePath(actionId)),all].join(""));
+    actionsSection([action],tokens,actionPagePath(actionId)),all].join(""));
 }
 
 /** The one-time recovery code, shown in the response body only: never in a URL, redirect or log. */

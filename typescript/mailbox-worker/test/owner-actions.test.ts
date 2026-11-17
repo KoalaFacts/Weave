@@ -105,8 +105,8 @@ test('overview_ExpiredRequestAndUnknownHuman_Empty', async () => {
         const {requestId} = await requested(h, '555');
         const id = await human(h, '555');
         await expireNow(h, 'binding_requests', requestId);
-        assert.deepEqual(await ownerOverview(environment(h), id), {frozen: false, bindingRequests: [], agents: [], externalActions: [], connectors: []});
-        assert.deepEqual(await ownerOverview(environment(h), crypto.randomUUID()), {frozen: false, bindingRequests: [], agents: [], externalActions: [], connectors: []});
+        assert.deepEqual(await ownerOverview(environment(h), id), {frozen: false, bindingRequests: [], agents: [], nextAgents: null, externalActions: [], revokedGrants: [], connectors: []});
+        assert.deepEqual(await ownerOverview(environment(h), crypto.randomUUID()), {frozen: false, bindingRequests: [], agents: [], nextAgents: null, externalActions: [], revokedGrants: [], connectors: []});
     } finally { await h.close(); }
 });
 
@@ -617,12 +617,15 @@ async function seedAddress(h: Harness, accountId: string, options: {label?: stri
     return addressId;
 }
 const grantRevokedAt = (h: Harness, grantId: string) => h.db.prepare('SELECT CAST(revoked_at AS TEXT) r FROM client_grants WHERE grant_id=?').bind(grantId).first<string>('r');
-async function overviewAgent(h: Harness, humanId: string, now?: () => bigint) {
-    const overview = await ownerOverview(environment(h), humanId, now);
+async function overviewOf(h: Harness, humanId: string, now?: () => bigint, start?: () => string) {
+    const overview = await ownerOverview(environment(h), humanId, null, now, start);
     assert.equal(overview.frozen, false);
     if (overview.frozen) throw Error('frozen');
-    return overview.agents;
+    return overview;
 }
+const overviewAgent = async (h: Harness, humanId: string, now?: () => bigint) => (await overviewOf(h, humanId, now)).agents;
+const revokedOf = async (h: Harness, humanId: string, agentId: string, now?: () => bigint) =>
+    (await overviewOf(h, humanId, now)).revokedGrants.find(entry => entry.agentId === agentId)?.revokedGrantIds ?? [];
 
 test('overview_AgentGrants_LiveOnlyNewestFirstWithClientName', async () => {
     const h = await start();
@@ -668,7 +671,7 @@ test('overview_RevokedGrantIds_Last30Days', async () => {
         await seedGrant(h, id, cred.accountId, {createdAt: now - day * 40n, revokedAt: now - day * 30n - 1n});
         const live = await seedGrant(h, id, cred.accountId, {createdAt: now - day});
         const [agent] = await overviewAgent(h, id, () => now);
-        assert.deepEqual(agent.revokedGrantIds, [recent]);
+        assert.deepEqual(await revokedOf(h, id, cred.accountId, () => now), [recent]);
         assert.deepEqual(agent.grants.map(g => g.grantId), [live]);
     } finally { await h.close(); }
 });
@@ -689,10 +692,10 @@ test('overview_BusyAgent_BoundedPerAgentWithoutStarvingAnother', async () => {
         const first = agents.find(a => a.agentId === busy.accountId)!, second = agents.find(a => a.agentId === quiet.accountId)!;
         assert.deepEqual(first.grants.map(g => g.grantId), grants.slice(1).reverse(), '50 newest live grants');
         assert.deepEqual(first.addresses.map(a => a.addressId), addresses.slice(0, 20), '20 oldest live addresses');
-        assert.deepEqual(first.revokedGrantIds, revoked.slice(1).reverse(), '20 most recently revoked');
+        assert.deepEqual((await revokedOf(h, id, busy.accountId, () => now)).sort(), [...revoked].sort(), 'every recent revocation while there are few');
         assert.deepEqual(second.grants.map(g => g.grantId), [quietGrant]);
         assert.deepEqual(second.addresses.map(a => a.addressId), [quietAddress]);
-        assert.deepEqual(second.revokedGrantIds, [quietRevoked]);
+        assert.deepEqual(await revokedOf(h, id, quiet.accountId, () => now), [quietRevoked]);
     } finally { await h.close(); }
 });
 
@@ -809,5 +812,85 @@ test('ownerAction_MalformedRevokeGrantOrCredential_NotFoundAndNothingRevoked', a
         assert.notEqual(await grantRevokedAt(h, grantId), null);
         assert.deepEqual(await act(h, id, {kind: 'revoke-credential', agentId: cred.accountId, credentialRef: 'telegram:1'}), {ok: true});
         assert.notEqual(await credentialRevokedAt(h, cred.accountId, 'telegram:1'), null);
+    } finally { await h.close(); }
+});
+
+const manyAgents = (h: Harness, limit: string) => environment(h, {OWNED_AGENTS_PER_HUMAN: limit, REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '1000'});
+
+test('confirmBinding_ConfiguredLimitAboveTen_BindsTheEleventh', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), env = manyAgents(h, '11');
+        for (let i = 0; i < 10; i++) assert.equal((await createOwnedAgent(env, {humanId: id, displayName: 'a' + i, sourceIp: '203.0.113.7'})).ok, true);
+        const {cred, requestId} = await requested(h, '555');
+        assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId}, {env}), {ok: true});
+        assert.equal(await ownerOf(h, cred.accountId), id);
+        const next = await requested(h, '555');
+        assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId: next.requestId}, {env}), {ok: false, reason: 'agent-limit'});
+    } finally { await h.close(); }
+});
+
+// 120 agents would need 120 bound parameters in one statement if the overview listed them all; D1 allows 100.
+test('overview_ManyAgents_PagesThroughEveryAgentOnce', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), env = manyAgents(h, '200');
+        const created: string[] = [];
+        for (let i = 0; i < 120; i++) {
+            const result = await createOwnedAgent(env, {humanId: id, displayName: 'a' + i, sourceIp: '203.0.113.7'});
+            assert.equal(result.ok, true);
+            created.push((result as {accountId: string}).accountId);
+        }
+        await seedKey(h, created[119]!);
+        const seen: string[] = [];
+        let after: string | null = null, pages = 0;
+        do {
+            const overview = await ownerOverview(environment(h), id, after);
+            if (overview.frozen) throw Error('frozen');
+            assert.ok(overview.agents.length <= 20);
+            seen.push(...overview.agents.map(agent => agent.agentId));
+            after = overview.nextAgents;
+            pages++;
+        } while (after !== null);
+        assert.equal(pages, 6);
+        assert.deepEqual(seen, created, 'every agent once, oldest first');
+        const last = await ownerOverview(environment(h), id, created[99]!);
+        if (last.frozen) throw Error('frozen');
+        assert.equal(last.agents.at(-1)!.keys.length, 1, 'the last page carries its agents\' keys');
+    } finally { await h.close(); }
+});
+
+test('overview_CursorOfAnotherHumansAgentOrMalformed_NoAgents', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), other = await human(h, '556');
+        // The foreign agent is older, so a cursor read without the owner check would list this human's agent after it.
+        const foreign = await ownedAgent(h, other, 'foreign');
+        await ownedAgent(h, id);
+        for (const after of [foreign.accountId, crypto.randomUUID(), 'not-a-uuid']) {
+            const overview = await ownerOverview(environment(h), id, after);
+            if (overview.frozen) throw Error('frozen');
+            assert.deepEqual([overview.agents, overview.nextAgents], [[], null], after);
+        }
+    } finally { await h.close(); }
+});
+
+// More revocations than one read holds: the newest are always read, and the rest come in turn from a rotating start.
+test('overview_ManyRevocations_NewestAlwaysAndEveryOneReachedByRotation', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        const now = 1_000_000_000_000_000n, revoked: string[] = [];
+        for (let i = 1n; i <= 250n; i++) revoked.push(await seedGrant(h, id, cred.accountId, {createdAt: now - 1000n, revokedAt: now - 500n + i}));
+        const byId = [...revoked].sort(), newest = revoked.slice(-100);
+        const read = async (startAt: string) => (await overviewOf(h, id, () => now, () => startAt)).revokedGrants.flatMap(entry => entry.revokedGrantIds);
+        const seen = new Set<string>();
+        for (const startAt of ['00000000-0000-4000-8000-000000000000', byId[100]!, byId[200]!]) {
+            const ids = await read(startAt);
+            assert.ok(ids.length <= 200);
+            for (const grant of newest) assert.ok(ids.includes(grant), 'the newest revocations are always read');
+            ids.forEach(grant => seen.add(grant));
+        }
+        assert.equal(seen.size, 250, 'rotating the start reaches every revocation');
     } finally { await h.close(); }
 });

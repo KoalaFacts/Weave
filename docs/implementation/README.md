@@ -71,6 +71,7 @@ Newest first within each area. Every record (or dated record section) in this di
 - 2026-11-01: [Owner page: connected clients and addresses](2026-11-01-owner-grants.md)
 - 2026-11-01: [MCP text messages, revocable grants and Agent Cards](2026-11-01-mcp-a2a-messages.md)
 - 2026-11-01: [Client packaging and agent key helpers](2026-11-01-client-packaging.md)
+- 2026-11-17: [Owners with many agents](2026-11-01-agent-binding.md#owners-with-many-agents-2026-11-17)
 - 2026-11-01: [Agent binding, owned-agent keys and unclaimed limits](2026-11-01-agent-binding.md)
 - 2026-10-31: [Agent keys replace the bearer account control](2026-10-31-agent-keys.md)
 - 2026-10-30: [Two independent agents over the Access trial](2026-10-30-access-trial-two-agent-acceptance.md)

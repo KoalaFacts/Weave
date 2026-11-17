@@ -20,6 +20,8 @@ import { readPublication, trackPublication, type PublicationView } from './exter
 
 export const actionLifetimeTicks = 36_000_000_000n; // 1 h to approve and execute
 export const pendingActionsPerAgent = 20;
+/** The oldest pending actions the owner page lists, across all of one human's agents. */
+const pendingActionsShownToOwner = 200;
 export const maxContentLength = 8000;
 
 export type ActionStatus = 'pending' | 'approved' | 'rejected' | 'dispatching' | 'completed' | 'failed' | 'unknown';
@@ -31,7 +33,7 @@ export type ExternalActionView = {actionId: string; provider: string; operation:
     /** The page where the owner decides this pending action; null once it is decided or expired, or without a first-party authorization server. */
     approvalUrl: string | null};
 /** What the owner page shows for a pending action; `planDigest` is what the owner confirms. */
-export type OwnerExternalAction = {actionId: string; agentId: string; provider: string; operation: string; content: string;
+export type OwnerExternalAction = {actionId: string; agentId: string; agentDisplayName: string | null; provider: string; operation: string; content: string;
     credentialRef: string; credentialRevision: string; targetAccount: string; targetDisplay: string; planDigest: string; createdAt: string; expiresAt: string;
     /** Files the content names, for the owner page to preview through ownerActionMedia. */
     media: {mediaId: string; contentType: string}[];
@@ -284,17 +286,16 @@ export async function executeExternalAction(env: Env, caller: ActionCaller, acti
     }
 }
 
-/** Pending actions of the human's agents, for the owner page. */
-export async function pendingForOwner(tx: Transaction, agentIds: string[], now: bigint): Promise<OwnerExternalAction[]> {
-    if (agentIds.length === 0) return [];
+/** Pending actions of the human's agents, for the owner page: the oldest ones, or only `actionId` when it is given. */
+export async function pendingForOwner(tx: Transaction, humanId: string, now: bigint, actionId: string | null = null): Promise<OwnerExternalAction[]> {
     // The display name is the credential's current one; accountChanged says whether that credential still matches the plan, as the confirmation re-checks.
     const rows = (await tx.db.prepare(`SELECT x.action_id,x.account_id,x.provider,x.operation,x.content,x.credential_ref,x.credential_revision,
         x.target_account,x.plan_digest,CAST(x.created_at AS TEXT) created_at,CAST(x.expires_at AS TEXT) expires_at,c.target_display,
-        c.provider c_provider,c.revision c_revision,c.target_account c_target_account,CAST(c.revoked_at AS TEXT) c_revoked_at
-        FROM external_actions x JOIN external_credentials c ON c.account_id=x.account_id AND c.credential_ref=x.credential_ref
-        WHERE x.account_id IN (${agentIds.map(() => '?').join(',')}) AND x.status='pending' AND x.expires_at>CAST(? AS INTEGER)
+        c.provider c_provider,c.revision c_revision,c.target_account c_target_account,CAST(c.revoked_at AS TEXT) c_revoked_at,a.display_name
+        FROM external_actions x JOIN accounts a ON a.account_id=x.account_id JOIN external_credentials c ON c.account_id=x.account_id AND c.credential_ref=x.credential_ref
+        WHERE a.human_id=? AND x.status='pending' AND x.expires_at>CAST(? AS INTEGER)${actionId === null ? '' : ' AND x.action_id=?'}
         ORDER BY x.created_at,x.action_id LIMIT ?`)
-        .bind(...agentIds, now.toString(), pendingActionsPerAgent * agentIds.length).all<Row & {target_display: string; c_provider: string; c_revision: string; c_target_account: string; c_revoked_at: string | null}>()).results;
+        .bind(humanId, now.toString(), ...(actionId === null ? [] : [actionId]), pendingActionsShownToOwner).all<Row & {target_display: string; c_provider: string; c_revision: string; c_target_account: string; c_revoked_at: string | null; display_name: string | null}>()).results;
     const actions: OwnerExternalAction[] = [];
     for (const row of rows) {
         const media: OwnerExternalAction['media'] = [];
@@ -302,7 +303,7 @@ export async function pendingForOwner(tx: Transaction, agentIds: string[], now: 
             const record = await readMediaRecord(tx, row.account_id, mediaId);
             if (record) media.push({mediaId, contentType: record.contentType});
         }
-        actions.push({actionId: row.action_id, agentId: row.account_id, provider: row.provider, operation: row.operation, content: row.content,
+        actions.push({actionId: row.action_id, agentId: row.account_id, agentDisplayName: row.display_name, provider: row.provider, operation: row.operation, content: row.content,
             credentialRef: row.credential_ref, credentialRevision: row.credential_revision, targetAccount: row.target_account, targetDisplay: row.target_display,
             planDigest: row.plan_digest, createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!, media,
             accountChanged: !credentialMatchesPlan({provider: row.c_provider, revision: row.c_revision, target_account: row.c_target_account, revoked_at: row.c_revoked_at}, row)});
@@ -360,6 +361,22 @@ export function mediaIdsOf(content: string): string[] {
     const ids = typeof plan.mediaId === 'string' ? [plan.mediaId] : [];
     if (Array.isArray(plan.media)) for (const item of plan.media) if (typeof (item as {mediaId?: unknown})?.mediaId === 'string') ids.push((item as {mediaId: string}).mediaId);
     return ids;
+}
+
+/**
+ * Owner RPC: one pending action of the human's agents, for the page that decides it, however many others are pending. An action
+ * that is not pending for this human, or a malformed ID, is null; a frozen human sees only that.
+ */
+export async function ownerPendingAction(env: Env, humanId: string, actionId: string, clock: () => bigint = nowUtc): Promise<{frozen: true} | {frozen: false; action: OwnerExternalAction | null}> {
+    if (env.MAINTENANCE_MODE === 'true') fail(503, 'maintenance', 30);
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (typeof humanId !== 'string' || !uuid.test(humanId) || typeof actionId !== 'string' || !uuid.test(actionId)) return {frozen: false, action: null};
+    return atomic(env.db, async tx => {
+        const human = await tx.db.prepare('SELECT frozen_at FROM humans WHERE human_id=?').bind(humanId).first<{frozen_at: string | null}>();
+        if (!human) return {frozen: false as const, action: null};
+        if (human.frozen_at !== null) return {frozen: true as const};
+        return {frozen: false as const, action: (await pendingForOwner(tx, humanId, clock(), actionId))[0] ?? null};
+    });
 }
 
 /**

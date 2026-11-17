@@ -11,7 +11,7 @@ import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubL
 import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
 import {readOwnerAction,readConnectForm,destructiveKinds,ownerActionToken} from "./owner-forms.ts";
-import {actionDecisionPage,actionPage,actionPagePath,ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
+import {actionDecisionPage,actionPage,actionPagePath,ownerFormTokens,ownerPage,recoveryCodePage,type PendingActionView} from "./owner-page.ts";
 import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
 import {beginYoutubeConnect,completeYoutubeConnect,youtubeCallbackPath,type YoutubeConnectEnv} from "./youtube-connect.ts";
 export {ConsentNonce} from "./nonce-do.ts";
@@ -247,7 +247,7 @@ async function revokeClientTokens(env:Env,api:SdkGrants,humanId:string,grantId:s
     return false;
   }
   if(overview.frozen)return false;
-  const agent=overview.agents.find(x=>x.revokedGrantIds.includes(grantId));
+  const agent=overview.revokedGrants.find(x=>x.revokedGrantIds.includes(grantId));
   return agent!==undefined&&revokeRevokedSdkGrants(api,[{agentId:agent.agentId,revokedGrantIds:[grantId]}]);
 }
 /**
@@ -263,10 +263,12 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
   const session=await readHumanSession(env.HUMAN_SESSION_KEY,req,now);
   if(!session)return beginGithubLogin(env,accountUrl,now);
   if(req.method==="GET"){
+    // An unusable cursor shows the first page rather than an error.
+    const cursor=url.searchParams.get("agents"),after=cursor!==null&&agentCursorPattern.test(cursor)?cursor:null;
     let overview:OwnerOverview;
-    try{overview=await env.MAILBOX.ownerOverview(session.humanId);}catch{return directoryUnavailable();}
+    try{overview=await env.MAILBOX.ownerOverview(session.humanId,after);}catch{return directoryUnavailable();}
     // Retry SDK clean-up a failed or interrupted revocation left behind; the page renders either way.
-    const cleaned=!overview.frozen&&await revokeRevokedSdkGrants(api,overview.agents);
+    const cleaned=!overview.frozen&&await revokeRevokedSdkGrants(api,overview.revokedGrants);
     const result=url.searchParams.get("result");
     let tokens:Map<string,string>;
     try{tokens=await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now,!!env.GOOGLE_CLIENT_ID);}
@@ -275,7 +277,7 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
       return messagePage(503,"Temporarily unavailable","Weave cannot show your agents right now. Try again later.");
     }
     // A pending clean-up this very visit finished is reported as finished.
-    return ownerPage(overview,session,tokens,result==="cleanup-pending"&&cleaned?"cleanup-complete":result,now);
+    return ownerPage(overview,session,tokens,result==="cleanup-pending"&&cleaned?"cleanup-complete":result,now,after);
   }
   const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
   if(action==="expired")return accountRedirect("form-expired");
@@ -316,6 +318,7 @@ async function connectAccountForm(req:Request,env:Env):Promise<Response>{
     return accountRedirect("unavailable");
   }
 }
+const agentCursorPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const actionPathPattern=/^\/account\/actions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 /**
  * GET and POST /account/actions/{actionId}: one pending action, for an app such as Envoylet to send its owner to. It decides
@@ -333,9 +336,10 @@ async function actionApproval(req:Request,env:Env,actionId:string):Promise<Respo
   // The page exists to approve, which needs a fresh sign-in, so a stale one signs in again before the page is shown.
   if(!freshAuthentication(session,now))return beginGithubLogin(env,pageUrl,now,{reauthenticate:{login:session.login}});
   if(req.method==="GET"){
-    let overview:OwnerOverview;
-    try{overview=await env.MAILBOX.ownerOverview(session.humanId);}catch{return directoryUnavailable();}
-    const action=overview.frozen?undefined:overview.externalActions.find(candidate=>candidate.actionId===actionId);
+    // Read by ID, so the page decides this action however many others are pending.
+    let view:PendingActionView;
+    try{view=await env.MAILBOX.ownerPendingAction(session.humanId,actionId);}catch{return directoryUnavailable();}
+    const action=view.frozen?null:view.action;
     const tokens=new Map<string,string>();
     try{
       if(action){
@@ -347,7 +351,7 @@ async function actionApproval(req:Request,env:Env,actionId:string):Promise<Respo
       console.error(failureLog.formSigning);
       return messagePage(503,"Temporarily unavailable","Weave cannot show this action right now. Try again later.");
     }
-    return actionPage(overview,session,actionId,tokens,now);
+    return actionPage(view,session,actionId,tokens,now);
   }
   const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
   if(action==="expired")return actionDecisionPage(session,actionId,"form-expired");
