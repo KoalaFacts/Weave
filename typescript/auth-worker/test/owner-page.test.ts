@@ -13,7 +13,7 @@ const now=1_800_000_000_000;
 const kid=()=>randomBytes(32).toString("base64url");
 const human:HumanSession={humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now};
 const iso=(ms:number)=>new Date(ms).toISOString();
-const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],nextAgents:null,externalActions:[],revokedGrants:[],connectors:[],...over});
+const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],nextAgents:null,externalActions:[],revokedGrants:[],ownerGrants:[],revokedOwnerGrantIds:[],connectors:[],...over});
 const html=(response:Response)=>response.text();
 
 test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
@@ -222,4 +222,23 @@ test("ownerPage_ActionOfAnAgentNotOnThisPage_NamedFromTheAction",async()=>{
   const overview=base({agents:[agent()],externalActions:[{actionId,agentId:randomUUID(),agentDisplayName:"Late desk",provider:"test-http",operation:"publish_text",
     content:"x",credentialRef:"c",credentialRevision:"r",targetAccount:"t",targetDisplay:"T",planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1),media:[],accountChanged:false}]});
   assert.ok((await html(ownerPage(overview,human,new Map(),null,now))).includes("Late desk (self-reported, not verified) wants to publish_text"));
+});
+
+test("ownerPage_OwnerAppGrants_EscapedUnverifiedWithRevokeAndTokens",async()=>{
+  const hostile=randomUUID(),unnamed=randomUUID(),revoked=randomUUID();
+  const overview=base({ownerGrants:[
+    {grantId:hostile,clientId:'https://office.example/"><script>x</script>',clientName:'<script>alert(1)</script>',createdAt:iso(now)},
+    {grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now-1000)}],revokedOwnerGrantIds:[revoked]});
+  const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
+  assert.deepEqual([...tokens.keys()].sort(),["revoke-grant:"+hostile,"revoke-grant:"+unnamed].sort());
+  const body=await html(ownerPage(overview,human,tokens,null,now));
+  assert.ok(body.includes("<h2>Apps that manage all your agents</h2>"));
+  assert.ok(body.includes("including agents you add later"));
+  assert.ok(!body.includes("<script>"),"client-supplied text must not become markup");
+  assert.ok(body.includes("&#60;script&#62;alert(1)&#60;/script&#62; (self-reported, not verified)"));
+  assert.ok(body.includes("Unnamed client"));
+  assert.equal(body.match(/<form /g)!.length,tokens.size);
+  assert.ok(!body.includes(revoked),"revoked owner grant IDs are for clean-up only");
+  const none=await html(ownerPage(base(),human,new Map(),null,now));
+  assert.ok(none.includes("No app manages all your agents."));
 });

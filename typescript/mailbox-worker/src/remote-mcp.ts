@@ -147,8 +147,11 @@ async function invalidFieldHint(response: Response): Promise<{field: string; rea
 const refusalHints: Record<number, Record<string, string>> = {
     409: {
         'idempotency-conflict': 'This idempotencyKey was already used with different input (idempotency-conflict). Nothing was written; use a new key for a new request.',
-        'not-connected': 'You are not connected to this peer (not-connected). Nothing was written; request contact and wait for acceptance first.'
+        'not-connected': 'You are not connected to this peer (not-connected). Nothing was written; request contact and wait for acceptance first.',
+        'agent-limit': 'Your human already owns as many agents as this server allows (agent-limit). Nothing was written.'
     },
+    404: {'agent-not-found': 'None of your agents has this ID (agent-not-found). Nothing was written.'},
+    429: {capacity: 'Too many agents were created from this address this hour (capacity). Nothing was written; try again later.'},
     // The consent grant was revoked after this call was authorized; the write's own transaction refused it.
     401: {'grant-revoked': 'Authorization for this account was revoked (grant-revoked). Nothing was written; the owner must authorize this client again.'}
 };
@@ -247,6 +250,14 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
                     content:[{type:'text',text:caller.status===401?'Authentication required.':'Additional OAuth permission required.'}],
                     _meta:{'mcp/www_authenticate':[challenge]}
                 }},caller.status,{'WWW-Authenticate':challenge,'Pragma':'no-cache'});
+            }
+            // A valid owner grant that named no agent it may act as: a tool error that says which header to set.
+            if (caller.status===400) {
+                let text='The call does not name an agent this grant can act as.';
+                try { const body=await caller.json() as {error?:unknown;error_description?:unknown};
+                    if (body.error==='invalid_agent'&&typeof body.error_description==='string'&&body.error_description.length<=256) text=body.error_description; }
+                catch { /* the default text stands */ }
+                return result(id, {isError:true,structuredContent:{status:400,code:'invalid_agent'},content:[{type:'text',text}]});
             }
             return caller;
         }

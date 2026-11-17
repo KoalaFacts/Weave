@@ -100,7 +100,9 @@ export async function humanHasAgent(env: Env, humanId: string, accountId: string
     return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.human_id=? AND a.account_id=? AND h.frozen_at IS NULL').bind(humanId, accountId).first('n') !== null;
 }
 
-export async function createOwnedAgent(env: Env, input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> {
+/** `check` runs first inside the write transaction, for a caller whose authority must still hold at commit (an owner grant). */
+export async function createOwnedAgent(env: Env, input: { humanId: string; displayName: string; sourceIp: string },
+    check?: (tx: Transaction) => Promise<void>): Promise<CreateAgentResult> {
     if (writesRefused(env) || env.REGISTRATION_ENABLED !== 'true') return { ok: false, reason: 'unavailable' };
     const invalid = { ok: false, reason: 'invalid' } as const;
     if (typeof input?.humanId !== 'string' || !uuidPattern.test(input.humanId) || typeof input.sourceIp !== 'string'
@@ -108,6 +110,7 @@ export async function createOwnedAgent(env: Env, input: { humanId: string; displ
         // consume an owner's agent quota.
         || typeof input.displayName !== 'string' || input.displayName.length > 128 || !visibleName(input.displayName)) return invalid;
     return atomic(env.db, async tx => {
+        await check?.(tx);
         const human = await tx.db.prepare('SELECT frozen_at FROM humans WHERE human_id=?').bind(input.humanId).first<{ frozen_at: string | null }>();
         if (!human) return invalid;
         // A frozen GitHub identity has lost its management rights; its agents are not deleted.
@@ -119,5 +122,25 @@ export async function createOwnedAgent(env: Env, input: { humanId: string; displ
         if (await tx.get('account', '', accountId)) fail(409, 'conflict');
         tx.put('account', '', accountId, { accountId, humanId: input.humanId, displayName: input.displayName, description: null });
         return { ok: true as const, accountId };
+    });
+}
+
+export type RenameAgentResult = { ok: true } | { ok: false; reason: 'not-found' | 'invalid' | 'unavailable' };
+/**
+ * Renames an agent the human owns, after `check` inside the same transaction. Another human's agent, or none, is
+ * `not-found`; the name follows the creation rules (1 to 128 visible characters).
+ */
+export async function renameOwnedAgent(env: Env, input: { humanId: string; agentId: string; displayName: string },
+    check: (tx: Transaction) => Promise<void>): Promise<RenameAgentResult> {
+    if (writesRefused(env)) return { ok: false, reason: 'unavailable' };
+    if (typeof input?.humanId !== 'string' || !uuidPattern.test(input.humanId)) fail();
+    if (typeof input.agentId !== 'string' || !uuidPattern.test(input.agentId)) return { ok: false, reason: 'not-found' };
+    if (typeof input.displayName !== 'string' || input.displayName.length > 128 || !visibleName(input.displayName)) return { ok: false, reason: 'invalid' };
+    return atomic(env.db, async tx => {
+        await check(tx);
+        const agent = await tx.get('account', '', input.agentId);
+        if (!agent || agent.humanId !== input.humanId) return { ok: false as const, reason: 'not-found' as const };
+        if (agent.displayName !== input.displayName) tx.put('account', '', input.agentId, { ...agent, displayName: input.displayName });
+        return { ok: true as const };
     });
 }

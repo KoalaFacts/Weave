@@ -23,7 +23,7 @@ import { sweepPublications } from './external-publications.ts';
 import { getMedia, importMedia, receiveSignedUpload, sweepMedia, serveSignedMedia, uploadMedia } from './external-media.ts';
 import { connectAccount, connectExternalCredential, listAgentCredentials, type ConnectAccountInput, type ConnectAccountResult, type ConnectCredentialInput, type ConnectCredentialResult } from './external-credentials.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
-import { recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
+import { recordGrant, recordOwnerGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RecordOwnerGrantInput, type RecordOwnerGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -49,6 +49,7 @@ export class HumanDirectory extends WorkerEntrypoint<Env> {
     ownerActionMedia(humanId: string, actionId: string, mediaId: string): Promise<{contentType: string; body: ReadableStream} | null> { return ownerActionMedia(scopedEnv(this.env), humanId, actionId, mediaId); }
     recordGrant(input: RecordGrantInput): Promise<RecordGrantResult> { return recordGrant(scopedEnv(this.env), input); }
     revokeGrant(input: RevokeGrantInput): Promise<RevokeGrantResult> { return revokeGrant(scopedEnv(this.env), input); }
+    recordOwnerGrant(input: RecordOwnerGrantInput): Promise<RecordOwnerGrantResult> { return recordOwnerGrant(scopedEnv(this.env), input); }
 }
 
 export default {
