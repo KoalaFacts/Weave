@@ -1055,6 +1055,11 @@ test('ownerOverview_RecentActions_SettledInTheWindowNewestFirstOwnAgentsOnly', (
     assert.equal((await recent(humanId, () => now))?.length, 4, 'one tick inside the window is listed');
     // A change after the read's own clock is not listed yet; a pending plan one tick before its expiry is still waiting.
     assert.deepEqual((await recent(humanId, () => now - 21n))?.map(action => action.actionId), [ids[0], ids[2]]);
+    // A plan approved 8 days ago that expired 5 ticks ago unsent is listed as expired, by its expiry.
+    await set(ids[2]!, 'approved', now - recentActionWindowTicks - 1n);
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind((now - 5n).toString(), ids[2]!).run();
+    const approved = await recent(humanId, () => now);
+    assert.deepEqual(approved?.[0] && [approved[0].actionId, approved[0].status, approved[0].changedAt], [ids[2], 'expired', apiTime((now - 5n).toString())]);
     const {humanId: stranger} = await ownedAgent(h);
     assert.deepEqual(await recent(stranger, () => now), [], 'another human sees none of it');
     await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(stranger, agent.accountId).run();
