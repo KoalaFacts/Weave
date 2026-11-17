@@ -1021,6 +1021,38 @@ test('ownerOverview_ActionOfAgentBeyondFirstPage_ListedWithItsName', () => scena
     assert.equal(listed?.agentDisplayName, 'Late desk');
 }));
 
+// The page for one action tells its owner what became of an action no longer waiting, and nobody else anything.
+test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnlyForItsOwner', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const response = await propose(h, agent, 'A plan that settles.');
+    assert.equal(response.status, 200, await response.clone().text());
+    const {actionId} = await response.json() as {actionId: string};
+    const pending = await ownerPendingAction(environment(h), humanId, actionId);
+    assert.equal((pending as {action: {actionId: string} | null}).action?.actionId, actionId);
+    assert.equal((pending as {settled: unknown}).settled, null, 'a pending action is offered for decision, not described as settled');
+    const {humanId: stranger} = await ownedAgent(h);
+    for (const [status, failure] of [['approved', null], ['rejected', null], ['dispatching', null], ['completed', null], ['failed', 'owner-changed'], ['unknown', null]] as const) {
+        await h.db.prepare(`UPDATE external_actions SET status=?,failure=?,decided_at=created_at,decided_by=?,
+            dispatched_at=CASE WHEN ? IN ('dispatching','completed','unknown') THEN created_at END WHERE action_id=?`).bind(status, failure, humanId, status, actionId).run();
+        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: {status, failure}}, status);
+        assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: null}, 'another human learns nothing of ' + status);
+    }
+    // Pending or approved past its expiry reads expired, exactly from the expiry tick, as every other read does.
+    const expiry = BigInt((await h.db.prepare('SELECT CAST(expires_at AS TEXT) e FROM external_actions WHERE action_id=?').bind(actionId).first<string>('e'))!);
+    for (const status of ['pending', 'approved'] as const) {
+        await h.db.prepare(`UPDATE external_actions SET status=?,failure=NULL,dispatched_at=NULL,decided_at=CASE WHEN ?='pending' THEN NULL ELSE created_at END,
+            decided_by=CASE WHEN ?='pending' THEN NULL ELSE ? END WHERE action_id=?`).bind(status, status, status, humanId, actionId).run();
+        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId, () => expiry), {frozen: false, action: null, settled: {status: 'expired', failure: null}}, status);
+        const before = await ownerPendingAction(environment(h), humanId, actionId, () => expiry - 1n);
+        assert.deepEqual((before as {settled: unknown}).settled, status === 'pending' ? null : {status: 'approved', failure: null}, status + ' one tick earlier');
+    }
+    // An action of an agent that passed to another human is no longer this human's to read.
+    await h.db.prepare("UPDATE external_actions SET status='completed',dispatched_at=created_at WHERE action_id=?").bind(actionId).run();
+    await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(stranger, agent.accountId).run();
+    assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: null});
+    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: {status: 'completed', failure: null}});
+}));
+
 // The page for one action reads it by ID: an action past the overview's 200 oldest can still be decided from its link.
 test('ownerPendingAction_ActionBeyondTheOverviewCap_FoundByIdForItsOwnerOnly', () => scenario(async ({h}) => {
     const {agent, humanId} = await ownedAgent(h);
@@ -1039,8 +1071,8 @@ test('ownerPendingAction_ActionBeyondTheOverviewCap_FoundByIdForItsOwnerOnly', (
     assert.equal(found.frozen, false);
     assert.equal((found as {action: {actionId: string} | null}).action?.actionId, actionId);
     const {humanId: stranger} = await ownedAgent(h);
-    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null});
-    assert.deepEqual(await ownerPendingAction(environment(h), humanId, 'not-an-id'), {frozen: false, action: null});
+    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: null});
+    assert.deepEqual(await ownerPendingAction(environment(h), humanId, 'not-an-id'), {frozen: false, action: null, settled: null});
     await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(humanId).run();
     assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: true});
 }));
