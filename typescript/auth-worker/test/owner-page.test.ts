@@ -242,3 +242,14 @@ test("ownerPage_OwnerAppGrants_EscapedUnverifiedWithRevokeAndTokens",async()=>{
   const none=await html(ownerPage(base(),human,new Map(),null,now));
   assert.ok(none.includes("No app manages all your agents."));
 });
+
+// A mailbox that predates `settled`, or a status the page has no text for, reads as the generic sentence, never as text the page
+// would otherwise invent (an inherited property name included).
+test("actionPage_SettledMissingPendingOrUnlisted_GenericSentence",async()=>{
+  const actionId=randomUUID(),generic="This action is not waiting for your approval. It may already be decided or expired.";
+  for(const settled of [undefined,null,{status:"pending",failure:null},{status:"toString",failure:null},{status:"later",failure:"x"}]){
+    const body=await html(actionPage({frozen:false,action:null,settled},human,actionId,new Map(),now));
+    assert.ok(body.includes("<p>"+generic+"</p>")&&!body.includes("undefined")&&!body.includes("function"),JSON.stringify(settled)+": "+body);
+  }
+  assert.ok((await html(actionPage({frozen:false,action:null,settled:{status:"completed",failure:null}},human,actionId,new Map(),now))).includes("This action was sent."));
+});
