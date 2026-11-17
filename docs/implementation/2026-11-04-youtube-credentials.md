@@ -152,10 +152,17 @@ listed in the PR.
   description with only `<` or only `>` is refused with its field's reason, and a video
   ID answered with 202 or 206 (as well as 400) records `unknown` and is never uploaded
   again. Before these cases, checking only one bracket in either field, or accepting
-  any 2xx upload answer as the receipt, survived every test. Two survivors stay outside
-  this change: dropping `EXTERNAL_MEDIA` or `EXTERNAL_CREDENTIAL_KEY` from the adapter's
-  availability check was not caught by those four files; the scan did not run the
-  other suites against them.
+  any 2xx upload answer as the receipt, survived every test. Two survivors stayed
+  outside that change: dropping `EXTERNAL_MEDIA` or `EXTERNAL_CREDENTIAL_KEY` from the
+  adapter's availability check.
+- Adapter availability (2026-11-17): the router has a YouTube provider only when the
+  deploy has `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EXTERNAL_CREDENTIAL_KEY` and
+  the `EXTERNAL_MEDIA` bucket; each one missing or empty leaves `provider(env,
+  'youtube')` null (unit test, with a positive control). At the worker boundary, a
+  deploy missing any of the first three answers a YouTube propose with 409
+  `provider-unavailable` and stores no plan. The test harness always binds the media
+  bucket, so the bucket case is checked at the unit level only. Dropping any of the
+  four from the check, or joining the media check with `||`, fails these tests.
 
 ## Limits
 

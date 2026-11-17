@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { start } from './harness.ts';
 import { sealSecret } from '../src/credential-vault.ts';
 import { youtubeUpload } from '../src/youtube-provider.ts';
+import { provider } from '../src/external-providers.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
 import type { Env } from '../src/database.ts';
 
@@ -271,4 +272,32 @@ test('youtubeUpload_NoSecretOrStoredFileChangedOrStartLost_RejectedBeforeAnyUplo
         // The upload carries the bearer token: a redirect is never followed with it, and it declares its exact length.
         assert.deepEqual(puts.map(put => [put.redirect, new Headers(put.headers).get('Content-Length')]), [['manual', '300']]);
     } finally { globalThis.fetch = original; }
+});
+
+// The adapter runs only when the deploy can refresh a Google token (client ID and secret), open the sealed refresh token
+// (EXTERNAL_CREDENTIAL_KEY) and read the stored video (EXTERNAL_MEDIA). Without any one of them the router has no YouTube
+// provider, so a propose answers provider-unavailable and an approved plan is refused at dispatch rather than started.
+test('provider_YoutubeMissingAnyRequiredBinding_Unavailable', () => {
+    const complete = {...bindings, EXTERNAL_MEDIA: {get: async () => null}} as unknown as Env;
+    assert.equal(provider(complete, 'youtube'), youtubeUpload, 'positive control: every binding present');
+    for (const missing of ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'EXTERNAL_CREDENTIAL_KEY', 'EXTERNAL_MEDIA'] as const) {
+        assert.equal(provider({...complete, [missing]: undefined}, 'youtube'), null, missing);
+        assert.equal(provider({...complete, [missing]: ''}, 'youtube'), null, `${missing} empty`);
+    }
+});
+
+test('proposeExternalAction_YoutubeDeployMissingGoogleClientOrSealingKey_ProviderUnavailable', async () => {
+    for (const missing of ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'EXTERNAL_CREDENTIAL_KEY'] as const) {
+        const {[missing]: _dropped, ...rest} = bindings;
+        const h = await start({bindings: rest});
+        try {
+            const {agent} = await connected(h);
+            const media = await (await upload(h, agent, randomBytes(1000))).json() as {mediaId: string; bytes: number; sha256: string};
+            const response = await propose(h, agent, plan(media));
+            assert.equal(response.status, 409, missing);
+            assert.equal((await response.json() as {reason: string}).reason, 'provider-unavailable', missing);
+            const n = await h.db.prepare('SELECT count(*) n FROM external_actions WHERE account_id=?').bind(agent.accountId).first<number>('n');
+            assert.equal(n, 0, `${missing}: no plan is stored`);
+        } finally { await h.close(); }
+    }
 });
