@@ -1,5 +1,5 @@
 import type {OwnerAddress,OwnerAppGrant,OwnerBindingRequest,OwnerGrant,OwnerKey,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
-import type {OwnerExternalAction} from "../../mailbox-worker/src/external-actions.ts";
+import type {OwnerExternalAction,OwnerRecentAction} from "../../mailbox-worker/src/external-actions.ts";
 import type {OwnerCredential} from "../../mailbox-worker/src/external-credentials.ts";
 import type {OwnerConnector} from "../../mailbox-worker/src/publishing.ts";
 import {freshAuthentication,type HumanSession} from "./human-session.ts";
@@ -94,6 +94,31 @@ function actionsSection(actions:OwnerExternalAction[],tokens:ReadonlyMap<string,
   }).join("");
 }
 
+/** What the owner page's recent list says each outcome is; an unlisted status is shown as unknown to this page, never guessed. */
+const recentText:Readonly<Record<string,string>>=Object.freeze({
+  approved:"approved; nothing is sent until the agent sends it, once",
+  rejected:"rejected; nothing will be sent",
+  expired:"expired without being sent",
+  dispatching:"being sent; it will not be sent again",
+  completed:"sent",
+  failed:"not sent",
+  unknown:"sent, but whether the platform accepted it is unknown; it will not be sent again"
+});
+
+/**
+ * The owner's agents' actions that stopped waiting in the last 7 days, newest first, each linking to its own page, which says
+ * the rest (the platform's reference, the publication). A mailbox that predates the list omits it, which reads as none.
+ */
+function recentSection(actions:readonly OwnerRecentAction[]|undefined):string{
+  if(!actions||actions.length===0)return "<p>None of your agents' actions was decided, sent or expired in the last 7 days.</p>";
+  return "<ul>"+actions.map(action=>{
+    const outcome=Object.hasOwn(recentText,action.status)?recentText[action.status]!:"status not shown here";
+    const failure=action.status==="failed"&&action.failure?" (<code>"+esc(action.failure)+"</code>)":"";
+    return '<li><a href="'+esc(actionPagePath(encodeURIComponent(action.actionId)))+'">'+agentName(action.agentId,action.agentDisplayName)+": "+
+      esc(action.operation)+" on "+esc(action.provider)+"</a>: "+esc(outcome)+failure+"; "+esc(action.changedAt)+"</li>";
+  }).join("")+"</ul>";
+}
+
 /** Client names and IDs are self-reported by the client: escaped text, never a link. */
 function grantsSection(grants:OwnerGrant[],tokens:ReadonlyMap<string,string>):string{
   if(grants.length===0)return "<h4>Connected clients</h4><p>No connected clients.</p>";
@@ -172,6 +197,7 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
       "Your current sign-in is older, so you will be asked to sign in again first.")+" Revoking a connected client's access or disconnecting an account does not.</p>",
     "<h2>Binding requests</h2>",bindingSection(overview.bindingRequests,tokens,now),
     "<h2>Actions waiting for approval</h2>",actionsSection(overview.externalActions,tokens),
+    "<h2>Recent actions</h2>",recentSection(overview.recentActions),
     "<h2>Apps that manage all your agents</h2>",
     "<p>Each can create, list and rename your agents and act as any of them, including agents you add later. Approving actions stays with you.</p>",
     ownerGrantsSection(overview.ownerGrants,tokens),

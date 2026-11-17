@@ -310,6 +310,35 @@ export async function pendingForOwner(tx: Transaction, humanId: string, now: big
     return actions;
 }
 
+/** How far back, and how many, of the owner's agents' settled actions the owner page lists, newest first. */
+export const recentActionWindowTicks = 7n * 24n * 60n * 60n * 10_000_000n;
+export const recentActionsShownToOwner = 20;
+/** An action of the human's own agent that no longer waits for a decision, as the owner page lists it: what it was and what became of it. */
+export type OwnerRecentAction = {actionId: string; agentId: string; agentDisplayName: string | null; provider: string; operation: string;
+    status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; changedAt: string};
+
+/**
+ * The human's agents' actions that stopped waiting in the last 7 days, newest change first, at most 20: decided, sent, failed or
+ * unknown by their last change, and a plan left pending past its expiry by that expiry. Only agents the human owns now.
+ */
+export async function recentForOwner(tx: Transaction, humanId: string, now: bigint): Promise<OwnerRecentAction[]> {
+    const since = (now - recentActionWindowTicks).toString(), at = now.toString();
+    const rows = (await tx.db.prepare(`SELECT x.action_id,x.account_id,x.provider,x.operation,x.status,x.failure,CAST(x.expires_at AS TEXT) expires_at,
+        CAST(CASE WHEN x.status='pending' THEN x.expires_at ELSE x.updated_at END AS TEXT) changed_at,a.display_name
+        FROM external_actions x JOIN accounts a ON a.account_id=x.account_id
+        WHERE a.human_id=? AND ((x.status<>'pending' AND x.updated_at>CAST(? AS INTEGER) AND x.updated_at<=CAST(? AS INTEGER))
+            OR (x.status='pending' AND x.expires_at>CAST(? AS INTEGER) AND x.expires_at<=CAST(? AS INTEGER)))
+        ORDER BY CASE WHEN x.status='pending' THEN x.expires_at ELSE x.updated_at END DESC,x.action_id LIMIT ?`)
+        .bind(humanId, since, at, since, at, recentActionsShownToOwner)
+        .all<{action_id: string; account_id: string; provider: string; operation: string; status: string; failure: string | null; expires_at: string; changed_at: string; display_name: string | null}>()).results;
+    return rows.map(row => {
+        const status = effectiveStatus(row.status, row.expires_at, now);
+        // The query admits a pending plan only from its expiry, so it always reads expired here.
+        return {actionId: row.action_id, agentId: row.account_id, agentDisplayName: row.display_name, provider: row.provider, operation: row.operation,
+            status: status as OwnerRecentAction['status'], failure: row.failure, changedAt: apiTime(row.changed_at)!};
+    });
+}
+
 /** The action of an agent this human owns; any other is indistinguishable from a missing one. */
 async function ownedByHuman(tx: Transaction, human: Pick<OwnerHuman, 'humanId'>, actionId: string): Promise<Row | null> {
     const row = await readRow(tx, actionId);

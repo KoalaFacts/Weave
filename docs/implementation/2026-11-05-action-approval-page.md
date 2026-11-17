@@ -54,6 +54,12 @@ remains possible later for chat channels.
   `https://` URL, as the store already requires. `settled` gains `receipt` and `publication`, both null unless the
   status is `completed`; an auth Worker reading a mailbox without them shows "This action was sent." alone. Reading
   sends and re-checks nothing.
+- **Recent actions on `/account` (2026-11-18).** The owner page lists, under "Recent actions", the actions of the agents
+  the human owns now that stopped waiting in the last 7 days, newest change first, at most 20: decided, being sent, sent,
+  not sent (with the stored failure code) or unknown by their last change, and a plan left pending past its expiry, by
+  that expiry, as expired. Each links to its own page above, which shows the rest. The mailbox overview adds
+  `recentActions: {actionId, agentId, agentDisplayName, provider, operation, status, failure, changedAt}[]`; an auth
+  Worker reading a mailbox without it lists none. Everything shown is escaped; another human's actions are never listed.
 - **No open redirect, no forgeable outcome.** A decision is answered directly with what that request just did
   (approved, rejected or the failure reason), and the owner is told they can close the page. Nothing is redirected to
   the app. The page never reads an outcome from its URL, so a link carrying `?result=approved` or `?result=rejected`
@@ -63,6 +69,11 @@ remains possible later for chat channels.
 
 auth-worker workerd tests, against the real mailbox and authorization Workers:
 
+- recent actions (2026-11-18): once approved and sent, the action leaves the waiting list and `/account` lists it as sent,
+  linking to its page, for its owner only. Mailbox tests pin the 7-day window at the exact tick, newest-first order, the
+  20 cap, the read's own clock, a pending plan only from its expiry, and other and former owners; nine mutants (owner
+  filter, order, window edge, future changes, the expiry branch, the failure only on `failed`, escaping, the missing
+  list, the link) each fail a test;
 - no session or a stale one signs in and returns to exactly this page, and a query is dropped;
 - a malformed id gives 404; another method gives 405;
 - only the linked action is shown, and its forms post back to the page;

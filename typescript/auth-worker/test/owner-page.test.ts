@@ -13,7 +13,7 @@ const now=1_800_000_000_000;
 const kid=()=>randomBytes(32).toString("base64url");
 const human:HumanSession={humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now};
 const iso=(ms:number)=>new Date(ms).toISOString();
-const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],nextAgents:null,externalActions:[],revokedGrants:[],ownerGrants:[],revokedOwnerGrantIds:[],connectors:[],...over});
+const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],nextAgents:null,externalActions:[],recentActions:[],revokedGrants:[],ownerGrants:[],revokedOwnerGrantIds:[],connectors:[],...over});
 const html=(response:Response)=>response.text();
 
 test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
@@ -279,4 +279,41 @@ test("actionPage_SentWithReceiptAndPublication_ReferenceStateAndHttpsLinkOnly",a
   }
   const older=await page({status:"completed",failure:null});
   assert.ok(older.includes("This action was sent.")&&!older.includes("reference"),older);
+});
+
+// The owner page lists what became of the owner's recent actions, each linking to its own page, with every stored value escaped.
+test("ownerPage_RecentActions_EachOutcomeLinkedAndEscaped",async()=>{
+  const agentId=randomUUID();
+  const statuses=["approved","rejected","expired","dispatching","completed","failed","unknown"] as const;
+  const recentActions=statuses.map((status,i)=>({actionId:randomUUID(),agentId,agentDisplayName:i===0?"<b>Desk</b>":null,provider:"post<iz>",operation:"publish_post",
+    status,failure:status==="failed"?"provider-refused<script>":null,changedAt:iso(now-i*1000)}));
+  const html=await ownerPage(base({recentActions}),human,new Map(),null,now).text();
+  assert.match(html,/<h2>Recent actions<\/h2>/);
+  for(const action of recentActions)assert.ok(html.includes('<a href="/account/actions/'+action.actionId+'">'),action.status);
+  assert.ok(!html.includes("<b>Desk</b>")&&html.includes("&#60;b&#62;Desk&#60;/b&#62;"),"the self-reported name is escaped");
+  assert.ok(!html.includes("post<iz>")&&!html.includes("<script>"),"stored provider and failure text are escaped");
+  assert.match(html,/: approved; nothing is sent until the agent sends it, once;/);
+  assert.match(html,/: rejected; nothing will be sent;/);
+  assert.match(html,/: expired without being sent;/);
+  assert.match(html,/: being sent; it will not be sent again;/);
+  assert.match(html,/: sent; /);
+  assert.match(html,/: not sent \(<code>provider-refused&#60;script&#62;<\/code>\);/);
+  assert.match(html,/: sent, but whether the platform accepted it is unknown; it will not be sent again;/);
+  // Newest first, as the mailbox lists them.
+  assert.ok(html.indexOf(recentActions[0]!.actionId)<html.indexOf(recentActions[6]!.actionId));
+  // A failure code is shown only for a failed action.
+  const quiet=await ownerPage(base({recentActions:[{...recentActions[4]!,failure:"leftover"}]}),human,new Map(),null,now).text();
+  assert.ok(!quiet.includes("leftover"));
+});
+
+test("ownerPage_RecentActions_NoneOrUnlistedStatus_NeverGuessed",async()=>{
+  const none=await ownerPage(base(),human,new Map(),null,now).text();
+  assert.match(none,/None of your agents' actions was decided, sent or expired in the last 7 days\./);
+  // A mailbox that predates the list omits it.
+  const older={...base()} as Record<string,unknown>;delete older.recentActions;
+  assert.match(await ownerPage(older as OwnerOverview,human,new Map(),null,now).text(),/None of your agents' actions was decided/);
+  const odd=await ownerPage(base({recentActions:[{actionId:randomUUID(),agentId:randomUUID(),agentDisplayName:null,provider:"x",operation:"publish_post",
+    status:"pending" as never,failure:"leftover",changedAt:iso(now)}]}),human,new Map(),null,now).text();
+  assert.match(odd,/: status not shown here; /);
+  assert.ok(!odd.includes("leftover"));
 });

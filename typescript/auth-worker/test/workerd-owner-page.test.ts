@@ -539,6 +539,22 @@ test("account_ApproveExternalAction_Fresh_AgentSendsOnce",{timeout:90_000},async
   assert.deepEqual(providerCalls.filter(call=>call.actionId===action.actionId),[{operation:"publish_text",content,targetAccount:"urn:li:person:alpha",actionId:action.actionId}]);
 });
 
+// Across both workers: once the owner approves and the agent sends, the action leaves the waiting list and the owner page lists
+// it under recent actions as sent, linking to its own page; another human's page does not list it.
+test("account_SentExternalAction_ListedUnderRecentActionsForItsOwnerOnly",{timeout:90_000},async()=>{
+  const human=await seedHuman(),content="Recent "+randomUUID();
+  const {agent,action}=await proposeAction(human,content);
+  const recentOf=(html:string)=>html.slice(html.indexOf("<h2>Recent actions</h2>"),html.indexOf("<h2>Apps that manage all your agents</h2>"));
+  assert.ok(!recentOf(await (await account(await sessionCookie(human))).text()).includes(action.actionId),"a waiting action is not a recent outcome");
+  assert.equal((await postAccount(await tokenFor(human,"Approve and allow sending once"),await sessionCookie(human))).status,303);
+  assert.equal((await executeAction(agent,action.actionId)).status,"completed");
+  const recent=recentOf(await (await account(await sessionCookie(human))).text());
+  assert.ok(recent.includes('<a href="/account/actions/'+action.actionId+'">'),recent);
+  assert.match(recent,new RegExp(action.actionId+'">[^<]*(<[^>]*>[^<]*)*: publish_text on [^<]+</a>: sent; '));
+  const stranger=await seedHuman();
+  assert.ok(!(await (await account(await sessionCookie(stranger))).text()).includes(action.actionId));
+});
+
 test("account_ApproveExternalAction_Stale_RedirectsToGithubNoEffect",{timeout:60_000},async()=>{
   const human=await seedHuman(),{agent,action}=await proposeAction(human,"stale "+randomUUID());
   const stale=Date.now()-11*60_000;
