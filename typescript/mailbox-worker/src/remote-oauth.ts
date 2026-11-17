@@ -133,7 +133,7 @@ export async function authorizeOAuth(
         try { claim=await config.authServer.validateToken(config.resource,match[1]); }
         catch { return failClosed(); }
         const nowSec=Math.floor(clock()/1000);
-        const owner=!!claim&&!!claim.props&&typeof claim.props==='object'&&'owner' in claim.props&&claim.props.owner===true;
+        const owner = !!claim && typeof claim.props === 'object' && claim.props !== null && (claim.props as {owner?: unknown}).owner === true;
         if (!claim || claim.audience!==config.resource || typeof claim.userId!=='string'
             || !identity.test(claim.userId) || !claim.props || typeof claim.props!=='object'
             // An agent's grant names its account; an owner grant names only its human, and never also an account.
