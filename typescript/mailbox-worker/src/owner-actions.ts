@@ -14,7 +14,7 @@ import { apiTime, nowUtc } from './time.ts';
 /** A signed-in human may not decide on a session older than this, or one dated further ahead than the skew. */
 export const reauthWindowMs = 600_000;
 export const reauthFutureSkewMs = 60_000;
-const maxGrantsPerAgent = 50, maxAddressesPerAgent = 20, maxRevokedGrantIds = 20, maxRevokedGrantsShown = 200;
+const maxGrantsPerAgent = 50, maxAddressesPerAgent = 20, revokedGrantsPerRead = 100;
 /** 30 days of 100 ns ticks: how long the authorization server keeps retrying SDK clean-up of a revoked grant. */
 const revokedGrantWindowTicks = 25_920_000_000_000n;
 
@@ -71,7 +71,8 @@ const placeholders = (values: unknown[]) => values.map(() => '?').join(',');
  * Pending requests, and the keys of one page of the human's agents after the agent `after` names. An unknown human, or a
  * cursor that is not one of this human's agents, sees no agents; a frozen human sees only that.
  */
-export async function ownerOverview(env: Env, humanId: string, after: string | null = null, clock: () => bigint = nowUtc): Promise<OwnerOverview> {
+export async function ownerOverview(env: Env, humanId: string, after: string | null = null, clock: () => bigint = nowUtc,
+    revocationStart: () => string = () => crypto.randomUUID()): Promise<OwnerOverview> {
     requireReadable(env);
     const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: [], nextAgents: null, externalActions: [], revokedGrants: [], connectors: []};
     if (typeof humanId !== 'string' || !uuidPattern.test(humanId) || (after !== null && (typeof after !== 'string' || !uuidPattern.test(after)))) return empty;
@@ -97,15 +98,15 @@ export async function ownerOverview(env: Env, humanId: string, after: string | n
             SELECT *,row_number() OVER (PARTITION BY account_id ORDER BY created_at DESC,grant_id) rank FROM client_grants WHERE human_id=? AND revoked_at IS NULL AND account_id IN (${placeholders(ownedIds)}))
             WHERE rank<=? ORDER BY account_id,rank`)
             .bind(humanId, ...ownedIds, maxGrantsPerAgent).all<{account_id: string; grant_id: string; client_id: string; client_name: string | null; created_at: string}>()).results;
-        // Every agent's, not only this page's, so a revocation is cleaned up whichever page the owner opens; bounded per agent
-        // so one busy agent cannot starve another.
-        const revoked = (await tx.db.prepare(`SELECT account_id,grant_id FROM (
-            SELECT *,row_number() OVER (PARTITION BY account_id ORDER BY revoked_at DESC,grant_id) rank FROM client_grants
-            WHERE human_id=? AND revoked_at IS NOT NULL AND revoked_at>CAST(? AS INTEGER))
-            WHERE rank<=? ORDER BY revoked_at DESC,grant_id LIMIT ?`)
-            .bind(humanId, (nowTicks - revokedGrantWindowTicks).toString(), maxRevokedGrantIds, maxRevokedGrantsShown).all<{account_id: string; grant_id: string}>()).results;
+        // Every agent's, not only this page's, so a revocation is cleaned up whichever page the owner opens. The newest ones always
+        // (the one just revoked among them), and the rest from a random point in grant-ID order, so bounded reads reach them all in turn.
+        const revokedSince = (nowTicks - revokedGrantWindowTicks).toString(), revokedWhere = 'human_id=? AND revoked_at IS NOT NULL AND revoked_at>CAST(? AS INTEGER)';
+        const newest = (await tx.db.prepare(`SELECT account_id,grant_id FROM client_grants WHERE ${revokedWhere} ORDER BY revoked_at DESC,grant_id LIMIT ?`)
+            .bind(humanId, revokedSince, revokedGrantsPerRead).all<{account_id: string; grant_id: string}>()).results;
+        const rotated = (await tx.db.prepare(`SELECT account_id,grant_id FROM client_grants WHERE ${revokedWhere} ORDER BY grant_id>=? DESC,grant_id LIMIT ?`)
+            .bind(humanId, revokedSince, revocationStart(), revokedGrantsPerRead).all<{account_id: string; grant_id: string}>()).results;
         const revokedGrants: RevokedAgentGrants[] = [];
-        for (const row of revoked) {
+        for (const row of [...newest, ...rotated.filter(row => !newest.some(seen => seen.grant_id === row.grant_id))]) {
             const agent = revokedGrants.find(entry => entry.agentId === row.account_id);
             if (agent) agent.revokedGrantIds.push(row.grant_id); else revokedGrants.push({agentId: row.account_id, revokedGrantIds: [row.grant_id]});
         }

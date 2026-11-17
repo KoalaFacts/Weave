@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
-import { actionLifetimeTicks, approvalOrigin, executeExternalAction, listWaitingExternalActions, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
+import { actionLifetimeTicks, approvalOrigin, executeExternalAction, listWaitingExternalActions, ownerPendingAction, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
 import { apiTime } from '../src/time.ts';
 import { createOwnedAgent } from '../src/humans.ts';
 import type { Problem } from '../src/wire.ts';
@@ -1019,4 +1019,28 @@ test('ownerOverview_ActionOfAgentBeyondFirstPage_ListedWithItsName', () => scena
     assert.ok(overview.agents.some(agent => agent.agentId === first.accountId));
     const listed = overview.externalActions.find(action => action.actionId === actionId);
     assert.equal(listed?.agentDisplayName, 'Late desk');
+}));
+
+// The page for one action reads it by ID: an action past the overview's 200 oldest can still be decided from its link.
+test('ownerPendingAction_ActionBeyondTheOverviewCap_FoundByIdForItsOwnerOnly', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const response = await propose(h, agent, 'The newest plan.');
+    assert.equal(response.status, 200, await response.clone().text());
+    const {actionId} = await response.json() as {actionId: string};
+    await h.db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<205)
+        INSERT INTO external_actions(action_id,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,target_account,plan_digest,status,created_at,expires_at,updated_at)
+        SELECT lower(hex(randomblob(4)))||'-0000-4000-8000-'||printf('%012d',i),account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,
+        target_account,plan_digest,status,created_at-1000-i,expires_at,updated_at FROM external_actions,n WHERE action_id=?`).bind(actionId).run();
+    const overview = await ownerOverview(environment(h), humanId);
+    if (overview.frozen) throw Error('frozen');
+    assert.equal(overview.externalActions.length, 200);
+    assert.ok(!overview.externalActions.some(action => action.actionId === actionId), 'the newest is past the overview cap');
+    const found = await ownerPendingAction(environment(h), humanId, actionId);
+    assert.equal(found.frozen, false);
+    assert.equal((found as {action: {actionId: string} | null}).action?.actionId, actionId);
+    const {humanId: stranger} = await ownedAgent(h);
+    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null});
+    assert.deepEqual(await ownerPendingAction(environment(h), humanId, 'not-an-id'), {frozen: false, action: null});
+    await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(humanId).run();
+    assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: true});
 }));

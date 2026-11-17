@@ -11,7 +11,7 @@ import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubL
 import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
 import {readOwnerAction,readConnectForm,destructiveKinds,ownerActionToken} from "./owner-forms.ts";
-import {actionDecisionPage,actionPage,actionPagePath,ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
+import {actionDecisionPage,actionPage,actionPagePath,ownerFormTokens,ownerPage,recoveryCodePage,type PendingActionView} from "./owner-page.ts";
 import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
 import {beginYoutubeConnect,completeYoutubeConnect,youtubeCallbackPath,type YoutubeConnectEnv} from "./youtube-connect.ts";
 export {ConsentNonce} from "./nonce-do.ts";
@@ -336,9 +336,10 @@ async function actionApproval(req:Request,env:Env,actionId:string):Promise<Respo
   // The page exists to approve, which needs a fresh sign-in, so a stale one signs in again before the page is shown.
   if(!freshAuthentication(session,now))return beginGithubLogin(env,pageUrl,now,{reauthenticate:{login:session.login}});
   if(req.method==="GET"){
-    let overview:OwnerOverview;
-    try{overview=await env.MAILBOX.ownerOverview(session.humanId);}catch{return directoryUnavailable();}
-    const action=overview.frozen?undefined:overview.externalActions.find(candidate=>candidate.actionId===actionId);
+    // Read by ID, so the page decides this action however many others are pending.
+    let view:PendingActionView;
+    try{view=await env.MAILBOX.ownerPendingAction(session.humanId,actionId);}catch{return directoryUnavailable();}
+    const action=view.frozen?null:view.action;
     const tokens=new Map<string,string>();
     try{
       if(action){
@@ -350,7 +351,7 @@ async function actionApproval(req:Request,env:Env,actionId:string):Promise<Respo
       console.error(failureLog.formSigning);
       return messagePage(503,"Temporarily unavailable","Weave cannot show this action right now. Try again later.");
     }
-    return actionPage(overview,session,actionId,tokens,now);
+    return actionPage(view,session,actionId,tokens,now);
   }
   const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
   if(action==="expired")return actionDecisionPage(session,actionId,"form-expired");

@@ -168,6 +168,8 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
     "<h2>Your agents</h2>",agentSection(overview,tokens,after)].join(""));
 }
 
+/** What the mailbox answers for one pending action of the signed-in human. */
+export type PendingActionView={frozen:true}|{frozen:false;action:OwnerExternalAction|null};
 /** The address of the page for one action: what an app such as Envoylet links to so its owner can decide there. */
 export const actionPagePath=(actionId:string)=>"/account/actions/"+actionId;
 /** The outcome of a decision on the page for one action; failure reasons share the owner page's text. */
@@ -191,10 +193,10 @@ export function actionDecisionPage(human:HumanSession,actionId:string,result:str
  * owner page, posting back to this address. An action that is not pending for this human is described the same way whether it
  * was decided, expired or belongs to someone else.
  */
-export function actionPage(overview:OwnerOverview,human:HumanSession,actionId:string,tokens:ReadonlyMap<string,string>,now:number):Response{
+export function actionPage(view:PendingActionView,human:HumanSession,actionId:string,tokens:ReadonlyMap<string,string>,now:number):Response{
   const head="<h1>Approve an action</h1><p>Signed in as @"+esc(human.login)+"</p>";
-  if(overview.frozen)return shell("Approve an action",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
-  const action=overview.externalActions.find(candidate=>candidate.actionId===actionId);
+  if(view.frozen)return shell("Approve an action",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
+  const action=view.action?.actionId===actionId?view.action:null;
   const all='<p><a href="/account">All your agents and actions</a></p>';
   if(!action)return shell("Approve an action",head+"<p>This action is not waiting for your approval. It may already be decided or expired.</p>"+all);
   const fresh=freshAuthentication(human,now);

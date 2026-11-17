@@ -617,8 +617,8 @@ async function seedAddress(h: Harness, accountId: string, options: {label?: stri
     return addressId;
 }
 const grantRevokedAt = (h: Harness, grantId: string) => h.db.prepare('SELECT CAST(revoked_at AS TEXT) r FROM client_grants WHERE grant_id=?').bind(grantId).first<string>('r');
-async function overviewOf(h: Harness, humanId: string, now?: () => bigint) {
-    const overview = await ownerOverview(environment(h), humanId, null, now);
+async function overviewOf(h: Harness, humanId: string, now?: () => bigint, start?: () => string) {
+    const overview = await ownerOverview(environment(h), humanId, null, now, start);
     assert.equal(overview.frozen, false);
     if (overview.frozen) throw Error('frozen');
     return overview;
@@ -692,7 +692,7 @@ test('overview_BusyAgent_BoundedPerAgentWithoutStarvingAnother', async () => {
         const first = agents.find(a => a.agentId === busy.accountId)!, second = agents.find(a => a.agentId === quiet.accountId)!;
         assert.deepEqual(first.grants.map(g => g.grantId), grants.slice(1).reverse(), '50 newest live grants');
         assert.deepEqual(first.addresses.map(a => a.addressId), addresses.slice(0, 20), '20 oldest live addresses');
-        assert.deepEqual(await revokedOf(h, id, busy.accountId, () => now), revoked.slice(1).reverse(), '20 most recently revoked');
+        assert.deepEqual((await revokedOf(h, id, busy.accountId, () => now)).sort(), [...revoked].sort(), 'every recent revocation while there are few');
         assert.deepEqual(second.grants.map(g => g.grantId), [quietGrant]);
         assert.deepEqual(second.addresses.map(a => a.addressId), [quietAddress]);
         assert.deepEqual(await revokedOf(h, id, quiet.accountId, () => now), [quietRevoked]);
@@ -872,5 +872,25 @@ test('overview_CursorOfAnotherHumansAgentOrMalformed_NoAgents', async () => {
             if (overview.frozen) throw Error('frozen');
             assert.deepEqual([overview.agents, overview.nextAgents], [[], null], after);
         }
+    } finally { await h.close(); }
+});
+
+// More revocations than one read holds: the newest are always read, and the rest come in turn from a rotating start.
+test('overview_ManyRevocations_NewestAlwaysAndEveryOneReachedByRotation', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        const now = 1_000_000_000_000_000n, revoked: string[] = [];
+        for (let i = 1n; i <= 250n; i++) revoked.push(await seedGrant(h, id, cred.accountId, {createdAt: now - 1000n, revokedAt: now - 500n + i}));
+        const byId = [...revoked].sort(), newest = revoked.slice(-100);
+        const read = async (startAt: string) => (await overviewOf(h, id, () => now, () => startAt)).revokedGrants.flatMap(entry => entry.revokedGrantIds);
+        const seen = new Set<string>();
+        for (const startAt of ['00000000-0000-4000-8000-000000000000', byId[100]!, byId[200]!]) {
+            const ids = await read(startAt);
+            assert.ok(ids.length <= 200);
+            for (const grant of newest) assert.ok(ids.includes(grant), 'the newest revocations are always read');
+            ids.forEach(grant => seen.add(grant));
+        }
+        assert.equal(seen.size, 250, 'rotating the start reaches every revocation');
     } finally { await h.close(); }
 });

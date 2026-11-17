@@ -147,7 +147,7 @@ test("ownerPage_ActionWhoseAccountChanged_OffersOnlyRejectWithTheReason",async()
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
   assert.equal(tokens.has("confirm-action:"+actionId),false,"no approval token for a plan that can never be approved");
   assert.ok(tokens.has("reject-action:"+actionId));
-  for(const body of [await html(ownerPage(overview,human,tokens,null,now)),await html(actionPage(overview,human,actionId,tokens,now))]){
+  for(const body of [await html(ownerPage(overview,human,tokens,null,now)),await html(actionPage({frozen:false,action},human,actionId,tokens,now))]){
     assert.ok(!body.includes("Approve and allow sending once"));
     assert.ok(!body.includes("Approving needs a GitHub sign-in"));
     assert.ok(body.includes("<p>"+ownerResultText["account-changed"]+"</p>"));
@@ -156,7 +156,7 @@ test("ownerPage_ActionWhoseAccountChanged_OffersOnlyRejectWithTheReason",async()
   }
   const live=base({agents:[agent({agentId})],externalActions:[{...action,accountChanged:false}]});
   const liveTokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,live,now,false);
-  const liveBody=await html(actionPage(live,human,actionId,liveTokens,now));
+  const liveBody=await html(actionPage({frozen:false,action:{...action,accountChanged:false}},human,actionId,liveTokens,now));
   assert.ok(liveBody.includes("Approve and allow sending once")&&liveBody.includes("Approving needs a GitHub sign-in")&&!liveBody.includes(ownerResultText["account-changed"]!));
 });
 

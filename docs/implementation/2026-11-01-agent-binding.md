@@ -150,11 +150,15 @@ listed; binding, keys and the unclaimed limits above are unchanged.
   20 agents, oldest first, keyed by creation time and row, with the next page's
   cursor; a cursor that is not one of the human's agents yields an empty page.
 - **What stays human-wide.** Pending external actions are read through the
-  owning human, not a list of IDs, so every page shows them all (the oldest 200),
-  each now carrying its agent's display name. Recently revoked grants for SDK
-  clean-up are read the same way (at most 20 per agent, 200 in all), so a
-  revocation is cleaned up whichever page the owner opens. The RPC result moved
-  them from each agent to `revokedGrants`.
+  owning human, not a list of IDs, so every page shows them (the oldest 200),
+  each now carrying its agent's display name. The page for one action
+  (`/account/actions/{actionId}`) reads that action by ID through a new
+  `ownerPendingAction` RPC, so an approval link works however many other actions
+  are pending. Recently revoked grants for SDK clean-up are read the same way:
+  the 100 newest (so the one just revoked is always there) and 100 more from a
+  random point in grant-ID order, so bounded page loads reach every revocation
+  in turn (before, each agent's 20 newest only). The RPC result moved them from
+  each agent to `revokedGrants`.
 - **Pages.** `/account?agents=<cursor>` shows the next 20 agents with links to
   the following page and back to the first; an unusable cursor shows the first
   page. The consent picker lists the first 20 agents and, when there are more,
@@ -164,7 +168,9 @@ listed; binding, keys and the unclaimed limits above are unchanged.
 Verification: mailbox-worker `humans`, `owner-actions` and `external-actions`
 tests (a configured limit of 25 and 11, malformed values, paging 25 and 120
 agents through every page once, foreign and malformed cursors, an action of an
-agent beyond the first page named on the first); auth-worker portable tests for
+agent beyond the first page named on the first, an action past the 200 cap
+found by ID for its owner only, 250 revocations all reached by rotating the
+start); auth-worker portable tests for
 the page links and picker, and a workerd two-worker test that walks 25 agents
 through `/account` pages over the real `HumanDirectory` RPC. Not verified
 against a deployment; no deployed configuration sets the new variable.

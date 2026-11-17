@@ -18,7 +18,7 @@ import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
 import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
-import { executeExternalAction, getExternalAction, keyCaller, listWaitingExternalActions, ownerActionMedia, proposalKey, proposeExternalAction } from './external-actions.ts';
+import { executeExternalAction, getExternalAction, keyCaller, listWaitingExternalActions, ownerActionMedia, ownerPendingAction, proposalKey, proposeExternalAction, type OwnerExternalAction } from './external-actions.ts';
 import { sweepPublications } from './external-publications.ts';
 import { getMedia, importMedia, receiveSignedUpload, sweepMedia, serveSignedMedia, uploadMedia } from './external-media.ts';
 import { connectAccount, connectExternalCredential, listAgentCredentials, type ConnectAccountInput, type ConnectAccountResult, type ConnectCredentialInput, type ConnectCredentialResult } from './external-credentials.ts';
@@ -45,6 +45,7 @@ export class HumanDirectory extends WorkerEntrypoint<Env> {
     ownerAction(input: OwnerAction): Promise<OwnerActionResult> { return ownerAction(scopedEnv(this.env), input); }
     connectCredential(input: ConnectCredentialInput): Promise<ConnectCredentialResult> { return connectExternalCredential(scopedEnv(this.env), input); }
     connectAccount(input: ConnectAccountInput): Promise<ConnectAccountResult> { return connectAccount(scopedEnv(this.env), input); }
+    ownerPendingAction(humanId: string, actionId: string): Promise<{frozen: true} | {frozen: false; action: OwnerExternalAction | null}> { return ownerPendingAction(scopedEnv(this.env), humanId, actionId); }
     ownerActionMedia(humanId: string, actionId: string, mediaId: string): Promise<{contentType: string; body: ReadableStream} | null> { return ownerActionMedia(scopedEnv(this.env), humanId, actionId, mediaId); }
     recordGrant(input: RecordGrantInput): Promise<RecordGrantResult> { return recordGrant(scopedEnv(this.env), input); }
     revokeGrant(input: RevokeGrantInput): Promise<RevokeGrantResult> { return revokeGrant(scopedEnv(this.env), input); }
