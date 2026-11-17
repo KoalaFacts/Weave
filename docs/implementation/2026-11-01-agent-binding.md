@@ -116,9 +116,12 @@ It is not repeated here. The preceding slice is the
   confirmations on the owner page as `unavailable` until it is fixed, so a
   typo never removes the limit. Lowering it refuses new agents and keeps every
   agent the human already owns listed.
-- The ceiling of 50 is set by the reads that list a human's agents (the OAuth
-  agent picker and the owner page), which load them in one page and bind one
-  D1 parameter per agent; it rises when those reads page (ledger item AI-1).
+- The ceiling of 50 is set by the reads that list a human's agents in one page:
+  the owner page's overview binds one D1 parameter per owned agent (its keys
+  query also one per agent with a pending binding request, at most 70 of D1's
+  100), and the OAuth agent picker lists them all. It rises when those reads
+  page (ledger item AI-1). The setting is a string var, like the other numeric
+  settings; a JSON number is refused as malformed.
 - The consent and owner pages no longer name a number: "already owns the most
   agents this Weave allows".
 - Verification: unit tests on a local D1 (limit 3 and 50, 11 malformed values,

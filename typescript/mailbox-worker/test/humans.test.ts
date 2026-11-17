@@ -124,7 +124,8 @@ test('createOwnedAgent_CeilingLimit_ListsAndOverviewsEveryAgent', async () => {
         assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
         const listed = await listHumanAgents(env, id);
         assert.deepEqual(listed.map(agent => agent.displayName), Array.from({ length: 50 }, (_, i) => 'agent ' + i));
-        // The overview binds one parameter per owned agent; at the ceiling it must still fit D1's bound-parameter limit.
+        // The overview's queries bind one parameter per owned agent (the keys query also one per agent with a pending binding
+        // request, at most 20 more); at the ceiling they must still fit D1's 100 bound parameters.
         const overview = await ownerOverview(env, id) as { agents: { agentId: string }[] };
         assert.deepEqual(overview.agents.map(agent => agent.agentId), listed.map(agent => agent.accountId));
         // A lower limit set later refuses new agents but still lists every agent the human already owns.
