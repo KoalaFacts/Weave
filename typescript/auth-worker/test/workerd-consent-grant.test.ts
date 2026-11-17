@@ -374,7 +374,7 @@ test("consent_EleventhNewAgent_ShowsLimitWithoutCode",{timeout:120_000},async()=
   const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Agent 11"});
   assert.equal(response.status,400);
   assert.equal(response.headers.get("location"),null);
-  assert.match(await response.text(),/already has the maximum of 10 agents/);
+  assert.match(await response.text(),/already owns the most agents this Weave allows/);
   assert.equal((await agentsOf(mf,humanId)).length,10);
 });
 
@@ -649,6 +649,42 @@ test("consent_AgentCreationUnavailable_Returns503WithoutCode",{timeout:60_000},a
     assert.match(await response.text(),/New agents cannot be created right now/);
     assert.equal(await humanIdOf(mf,11001),existingHumanId);
     assert.deepEqual(await agentsOf(mf,existingHumanId),[]);
+  }finally{await stop(instance);}
+});
+
+test("consent_OperatorAgentLimit_ThirdNewAgentRefusedAndPickerListsBoth",{timeout:120_000},async()=>{
+  const instance=await start({},{MAX_AGENTS_PER_HUMAN:{type:"text",value:"2"}});
+  try{
+    const {mf}=instance;
+    const auth=authorization();
+    const session=await signIn(mf,auth,15001);
+    for(let i=1;i<=2;i++){
+      const next=authorization();
+      const consent=await openConsent(mf,next,session);
+      codeFrom(await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Agent "+i}),next);
+    }
+    const humanId=await humanIdOf(mf,15001);
+    assert.equal((await agentsOf(mf,humanId)).length,2);
+    const consent=await openConsent(mf,auth,session);
+    const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Agent 3"});
+    assert.equal(response.status,400);
+    assert.equal(response.headers.get("location"),null);
+    assert.match(await response.text(),/already owns the most agents this Weave allows/);
+    assert.equal((await agentsOf(mf,humanId)).length,2);
+  }finally{await stop(instance);}
+});
+
+test("consent_MalformedAgentLimit_Returns503WithoutAgentOrCode",{timeout:60_000},async()=>{
+  const instance=await start({},{MAX_AGENTS_PER_HUMAN:{type:"text",value:"51"}});
+  try{
+    const {mf}=instance;
+    const auth=authorization();
+    const consent=await openConsent(mf,auth,await signIn(mf,auth,15002));
+    const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Claude Code"});
+    assert.equal(response.status,503);
+    assert.equal(response.headers.get("location"),null);
+    assert.match(await response.text(),/New agents cannot be created right now/);
+    assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,15002)),[]);
   }finally{await stop(instance);}
 });
 

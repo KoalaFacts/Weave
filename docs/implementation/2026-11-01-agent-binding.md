@@ -107,6 +107,26 @@ It is not repeated here. The preceding slice is the
   current keys and confirms again. An action form older than its 10 minute
   lifetime reports `form-expired` (reload the page) rather than "not found".
 
+## Owned-agent limit setting (2026-11-17)
+
+- A human's owned-agent limit is the mailbox Worker setting
+  `MAX_AGENTS_PER_HUMAN`: unset means 10 (unchanged), and `1` to `50` are
+  accepted. Any other value (empty, `0`, over 50, leading zeros, spaces,
+  exponents) refuses new owned agents on the OAuth consent page and binding
+  confirmations on the owner page as `unavailable` until it is fixed, so a
+  typo never removes the limit. Lowering it refuses new agents and keeps every
+  agent the human already owns listed.
+- The ceiling of 50 is set by the reads that list a human's agents (the OAuth
+  agent picker and the owner page), which load them in one page and bind one
+  D1 parameter per agent; it rises when those reads page (ledger item AI-1).
+- The consent and owner pages no longer name a number: "already owns the most
+  agents this Weave allows".
+- Verification: unit tests on a local D1 (limit 3 and 50, 11 malformed values,
+  the owner overview listing 50 agents, the binding confirmation's limit and
+  malformed refusal), workerd two-worker consent tests (limit 2 refuses a third
+  new agent; `51` answers 503 with no agent and no code), and mutation checks
+  listed in the PR.
+
 ## Removed
 
 - The `409 owned-agent` refusal for key additions: an owned agent now receives a

@@ -56,19 +56,20 @@ The shared plan on #365 plus the "Weave scheduled-task ledger" section of [docs/
 ## Work order
 
 1. Open Envoylet requests on #365, oldest first.
-2. Anything Envoylet's integration is visibly missing per the shared plan and Envoylet's [weave-publishing guide](https://github.com/KoalaFacts/Envoylet/blob/main/docs/weave-publishing.md).
-3. Shared plan step 4, one PR each: a status-change notification for apps, then native X, then native LinkedIn (all delivered except the push webhook, blocked on a schema owner decision, and A1, an owner decision).
-4. The most valuable gap in the publishing router or owner pages (correctness, security, missing tests, clearer errors), stated in the PR.
+2. AI Office (owner, 2026-11-17; KoalaFacts/ai-office is Weave's second consumer, and a role there **is** a Weave account): AI-1 then AI-2 from `agent-harness/projects/weave.md`, as generic owner/app capabilities that never name AI Office concepts. AI-1: the owned-agent limit becomes a Worker setting with a safe default allowing thousands per human, and every read that lists a human's agents (owner page, OAuth agent picker, `listHumanAgents`) pages; registration rate limits stay. AI-2: on Weave's own consent page a human authorizes one OAuth client to manage all agents that human owns (create, list paged, act as any of them on the mailbox and on external-action proposals, naming the agent on each call); approving stays the human's on Weave's page; revocable on `/account` with effect on the next call; refused for a frozen human; every call recorded with its grant; an agent the human does not own is never reachable; workerd two-worker tests cover create, list, act-as, revoke and cross-human refusal, with mutation checks on each guard. Ask with `[owner-decision]` only for what the owner must decide (a schema change that needs an apply-schema release is one).
+3. Anything Envoylet's integration is visibly missing per the shared plan and Envoylet's [weave-publishing guide](https://github.com/KoalaFacts/Envoylet/blob/main/docs/weave-publishing.md).
+4. Shared plan step 4, one PR each: a status-change notification for apps, then native X, then native LinkedIn (all delivered except the push webhook, blocked on a schema owner decision, and A1, an owner decision).
+5. The most valuable gap in the publishing router or owner pages (correctness, security, missing tests, clearer errors), stated in the PR.
 
 Every PR keeps current: the area's implementation record (scope, behaviour, verification, mutation checks, limits), OpenAPI and MCP tool schemas and descriptions, `agent-start.md` when agent-facing behaviour changes, and the READMEs/AGENTS.md lines that describe what changed. The PR body says whether an owner deploy is needed.
 
 ## Authority
 
-- Branch prefix `weave/` (housekeeping: `weave/docs-housekeeping-YYYY-MM-DD`; this skill's bootstrap `weave/advance-skill`; verify install `weave/verify-skills`). Squash merge pinned to the head SHA. Merge only PRs this task opened.
+- Branch prefix `weave/` (housekeeping: `weave/docs-housekeeping-YYYY-MM-DD`; this skill's bootstrap `weave/advance-skill`; verify install `weave/verify-skills`). Squash merge pinned to the head SHA. Every open PR is handled through `autonomous-dev` §3 step 0 open-PR triage (the owner's standing instruction), under the same merge conditions; a PR someone else pushed in the last 90 minutes is left alone.
 - First line of every PR body: "Opened by the Weave scheduled task."
 - Other sessions also work here: preserve their work. If someone else pushed to a branch or PR, stop touching it until the gate and a new verdict cover that head; never force-push.
 - Deploying stays the owner's: never dispatch or re-run a deploy workflow, never push to publish/demo, never comment on issue #236. Read-only public HTTP checks of the demo are allowed (for example `curl https://demo.weave-389.workers.dev/openapi.json`). Merging deploys nothing.
-- Codex wait: poll every 3–5 minutes for up to 60 minutes (across runs); once a PR is over 6 hours old with no Codex review, merge on the gate alone and say so. If Codex reports it cannot review, use the independent review agent per `autonomous-dev` §3.5.
+- Codex never blocks (`autonomous-dev` §0.1, owner 2026-11-17): if Codex has not reviewed the head within 45 minutes of the PR opening (across runs), or reports it cannot review, an independent review agent that did not write the change reviews and verifies it per `autonomous-dev` §3 step 5, and the PR says so. A small PR (`autonomous-dev` §5) needs neither.
 
 ## Project rules
 

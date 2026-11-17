@@ -457,7 +457,7 @@ test("account_HumanAtTenAgents_ShowsAgentLimit",{timeout:120_000},async()=>{
   const response=await postAccount(await tokenFor(human,"Confirm binding"),await sessionCookie(human));
   assert.equal(result(response),"agent-limit");
   const page=await (await shared.mf.dispatchFetch(issuer+response.headers.get("location")!,{redirect:"manual",headers:{Cookie:await sessionCookie(human)}})).text();
-  assert.ok(page.includes("maximum of 10 agents"));
+  assert.ok(page.includes("the most agents this Weave allows"));
   assert.equal(await ownerOf(agent),null);
   assert.equal(await bindingStatus(agent,view.requestId),"pending");
 });

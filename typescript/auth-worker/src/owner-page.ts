@@ -24,7 +24,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "not-found":"That request, key or connected client was not found.",
   "not-pending":"That request was already decided or cancelled.",
   expired:"That request has expired.",
-  "agent-limit":"You already own the maximum of 10 agents.",
+  "agent-limit":"You already own the most agents this Weave allows.",
   "already-owned":"That agent already belongs to a person.",
   "key-in-use":"That key is already in use.",
   "key-limit":"The agent already has the maximum number of live keys.",

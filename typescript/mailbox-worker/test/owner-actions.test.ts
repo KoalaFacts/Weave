@@ -307,6 +307,22 @@ test('confirmBinding_HumanAtTen_AgentLimitRequestStaysPending', async () => {
     } finally { await h.close(); }
 });
 
+test('confirmBinding_OperatorLimit_AppliesAndMalformedIsUnavailable', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555');
+        const two = environment(h, {MAX_AGENTS_PER_HUMAN: '2'});
+        for (let i = 0; i < 2; i++) assert.equal((await createOwnedAgent(two, {humanId: id, displayName: 'a' + i, sourceIp: '203.0.113.7'})).ok, true);
+        const {cred, requestId} = await requested(h, '555');
+        assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId}, {env: two}), {ok: false, reason: 'agent-limit'});
+        assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId}, {env: environment(h, {MAX_AGENTS_PER_HUMAN: '0'})}), {ok: false, reason: 'unavailable'});
+        assert.equal(await ownerOf(h, cred.accountId), null);
+        assert.equal(await bindingStatus(h, requestId), 'pending');
+        assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId}, {env: environment(h, {MAX_AGENTS_PER_HUMAN: '3'})}), {ok: true});
+        assert.equal(await ownerOf(h, cred.accountId), id);
+    } finally { await h.close(); }
+});
+
 test('confirmBinding_TwoConcurrentAtNine_ExactlyOneOk', async () => {
     const h = await start();
     try {

@@ -1,7 +1,7 @@
 import { atomic, type Env, type Transaction } from './database.ts';
 import { confirmKeyRequest, revokeKeyForOwner } from './agent-keys.ts';
 import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, rejectBindingRequest } from './binding-requests.ts';
-import { maxAgentsPerHuman, requireReadable, writesRefused } from './humans.ts';
+import { agentsPerHumanCeiling, requireReadable, writesRefused } from './humans.ts';
 import { rejectKeyRequest } from './key-requests.ts';
 import { revokeGrantIn } from './client-grants.ts';
 import { confirmExternalAction, pendingForOwner, rejectExternalAction, type OwnerExternalAction } from './external-actions.ts';
@@ -79,7 +79,7 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
             WHERE b.target_subject=? AND b.status='pending' AND b.expires_at>CAST(? AS INTEGER) ORDER BY b.created_at,b.request_id LIMIT ?`)
             .bind(human.subject, now, pendingBindingRequestsPerHuman).all<{request_id: string; account_id: string; display_name: string | null; kid: string; created_at: string; expires_at: string}>()).results;
         const owned = (await tx.db.prepare('SELECT account_id,display_name FROM accounts WHERE human_id=? ORDER BY created_at,rowid LIMIT ?')
-            .bind(humanId, maxAgentsPerHuman).all<{account_id: string; display_name: string | null}>()).results;
+            .bind(humanId, agentsPerHumanCeiling).all<{account_id: string; display_name: string | null}>()).results;
         const accountIds = [...new Set([...bindings.map(row => row.account_id), ...owned.map(row => row.account_id)])];
         const keys = accountIds.length === 0 ? [] : (await tx.db.prepare(`SELECT account_id,kid,label,CAST(created_at AS TEXT) created_at,CAST(last_used_at AS TEXT) last_used_at,
             CAST(cooling_until AS TEXT) cooling_until FROM agent_keys WHERE account_id IN (${placeholders(accountIds)}) AND revoked_at IS NULL ORDER BY created_at,kid`)
@@ -153,7 +153,7 @@ async function decide(env: Env, tx: Transaction, input: DecidedAction, at: bigin
     if (!human) return notFound;
     if (human.frozen_at !== null) return {ok: false, reason: 'frozen'};
     switch (input.kind) {
-        case 'confirm-binding': return confirmBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.keysDigest, at);
+        case 'confirm-binding': return confirmBindingRequest(env, tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.keysDigest, at);
         case 'reject-binding': return rejectBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
         case 'confirm-key': return confirmKeyRequest(tx, input.humanId, input.requestId, at);
         case 'reject-key': return rejectKeyRequest(tx, input.humanId, input.requestId, at);

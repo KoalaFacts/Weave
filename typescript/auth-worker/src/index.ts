@@ -96,7 +96,7 @@ const directoryUnavailable=()=>{
 };
 const agentRefused:Record<Exclude<CreateAgentResult,{ok:true}>["reason"],()=>Response>={
   "agent-limit":()=>messagePage(400,"Agent not created",
-    "This GitHub account already has the maximum of 10 agents. Choose an existing agent instead."),
+    "This GitHub account already owns the most agents this Weave allows. Choose an existing agent instead."),
   "rate-limited":()=>messagePage(429,"Agent not created","Too many new agents were created recently. Try again later."),
   frozen:()=>messagePage(403,"Sign-in refused","This GitHub identity is frozen; contact the operator."),
   invalid:()=>messagePage(400,"Agent not created","The agent name must be 1 to 128 characters without control characters."),

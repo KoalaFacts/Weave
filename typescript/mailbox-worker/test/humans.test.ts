@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start } from './harness.ts';
-import { createOwnedAgent, humanHasAgent, listHumanAgents, maxAgentsPerHuman, signInHuman, type HumanSignIn } from '../src/humans.ts';
+import { agentsPerHumanCeiling, createOwnedAgent, defaultAgentsPerHuman, humanHasAgent, listHumanAgents, signInHuman, type HumanSignIn } from '../src/humans.ts';
+import { ownerOverview } from '../src/owner-actions.ts';
 import type { Env } from '../src/database.ts';
 
 const environment = (h: { db: unknown }, overrides: Partial<Env> = {}) => ({
@@ -98,9 +99,49 @@ test('createOwnedAgent_EleventhAgent_ReturnsAgentLimit', async () => {
     const h = await start();
     try {
         const env = environment(h), id = await humanId(env);
-        for (let i = 0; i < maxAgentsPerHuman; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
+        for (let i = 0; i < defaultAgentsPerHuman; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
         assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
         assert.equal((await listHumanAgents(env, id)).length, 10);
+    } finally { await h.close(); }
+});
+
+test('createOwnedAgent_OperatorLimit_RefusesPastIt', async () => {
+    const h = await start();
+    try {
+        const env = environment(h, { MAX_AGENTS_PER_HUMAN: '3' }), id = await humanId(env);
+        for (let i = 0; i < 3; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
+        assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
+        assert.equal((await listHumanAgents(env, id)).length, 3);
+    } finally { await h.close(); }
+});
+
+test('createOwnedAgent_CeilingLimit_ListsAndOverviewsEveryAgent', async () => {
+    const h = await start();
+    try {
+        assert.equal(agentsPerHumanCeiling, 50);
+        const env = environment(h, { MAX_AGENTS_PER_HUMAN: '50' }), id = await humanId(env);
+        for (let i = 0; i < 50; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
+        assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
+        const listed = await listHumanAgents(env, id);
+        assert.deepEqual(listed.map(agent => agent.displayName), Array.from({ length: 50 }, (_, i) => 'agent ' + i));
+        // The overview binds one parameter per owned agent; at the ceiling it must still fit D1's bound-parameter limit.
+        const overview = await ownerOverview(env, id) as { agents: { agentId: string }[] };
+        assert.deepEqual(overview.agents.map(agent => agent.agentId), listed.map(agent => agent.accountId));
+        // A lower limit set later refuses new agents but still lists every agent the human already owns.
+        const lowered = environment(h, { MAX_AGENTS_PER_HUMAN: '10' });
+        assert.deepEqual(await create(lowered, id), { ok: false, reason: 'agent-limit' });
+        assert.equal((await listHumanAgents(lowered, id)).length, 50);
+    } finally { await h.close(); }
+});
+
+test('createOwnedAgent_MalformedLimit_UnavailableAndNothingCreated', async () => {
+    const h = await start();
+    try {
+        const id = await humanId(environment(h));
+        for (const value of ['', '0', '51', '10000', '05', ' 5', '5 ', '1e1', '-1', '2.0', 'ten'])
+            assert.deepEqual(await create(environment(h, { MAX_AGENTS_PER_HUMAN: value }), id), { ok: false, reason: 'unavailable' }, value);
+        assert.deepEqual(await listHumanAgents(environment(h), id), []);
+        for (const value of ['1', '49', '50']) assert.equal((await create(environment(h, { MAX_AGENTS_PER_HUMAN: value }), id, 'ok ' + value)).ok, true, value);
     } finally { await h.close(); }
 });
 
@@ -209,7 +250,7 @@ test('createOwnedAgent_GlobalAccountCapReached_StillCreatesUpToPerHumanLimit', a
         const env = environment(h, { REGISTRATION_MAX_ACCOUNTS: '1' }), id = await humanId(env);
         await h.register();
         await h.register();
-        for (let i = 0; i < maxAgentsPerHuman; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
+        for (let i = 0; i < defaultAgentsPerHuman; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
         assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
     } finally { await h.close(); }
 });

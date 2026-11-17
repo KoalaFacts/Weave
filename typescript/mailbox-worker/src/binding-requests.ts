@@ -4,7 +4,7 @@ import { findKey, isCooling } from './agent-keys.ts';
 import { base64url, parseJws, verifyJws } from './jose.ts';
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Database, type Env, type Transaction } from './database.ts';
-import { maxAgentsPerHuman } from './humans.ts';
+import { agentsPerHuman } from './humans.ts';
 import type { OwnerDecision, OwnerHuman } from './owner-actions.ts';
 import { prunedRowsPerCreate, requestLifetimeTicks, retentionTicks } from './request-retention.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
@@ -163,7 +163,9 @@ async function requestForHuman(tx: Transaction, human: OwnerHuman, requestId: st
  * binding one-way, and the agent count is read in the same optimistic transaction, so concurrent confirmations cannot pass the limit.
  * `keysDigest` is the live key set the owner was shown; any other set now is `keys-changed`, so no key is adopted unseen.
  */
-export async function confirmBindingRequest(tx: Transaction, human: OwnerHuman, requestId: string, keysDigest: string, at: bigint): Promise<OwnerDecision> {
+export async function confirmBindingRequest(env: Env, tx: Transaction, human: OwnerHuman, requestId: string, keysDigest: string, at: bigint): Promise<OwnerDecision> {
+    const agentLimit = agentsPerHuman(env);
+    if (agentLimit === null) return {ok: false, reason: 'unavailable'};
     const row = await requestForHuman(tx, human, requestId);
     if (!row) return {ok: false, reason: 'not-found'};
     if (row.status !== 'pending') return {ok: false, reason: 'not-pending'};
@@ -177,7 +179,7 @@ export async function confirmBindingRequest(tx: Transaction, human: OwnerHuman, 
     if (await liveKeysDigest(live.results.map(key => key.kid)) !== keysDigest) return {ok: false, reason: 'keys-changed'};
     const owned = await tx.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(human.humanId).first<number>('n');
     if (owned === null) fail(503, 'storage');
-    if (owned >= maxAgentsPerHuman) return {ok: false, reason: 'agent-limit'};
+    if (owned >= agentLimit) return {ok: false, reason: 'agent-limit'};
     const stamp = at.toString();
     tx.writes.push(
         tx.db.prepare('UPDATE accounts SET human_id=?,updated_at=CAST(? AS INTEGER) WHERE account_id=? AND human_id IS NULL').bind(human.humanId, stamp, row.accountId),

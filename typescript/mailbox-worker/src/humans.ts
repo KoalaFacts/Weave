@@ -6,7 +6,18 @@ import { fail } from './wire.ts';
 
 // A Human is a person who signed in with an external identity provider and owns
 // agents. Owned agents are created without an agent key; their access is granted later.
-export const maxAgentsPerHuman = 10;
+// The operator sets the limit with MAX_AGENTS_PER_HUMAN; unset means the default. Every read that lists a human's
+// agents loads at most the ceiling in one page, so the setting cannot go above it until those reads page.
+export const defaultAgentsPerHuman = 10;
+export const agentsPerHumanCeiling = 50;
+/** The owned-agent limit, or null when the setting is malformed: callers then refuse to add an agent (fail closed). */
+export function agentsPerHuman(env: Env): number | null {
+    const text = env.MAX_AGENTS_PER_HUMAN;
+    if (text === undefined) return defaultAgentsPerHuman;
+    if (typeof text !== 'string' || !/^[1-9][0-9]{0,3}$/.test(text)) return null;
+    const limit = Number(text);
+    return limit <= agentsPerHumanCeiling ? limit : null;
+}
 
 export type HumanSignIn = { provider: 'github'; subject: string; providerCreatedAt: string; displayLogin: string };
 export type AgentSummary = { accountId: string; displayName: string | null };
@@ -64,7 +75,7 @@ export async function signInHuman(env: Env, input: HumanSignIn): Promise<SignInR
 export async function listHumanAgents(env: Env, humanId: string): Promise<AgentSummary[]> {
     requireReadable(env); requireUuid(humanId);
     const { results } = await env.db.prepare('SELECT a.account_id,a.display_name FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.human_id=? AND h.frozen_at IS NULL ORDER BY a.created_at,a.rowid LIMIT ?')
-        .bind(humanId, maxAgentsPerHuman).all<{ account_id: string; display_name: string | null }>();
+        .bind(humanId, agentsPerHumanCeiling).all<{ account_id: string; display_name: string | null }>();
     return results.map(row => ({ accountId: row.account_id, displayName: row.display_name }));
 }
 
@@ -74,7 +85,8 @@ export async function humanHasAgent(env: Env, humanId: string, accountId: string
 }
 
 export async function createOwnedAgent(env: Env, input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> {
-    if (writesRefused(env) || env.REGISTRATION_ENABLED !== 'true') return { ok: false, reason: 'unavailable' };
+    const limit = agentsPerHuman(env);
+    if (writesRefused(env) || env.REGISTRATION_ENABLED !== 'true' || limit === null) return { ok: false, reason: 'unavailable' };
     const invalid = { ok: false, reason: 'invalid' } as const;
     if (typeof input?.humanId !== 'string' || !uuidPattern.test(input.humanId) || typeof input.sourceIp !== 'string'
         // Bidi or invisible characters could spoof a name in the OAuth agent picker; an invisible-only name must never
@@ -86,7 +98,7 @@ export async function createOwnedAgent(env: Env, input: { humanId: string; displ
         // A frozen GitHub identity has lost its management rights; its agents are not deleted.
         if (human.frozen_at !== null) return { ok: false as const, reason: 'frozen' as const };
         const owned = await tx.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(input.humanId).first<number>('n');
-        if (owned === null || owned >= maxAgentsPerHuman) return { ok: false as const, reason: 'agent-limit' as const };
+        if (owned === null || owned >= limit) return { ok: false as const, reason: 'agent-limit' as const };
         if (!await admitRegistration(env, tx, input.sourceIp)) return { ok: false as const, reason: 'rate-limited' as const };
         const accountId = crypto.randomUUID();
         if (await tx.get('account', '', accountId)) fail(409, 'conflict');

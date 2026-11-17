@@ -28,6 +28,8 @@ export interface Env {
     CLEANUP_MAX_MESSAGES?: string;
     CLEANUP_TIME_BUDGET_MS?: string;
     REGISTRATION_ENABLED: string;
+    // Most agents one human may own (1 to 50); unset means 10, anything else refuses new owned agents.
+    MAX_AGENTS_PER_HUMAN?: string;
     REGISTRATION_MAX_ACCOUNTS: string;
     REGISTRATION_PER_IP_PER_HOUR: string;
     REGISTRATION_GLOBAL_PER_HOUR: string;
