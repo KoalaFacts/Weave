@@ -13,7 +13,7 @@ const now=1_800_000_000_000;
 const kid=()=>randomBytes(32).toString("base64url");
 const human:HumanSession={humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now};
 const iso=(ms:number)=>new Date(ms).toISOString();
-const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],nextAgents:null,externalActions:[],revokedGrants:[],connectors:[],...over});
+const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],nextAgents:null,externalActions:[],revokedGrants:[],ownerGrants:[],revokedOwnerGrantIds:[],connectors:[],...over});
 const html=(response:Response)=>response.text();
 
 test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{

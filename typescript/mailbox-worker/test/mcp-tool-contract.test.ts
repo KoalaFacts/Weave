@@ -10,6 +10,8 @@ import {withTestGrant,start} from './harness.ts';
 import {inProcessMedia} from './in-process-media.ts';
 import {ownerAction,ownerOverview,type OwnerAction} from '../src/owner-actions.ts';
 import type {Env} from '../src/database.ts';
+import {recordOwnerGrant} from '../src/client-grants.ts';
+import {executeOwnerMcp} from '../src/owner-tools.ts';
 // Evaluate the bundled production module, as the other private MCP tests do.
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
 const {privateMcpTools,privateScope,executePrivateMcp:executeWithGrant}=await import('data:text/javascript;base64,'+
@@ -86,9 +88,11 @@ test('real D1 results of every private tool conform to their published output sc
             EXTERNAL_CREDENTIAL_KEY:mediaKey,EXTERNAL_MEDIA_ORIGIN:origin,EXTERNAL_MEDIA:inProcessMedia(await h.mf.getR2Bucket('EXTERNAL_MEDIA')) as unknown as Env['EXTERNAL_MEDIA']};
         const a=await h.participant(),b=await h.participant();
         const seen=new Set<string>();
+        let ownerGrant:string|null=null;
         const run=async(owner:string,name:string,args:Record<string,unknown>={})=>{
             const access:PrivateAccess={tools:privateMcpTools,scope:privateScope,authorize:async()=>owner,
-                invoke:(account,tool,input)=>executePrivateMcp(env,origin,account,tool,input)};
+                invoke:(account,tool,input)=>ownerGrant===null?executePrivateMcp(env,origin,account,tool,input)
+                    :executeOwnerMcp(env,account,tool,input,ownerGrant,'198.51.100.7')};
             const frame=await (await remoteMcp(call(name,args),async()=>new Response('{}'),access)).json();
             assert.notEqual(frame.result?.isError,true,name+': '+JSON.stringify(frame.result?.content));
             const schema=(privateMcpTools as Schema[]).find(t=>t.name===name)!.outputSchema;
@@ -140,6 +144,12 @@ test('real D1 results of every private tool conform to their published output sc
         assert.deepEqual(await ownerAction(env,{humanId,authAt:Date.now(),kind:'confirm-action',requestId:action.actionId,
             planDigest:overview.externalActions[0].planDigest} as OwnerAction),{ok:true});
         assert.equal((await run(a.accountId,'execute_external_action',{actionId:action.actionId})).status,'completed');
+        // Agent management runs for the human behind an owner grant.
+        ownerGrant=crypto.randomUUID();
+        assert.deepEqual(await recordOwnerGrant(env,{grantId:ownerGrant,humanId,clientId:'https://office.example/client.json'}),{ok:true});
+        const created=await run(humanId,'create_agent',{displayName:'Contract desk'});
+        assert.equal((await run(humanId,'list_agents')).items.length,2);
+        assert.equal((await run(humanId,'rename_agent',{accountId:created.accountId,displayName:'Renamed desk'})).displayName,'Renamed desk');
         assert.deepEqual([...seen].sort(),(privateMcpTools as Schema[]).map(t=>t.name).sort(),'every private tool was exercised');
     }finally{await h.close();provider.close();}
 });

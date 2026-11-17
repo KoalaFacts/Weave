@@ -8,10 +8,13 @@
  * Only AS-side grants whose authenticated account UUID is independently verified
  * may place that UUID in both userId and props.accountId. props.grantId names the
  * consent grant the AS mirrored in the mailbox before issuing the authorization code.
+ * An owner grant (props.owner true) carries no account: userId and props.humanId are the human, and each call names
+ * the agent it acts as in the Weave-Agent header.
  */
+export type TokenProps = {accountId:string;humanId:string;grantId:string}|{owner:true;humanId:string;grantId:string};
 export interface OAuthServiceBinding {
     validateToken(resource:string,token:string):Promise<{
-        audience:string;userId:string;props:{accountId:string;humanId:string;grantId:string};
+        audience:string;userId:string;props:TokenProps;
         expiresAt:number;scope:string[];clientId:string;
     }|null>;
 }
@@ -34,14 +37,19 @@ export interface OAuthConfiguration {
 }
 export interface OAuthServiceConfiguration { mode:'service'; issuer:string; resource:string; authServer:OAuthServiceBinding; }
 export type OAuthOptions = OAuthConfiguration | OAuthServiceConfiguration;
+/** `accountId` is the agent the call acts as; for an owner grant on the agent-management scope it is the human. */
 export type OAuthAccess = {accountId: string; grantId: string} | Response;
-/** The mailbox's mirrored consent grant, or null when it is revoked or unknown. */
-export type LiveGrant = {accountId: string; humanId: string; clientId: string};
+/** The mailbox's mirrored consent grant, or null when it is revoked or unknown. An owner grant has no account. */
+export type LiveGrant = {accountId: string; humanId: string; clientId: string}
+    | {accountId: null; humanId: string; clientId: string; actsAs: (agentId: string) => Promise<boolean>};
 export type GrantLookup = (grantId: string) => Promise<LiveGrant | null>;
+/** The one scope that manages a human's agents rather than acting as one; only an owner grant may use it. */
+const manageScope = 'weave:agents.manage';
+const agentHeader = 'Weave-Agent';
 const identity = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const serviceTokenPattern = /^[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+$/;
 const tokenPattern = /^[A-Za-z0-9\-._~+/]+={0,2}$/;
-const scopes = ['weave:addresses.read','weave:addresses.write','weave:contacts.read','weave:contacts.write','weave:messages.read','weave:messages.send','weave:messages.ack','weave:actions.read','weave:actions.write'];
+const scopes = ['weave:agents.manage','weave:addresses.read','weave:addresses.write','weave:contacts.read','weave:contacts.write','weave:messages.read','weave:messages.send','weave:messages.ack','weave:actions.read','weave:actions.write'];
 const noStore = {'Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'};
 const safeUrl = (raw: string, label: string): URL => {
     const parsed = new URL(raw);
@@ -94,6 +102,10 @@ function challenge(config:OAuthOptions,status:number,scope:string,code:string): 
 function formEncode(value:string):string {
     return new URLSearchParams({value}).toString().slice('value='.length);
 }
+/** A bearer that is valid but names no agent it may act as: not an authentication failure, so no challenge. */
+function badAgent(description:string):Response {
+    return new Response(JSON.stringify({error:'invalid_agent',error_description:description}),{status:400,headers:{...noStore,'Content-Type':'application/json'}});
+}
 function failClosed():Response {
     return new Response(JSON.stringify({error:'authorization_unavailable'}),{status:503,headers:{...noStore,'Content-Type':'application/json'}});
 }
@@ -121,9 +133,11 @@ export async function authorizeOAuth(
         try { claim=await config.authServer.validateToken(config.resource,match[1]); }
         catch { return failClosed(); }
         const nowSec=Math.floor(clock()/1000);
+        const owner=!!claim&&!!claim.props&&typeof claim.props==='object'&&'owner' in claim.props&&claim.props.owner===true;
         if (!claim || claim.audience!==config.resource || typeof claim.userId!=='string'
             || !identity.test(claim.userId) || !claim.props || typeof claim.props!=='object'
-            || claim.props.accountId!==claim.userId
+            // An agent's grant names its account; an owner grant names only its human, and never also an account.
+            || (owner ? 'accountId' in claim.props || claim.props.humanId!==claim.userId : !('accountId' in claim.props) || claim.props.accountId!==claim.userId)
             || typeof claim.props.humanId!=='string' || !identity.test(claim.props.humanId)
             || typeof claim.props.grantId!=='string' || !identity.test(claim.props.grantId)
             || !Number.isSafeInteger(claim.expiresAt)
@@ -136,11 +150,31 @@ export async function authorizeOAuth(
         let grant:LiveGrant|null;
         try {grant=await liveGrant(claim.props.grantId);}
         catch {return failClosed();}
-        if (!grant || grant.accountId!==claim.userId || grant.humanId!==claim.props.humanId || grant.clientId!==claim.clientId)
+        if (!grant || grant.humanId!==claim.props.humanId || grant.clientId!==claim.clientId
+            || (owner ? grant.accountId!==null : grant.accountId!==claim.userId))
             return challenge(config,401,requiredScope,'invalid_token');
         if (!claim.scope.includes(requiredScope))return challenge(config,403,requiredScope,'insufficient_scope');
+        const named=request.headers.get(agentHeader);
+        let accountId=claim.userId;
+        if (grant.accountId===null) {
+            // Managing agents is the human's own act; acting as an agent names that agent on every call.
+            if (requiredScope===manageScope) { if (named!==null) return badAgent(agentHeader+' is not used with agent management.'); }
+            else {
+                if (named===null || !identity.test(named)) return badAgent('An owner grant names the agent it acts as in '+agentHeader+'.');
+                let owned:boolean;
+                try {owned=await grant.actsAs(named);}
+                catch {return failClosed();}
+                // Another human's agent, or none, reads the same as an agent this grant cannot act as.
+                if (!owned) return badAgent('The '+agentHeader+' agent is not one this grant can act as.');
+                accountId=named;
+            }
+        } else {
+            // An agent's grant acts as its one agent and never manages agents, even if a scope string claims so.
+            if (named!==null) return badAgent('This token acts as one agent; '+agentHeader+' is not used.');
+            if (requiredScope===manageScope) return challenge(config,403,requiredScope,'insufficient_scope');
+        }
         if (claim.expiresAt<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
-        return {accountId:claim.userId,grantId:claim.props.grantId};
+        return {accountId,grantId:claim.props.grantId};
     }
     const form=new URLSearchParams({token:match[1],token_type_hint:'access_token'});
     let data: unknown;
