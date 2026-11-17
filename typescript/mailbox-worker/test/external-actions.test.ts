@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
-import { actionLifetimeTicks, approvalOrigin, executeExternalAction, listWaitingExternalActions, ownerPendingAction, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
+import { actionLifetimeTicks, approvalOrigin, recentActionWindowTicks, recentActionsShownToOwner, executeExternalAction, listWaitingExternalActions, ownerPendingAction, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
 import { apiTime } from '../src/time.ts';
 import { createOwnedAgent } from '../src/humans.ts';
 import type { Problem } from '../src/wire.ts';
@@ -1019,6 +1019,71 @@ test('ownerOverview_ActionOfAgentBeyondFirstPage_ListedWithItsName', () => scena
     assert.ok(overview.agents.some(agent => agent.agentId === first.accountId));
     const listed = overview.externalActions.find(action => action.actionId === actionId);
     assert.equal(listed?.agentDisplayName, 'Late desk');
+}));
+
+// The owner page lists what became of the owner's own actions in the last 7 days, newest change first, and nobody else's.
+test('ownerOverview_RecentActions_SettledInTheWindowNewestFirstOwnAgentsOnly', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i++) {
+        const response = await propose(h, agent, 'Recent plan ' + i);
+        assert.equal(response.status, 200, await response.clone().text());
+        ids.push((await response.json() as {actionId: string}).actionId);
+    }
+    const recent = async (who: string, clock?: () => bigint) => {
+        const overview = await ownerOverview(environment(h), who, null, clock);
+        return overview.frozen ? null : overview.recentActions;
+    };
+    assert.deepEqual(await recent(humanId), [], 'pending plans are not recent outcomes');
+    const now = BigInt((await h.db.prepare('SELECT CAST(MAX(updated_at) AS TEXT) t FROM external_actions').first<string>('t'))!) + 100n;
+    const set = (id: string, status: string, updated: bigint, failure: string | null = null) => h.db.prepare(`UPDATE external_actions SET status=?,failure=?,
+        decided_at=CASE WHEN ?='pending' THEN NULL ELSE created_at END,decided_by=CASE WHEN ?='pending' THEN NULL ELSE ? END,
+        dispatched_at=CASE WHEN ? IN ('dispatching','completed','unknown') THEN created_at END,updated_at=CAST(? AS INTEGER) WHERE action_id=?`)
+        .bind(status, failure, status, status, humanId, status, updated.toString(), id).run();
+    await set(ids[0]!, 'completed', now - 30n);
+    await set(ids[1]!, 'failed', now - 10n, 'provider-refused');
+    await set(ids[2]!, 'rejected', now - recentActionWindowTicks, null);
+    // A plan left pending is listed from its expiry, by that expiry.
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind((now - 20n).toString(), ids[3]!).run();
+    const listed = await recent(humanId, () => now);
+    assert.deepEqual(listed?.map(action => [action.actionId, action.status, action.failure]),
+        [[ids[1], 'failed', 'provider-refused'], [ids[3], 'expired', null], [ids[0], 'completed', null]], 'newest change first; a change exactly 7 days old is out');
+    assert.equal(listed?.[0]?.changedAt, apiTime((now - 10n).toString()));
+    assert.equal(listed?.[1]?.changedAt, apiTime((now - 20n).toString()));
+    assert.equal(listed?.[0]?.agentId, agent.accountId);
+    await set(ids[2]!, 'rejected', now - recentActionWindowTicks + 1n);
+    assert.equal((await recent(humanId, () => now))?.length, 4, 'one tick inside the window is listed');
+    // A change after the read's own clock is not listed yet; a pending plan one tick before its expiry is still waiting.
+    assert.deepEqual((await recent(humanId, () => now - 21n))?.map(action => action.actionId), [ids[0], ids[2]]);
+    // A plan approved 8 days ago that expired 5 ticks ago unsent is listed as expired, by its expiry.
+    await set(ids[2]!, 'approved', now - recentActionWindowTicks - 1n);
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind((now - 5n).toString(), ids[2]!).run();
+    const approved = await recent(humanId, () => now);
+    assert.deepEqual(approved?.[0] && [approved[0].actionId, approved[0].status, approved[0].changedAt], [ids[2], 'expired', apiTime((now - 5n).toString())]);
+    const {humanId: stranger} = await ownedAgent(h);
+    assert.deepEqual(await recent(stranger, () => now), [], 'another human sees none of it');
+    await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(stranger, agent.accountId).run();
+    assert.deepEqual(await recent(humanId, () => now), [], 'an agent passed to another human is no longer listed to the first');
+    assert.equal((await recent(stranger, () => now))?.length, 4);
+}));
+
+// At most 20 are listed, the newest.
+test('ownerOverview_RecentActions_AtMostTheNewestTwenty', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const ids: string[] = [];
+    for (let i = 0; i <= recentActionsShownToOwner; i++) {
+        await h.db.prepare("UPDATE external_actions SET status='rejected',decided_at=created_at,decided_by=? WHERE account_id=? AND status='pending'").bind(humanId, agent.accountId).run();
+        const response = await propose(h, agent, 'Plan ' + i);
+        assert.equal(response.status, 200, await response.clone().text());
+        ids.push((await response.json() as {actionId: string}).actionId);
+    }
+    const now = BigInt((await h.db.prepare('SELECT CAST(MAX(updated_at) AS TEXT) t FROM external_actions').first<string>('t'))!) + 100n;
+    for (const [i, id] of ids.entries()) await h.db.prepare("UPDATE external_actions SET status='rejected',decided_at=created_at,decided_by=?,updated_at=CAST(? AS INTEGER) WHERE action_id=?")
+        .bind(humanId, (now - 50n + BigInt(i)).toString(), id).run();
+    const overview = await ownerOverview(environment(h), humanId, null, () => now);
+    assert.equal(overview.frozen, false);
+    const listed = (overview as {recentActions: {actionId: string}[]}).recentActions.map(action => action.actionId);
+    assert.deepEqual(listed, ids.slice(1).reverse());
 }));
 
 // The page for one action tells its owner what became of an action no longer waiting, and nobody else anything.
