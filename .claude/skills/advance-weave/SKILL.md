@@ -55,20 +55,23 @@ The shared plan on #365 plus the "Weave scheduled-task ledger" section of [docs/
 
 ## Work order
 
+0. Open-PR triage first (`autonomous-dev` §3 step 0): every open PR and stray branch in the repo, whoever opened it. Never open a new PR or branch for work that already has one.
 1. Open Envoylet requests on #365, oldest first.
-2. Anything Envoylet's integration is visibly missing per the shared plan and Envoylet's [weave-publishing guide](https://github.com/KoalaFacts/Envoylet/blob/main/docs/weave-publishing.md).
-3. Shared plan step 4, one PR each: a status-change notification for apps, then native X, then native LinkedIn (all delivered except the push webhook, blocked on a schema owner decision, and A1, an owner decision).
-4. The most valuable gap in the publishing router or owner pages (correctness, security, missing tests, clearer errors), stated in the PR.
+2. AI Office items from the seed (generic owner/app capabilities; Weave learns no AI Office concept). AI-1 (owned-agent limit) is done (#496). AI-2 (owner app grant) is being built in the owner's interactive session: do not start it, open a PR for it or push to its branches until the seed says otherwise.
+3. Anything Envoylet's integration is visibly missing per the shared plan and Envoylet's [weave-publishing guide](https://github.com/KoalaFacts/Envoylet/blob/main/docs/weave-publishing.md).
+4. Shared plan step 4, one PR each: a status-change notification for apps, then native X, then native LinkedIn (all delivered except the push webhook, blocked on a schema owner decision, and A1, an owner decision).
+5. The most valuable gap in the publishing router or owner pages (correctness, security, missing tests, clearer errors), stated in the PR.
 
 Every PR keeps current: the area's implementation record (scope, behaviour, verification, mutation checks, limits), OpenAPI and MCP tool schemas and descriptions, `agent-start.md` when agent-facing behaviour changes, and the READMEs/AGENTS.md lines that describe what changed. The PR body says whether an owner deploy is needed.
 
 ## Authority
 
-- Branch prefix `weave/` (housekeeping: `weave/docs-housekeeping-YYYY-MM-DD`; this skill's bootstrap `weave/advance-skill`; verify install `weave/verify-skills`). Squash merge pinned to the head SHA. Merge only PRs this task opened.
+- Branch prefix `weave/` (housekeeping: `weave/docs-housekeeping-YYYY-MM-DD`; this skill's bootstrap `weave/advance-skill`; verify install `weave/verify-skills`). Squash merge pinned to the head SHA. Every open PR in the repo is in scope for the open-PR triage (`autonomous-dev` §3 step 0, the owner's standing instruction), under the same merge conditions; a PR or branch someone else pushed in the last 90 minutes is left alone that run.
 - First line of every PR body: "Opened by the Weave scheduled task."
 - Other sessions also work here: preserve their work. If someone else pushed to a branch or PR, stop touching it until the gate and a new verdict cover that head; never force-push.
 - Deploying stays the owner's: never dispatch or re-run a deploy workflow, never push to publish/demo, never comment on issue #236. Read-only public HTTP checks of the demo are allowed (for example `curl https://demo.weave-389.workers.dev/openapi.json`). Merging deploys nothing.
-- Codex wait: poll every 3–5 minutes for up to 60 minutes (across runs); once a PR is over 6 hours old with no Codex review, merge on the gate alone and say so. If Codex reports it cannot review, use the independent review agent per `autonomous-dev` §3.5.
+- Codex and hosted CI never block (`autonomous-dev` §0.1, owner 2026-11-17): never poll. If Codex has not reviewed the head within 45 minutes of the PR opening (across runs), or reports it cannot review, the independent review agent of `autonomous-dev` §3 step 5 reviews and verifies in one pass. A hosted check that ran and failed still blocks; one that never started does not.
+- Remote branch deletes are refused in the cloud sandbox (HTTP 403 on `git push --delete`, 2026-11-17): say so once in the report and do not retry.
 
 ## Project rules
 
