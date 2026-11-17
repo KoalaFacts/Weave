@@ -578,6 +578,12 @@ a token is refused without being sent anywhere.
 Connecting calls `GET https://api.linkedin.com/v2/userinfo` and accepts only an answer whose `sub` is a plain member
 id. The credential is `linkedin:<sub>`, its target account `urn:li:person:<sub>`, shown by the member's name.
 
+For every adapter, `connectAccount` refuses an account whose id would make a credential reference outside the published
+`credentialRef` shape (1 to 64 of letters, digits, `.`, `_`, `:` or `-`): the owner gets `provider-refused` with
+nothing stored, instead of the store's length check failing the write as `unavailable` (2026-11-17). For LinkedIn that
+bounds `sub` at 55 characters; `connectLinkedIn_MemberAnswerNotConfirmed_RefusedWithoutStoring` pins 56 refused and 55
+stored as `linkedin:<sub>`, and removing the check makes the 56-character case `unavailable`.
+
 ### LinkedIn post rules
 
 - **Text:** up to 3000 characters as sent. LinkedIn reads commentary as its "little text" format, where
