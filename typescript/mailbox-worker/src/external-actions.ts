@@ -311,7 +311,7 @@ export async function pendingForOwner(tx: Transaction, humanId: string, now: big
 }
 
 /** The action of an agent this human owns; any other is indistinguishable from a missing one. */
-async function ownedByHuman(tx: Transaction, human: OwnerHuman, actionId: string): Promise<Row | null> {
+async function ownedByHuman(tx: Transaction, human: Pick<OwnerHuman, 'humanId'>, actionId: string): Promise<Row | null> {
     const row = await readRow(tx, actionId);
     if (!row) return null;
     const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(row.account_id).first<{human_id: string | null}>();
@@ -362,19 +362,33 @@ export function mediaIdsOf(content: string): string[] {
     return ids;
 }
 
+/** What became of an action of the human's own agent that is no longer waiting for a decision. */
+export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null};
+/** The owner's page for one action: the pending action to decide, or what became of one of their own agents' actions. */
+export type OwnerActionPageView = {frozen: true} | {frozen: false; action: OwnerExternalAction | null; settled: OwnerSettledAction | null};
+
 /**
  * Owner RPC: one pending action of the human's agents, for the page that decides it, however many others are pending. An action
- * that is not pending for this human, or a malformed ID, is null; a frozen human sees only that.
+ * of the human's own agent that is no longer pending is described by `settled` (its status and stored failure code), so the owner
+ * who returns to the link sees what happened. Another human's action, an unknown one or a malformed ID is `action` and `settled`
+ * null alike; a frozen human sees only that.
  */
-export async function ownerPendingAction(env: Env, humanId: string, actionId: string, clock: () => bigint = nowUtc): Promise<{frozen: true} | {frozen: false; action: OwnerExternalAction | null}> {
+export async function ownerPendingAction(env: Env, humanId: string, actionId: string, clock: () => bigint = nowUtc): Promise<OwnerActionPageView> {
     if (env.MAINTENANCE_MODE === 'true') fail(503, 'maintenance', 30);
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (typeof humanId !== 'string' || !uuid.test(humanId) || typeof actionId !== 'string' || !uuid.test(actionId)) return {frozen: false, action: null};
+    const none = {frozen: false as const, action: null, settled: null};
+    if (typeof humanId !== 'string' || !uuid.test(humanId) || typeof actionId !== 'string' || !uuid.test(actionId)) return none;
     return atomic(env.db, async tx => {
         const human = await tx.db.prepare('SELECT frozen_at FROM humans WHERE human_id=?').bind(humanId).first<{frozen_at: string | null}>();
-        if (!human) return {frozen: false as const, action: null};
+        if (!human) return none;
         if (human.frozen_at !== null) return {frozen: true as const};
-        return {frozen: false as const, action: (await pendingForOwner(tx, humanId, clock(), actionId))[0] ?? null};
+        const now = clock();
+        const action = (await pendingForOwner(tx, humanId, now, actionId))[0] ?? null;
+        if (action) return {frozen: false as const, action, settled: null};
+        const row = await ownedByHuman(tx, {humanId}, actionId);
+        if (!row) return none;
+        const status = effectiveStatus(row.status, row.expires_at, now);
+        return status === 'pending' ? none : {frozen: false as const, action: null, settled: {status, failure: row.failure}};
     });
 }
 

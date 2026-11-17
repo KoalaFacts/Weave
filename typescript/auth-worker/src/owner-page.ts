@@ -178,14 +178,33 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
     "<h2>Your agents</h2>",agentSection(overview,tokens,after)].join(""));
 }
 
-/** What the mailbox answers for one pending action of the signed-in human. */
-export type PendingActionView={frozen:true}|{frozen:false;action:OwnerExternalAction|null};
+/** What became of an action of the human's own agent that no longer waits for a decision: its status and stored failure code. */
+export type SettledActionView={status:string;failure:string|null};
+/**
+ * What the mailbox answers for one action of the signed-in human: the pending action to decide, or, for their own agent's action
+ * that no longer waits, what became of it. A mailbox that predates `settled` omits it, which reads as unknown.
+ */
+export type PendingActionView={frozen:true}|{frozen:false;action:OwnerExternalAction|null;settled?:SettledActionView|null};
 /** The address of the page for one action: what an app such as Envoylet links to so its owner can decide there. */
 export const actionPagePath=(actionId:string)=>"/account/actions/"+actionId;
 /** The outcome of a decision on the page for one action; failure reasons share the owner page's text. */
 const actionResultText:Readonly<Record<string,string>>=Object.freeze({
   approved:"Approved. The agent may now send it once. You can close this page.",
   rejected:"Rejected. Nothing will be sent. You can close this page."
+});
+
+/**
+ * What the page for one action says about the owner's own action once it no longer waits for a decision. Read from the mailbox,
+ * never from the URL. None of it repeats a decision outcome's wording, so it never reads as a decision this request made.
+ */
+const settledText:Readonly<Record<string,string>>=Object.freeze({
+  approved:"You approved this action. Nothing is sent until the agent sends it, once, before it expires.",
+  rejected:"This action was rejected. Nothing will be sent.",
+  expired:"This action expired without being sent. Nothing will be sent.",
+  dispatching:"Weave started sending this action and has not recorded the platform's answer. It will not be sent again.",
+  completed:"This action was sent.",
+  failed:"This action was not sent.",
+  unknown:"Weave sent this action but could not confirm whether the platform accepted it. It will not be sent again; check the platform."
 });
 
 /**
@@ -200,15 +219,20 @@ export function actionDecisionPage(human:HumanSession,actionId:string,result:str
 
 /**
  * The page for one pending action, so an app can send its owner here to decide: the same exact plan, files and forms as the
- * owner page, posting back to this address. An action that is not pending for this human is described the same way whether it
- * was decided, expired or belongs to someone else.
+ * owner page, posting back to this address. The owner's own action that no longer waits says what became of it; one that
+ * belongs to someone else, or is unknown, is described the same way as any action not waiting for this human.
  */
 export function actionPage(view:PendingActionView,human:HumanSession,actionId:string,tokens:ReadonlyMap<string,string>,now:number):Response{
   const head="<h1>Approve an action</h1><p>Signed in as @"+esc(human.login)+"</p>";
   if(view.frozen)return shell("Approve an action",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
   const action=view.action?.actionId===actionId?view.action:null;
   const all='<p><a href="/account">All your agents and actions</a></p>';
-  if(!action)return shell("Approve an action",head+"<p>This action is not waiting for your approval. It may already be decided or expired.</p>"+all);
+  if(!action){
+    const settled=view.settled&&Object.hasOwn(settledText,view.settled.status)?view.settled:null;
+    const text=settled?settledText[settled.status]+(settled.status==="failed"&&settled.failure?" Reason: "+esc(settled.failure)+".":""):
+      "This action is not waiting for your approval. It may already be decided or expired.";
+    return shell("Approve an action",head+"<p>"+text+"</p>"+all);
+  }
   const fresh=freshAuthentication(human,now);
   return shell("Approve an action",[head,
     action.accountChanged?"":"<p>Approving needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":"You will be asked to sign in again first.")+"</p>",

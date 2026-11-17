@@ -617,7 +617,11 @@ test("actionPage_Fresh_ShowsOnlyThisActionAndApprovingSendsOnce",{timeout:90_000
   assert.equal((await executeAction(agent,action.actionId)).status,"completed");
   assert.equal((await executeAction(agent,action.actionId)).status,"completed");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,1,"sent once");
-  assert.ok((await (await actionPage(action.actionId,await sessionCookie(human))).text()).includes("not waiting for your approval"));
+  // The owner who returns to the link sees what became of it; another human still learns nothing.
+  const sent=await (await actionPage(action.actionId,await sessionCookie(human))).text();
+  assert.ok(sent.includes("This action was sent.")&&!sent.includes("not waiting for your approval")&&forms(sent).length===0,sent);
+  const strangers=await (await actionPage(action.actionId,await sessionCookie(await seedHuman()))).text();
+  assert.ok(strangers.includes("not waiting for your approval")&&!strangers.includes("was sent"),strangers);
   assert.equal((await executeAction(second.agent,second.action.actionId)).status,"pending","the other action is untouched");
 });
 
@@ -626,6 +630,28 @@ test("actionPage_Reject_NothingSent",{timeout:60_000},async()=>{
   const response=await postActionPage(action.actionId,await pageToken(human,action.actionId,"Reject"),await sessionCookie(human));
   assert.ok((await response.text()).includes("Rejected. Nothing will be sent."));
   assert.equal((await executeAction(agent,action.actionId)).status,"rejected");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
+  const page=await (await actionPage(action.actionId,await sessionCookie(human))).text();
+  assert.ok(page.includes("This action was rejected. Nothing will be sent.")&&forms(page).length===0,page);
+});
+
+test("actionPage_OwnActionApprovedFailedOrUnknown_SaysWhatBecameOfIt",{timeout:60_000},async()=>{
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"settled "+randomUUID());
+  await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),await sessionCookie(human));
+  const read=async()=>(await (await actionPage(action.actionId,await sessionCookie(human))).text());
+  const approved=await read();
+  assert.ok(approved.includes("You approved this action. Nothing is sent until the agent sends it")&&forms(approved).length===0,approved);
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0,"reading the page sends nothing");
+  const database=await db();
+  // A stored failure code is shown escaped, and only for a failed action.
+  await database.prepare("UPDATE external_actions SET status='failed',failure='owner-changed<b>' WHERE action_id=?").bind(action.actionId).run();
+  const failed=await read();
+  assert.ok(failed.includes("This action was not sent. Reason: owner-changed&#60;b&#62;.")&&!failed.includes("owner-changed<b>"),failed);
+  await database.prepare("UPDATE external_actions SET status='unknown',failure=NULL,dispatched_at=decided_at WHERE action_id=?").bind(action.actionId).run();
+  assert.ok((await read()).includes("could not confirm whether the platform accepted it. It will not be sent again"));
+  await database.prepare("UPDATE external_actions SET status='approved',dispatched_at=NULL,expires_at=created_at+1 WHERE action_id=?").bind(action.actionId).run();
+  assert.ok((await read()).includes("This action expired without being sent."));
+  assert.equal((await executeAction(agent,action.actionId)).status,"expired");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
 });
 

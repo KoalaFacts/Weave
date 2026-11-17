@@ -37,8 +37,15 @@ remains possible later for chat channels.
   - a signed form for another action;
   - any other owner-page form, such as a recovery code;
   - a form signed for another human.
-- **No disclosure.** An action that is decided, expired or another human's shows the same page: "not waiting for
-  your approval", with no forms.
+- **No disclosure.** An action that is another human's, or unknown, shows the same page: "not waiting for your
+  approval", with no forms.
+- **What became of it (2026-11-18).** The owner who opens the link of their own agent's action once it no longer waits
+  sees its status, read from the mailbox, never from the URL, and no forms: approved (nothing is sent until the agent
+  sends it, once, before it expires), rejected, expired without being sent, being sent (`dispatching`: never sent
+  again), sent, not sent (with the stored failure code, escaped) or unknown (never sent again; check the platform).
+  "Own" is the agent's current owner, as for deciding: once an agent passes to another human, its actions are no
+  longer described to the previous one. The mailbox RPC `ownerPendingAction` adds `settled: {status, failure} | null`;
+  an auth Worker reading a mailbox without it shows the old sentence.
 - **No open redirect, no forgeable outcome.** A decision is answered directly with what that request just did
   (approved, rejected or the failure reason), and the owner is told they can close the page. Nothing is redirected to
   the app. The page never reads an outcome from its URL, so a link carrying `?result=approved` or `?result=rejected`
@@ -54,6 +61,9 @@ auth-worker workerd tests, against the real mailbox and authorization Workers:
 - approving sends nothing until the agent executes, then the action is sent once; the other pending action is untouched;
 - rejecting sends nothing;
 - a forged `?result=` claims no outcome on a pending or an approved action;
+- the owner's own action reads "This action was sent." after one execute, "This action was rejected." after Reject,
+  and approved, failed (reason escaped), unknown and expired with what each means, with no forms and nothing sent;
+  another human still reads "not waiting for your approval" for it;
 - the proposal's `approvalUrl` is exactly this page, opening it shows that action, and it becomes null once decided
   (the mailbox Worker bound to the authorization Worker, as deployed);
 - refused with no effect:
@@ -68,7 +78,12 @@ Mutation checks: each of these fails a test:
 - dropping the fresh-sign-in gate on the page;
 - dropping the page from the sign-in return allowlist;
 - returning `approvalUrl` after a decision;
-- returning `approvalUrl` without the first-party Service Binding (mailbox unit test).
+- returning `approvalUrl` without the first-party Service Binding (mailbox unit test);
+- describing a settled action to a human who does not own its agent, reading the stored status instead of the
+  expiry-aware one, showing the failure code unescaped, or dropping the settled text
+  (`ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnlyForItsOwner` and the workerd tests above).
+  Equivalent: the guard that a still-pending row is not described as settled (a live pending action of the owner is
+  always returned for decision first).
 
 The mailbox's owner-decision RPC (`ownerAction`) checks the shape of every decision before reading anything. A
 malformed `planDigest` on a pending action, or a malformed `keysDigest` on a pending binding (not a string or

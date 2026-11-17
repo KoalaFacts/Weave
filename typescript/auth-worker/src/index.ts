@@ -348,7 +348,8 @@ async function connectAccountForm(req:Request,env:Env):Promise<Response>{
 const agentCursorPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const actionPathPattern=/^\/account\/actions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 /**
- * GET and POST /account/actions/{actionId}: one pending action, for an app such as Envoylet to send its owner to. It decides
+ * GET and POST /account/actions/{actionId}: one pending action, for an app such as Envoylet to send its owner to; once the
+ * owner's own action no longer waits, the page says what became of it. It decides
  * exactly as the owner page does (signed forms, the plan digest, a GitHub sign-in in the last 10 minutes) and accepts only a
  * decision on this action. A decision is answered with its own outcome, never redirected through a query a link could forge,
  * and nothing redirects off this origin: the app learns the outcome from the action's status.
