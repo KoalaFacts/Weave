@@ -668,7 +668,10 @@ test("actionPage_OwnActionApprovedFailedOrUnknown_SaysWhatBecameOfIt",{timeout:6
   // A stored failure code is shown escaped, and only for a failed action.
   await database.prepare("UPDATE external_actions SET status='failed',failure='owner-changed<b>' WHERE action_id=?").bind(action.actionId).run();
   const failed=await read();
-  assert.ok(failed.includes("This action was not sent. Reason: owner-changed&#60;b&#62;.")&&!failed.includes("owner-changed<b>"),failed);
+  assert.ok(failed.includes("This action was not sent. Reason: owner-changed&#60;b&#62;.</p>")&&!failed.includes("owner-changed<b>"),failed);
+  // A known code also says what it means and what the owner can do.
+  await database.prepare("UPDATE external_actions SET failure='credential-unreadable' WHERE action_id=?").bind(action.actionId).run();
+  assert.ok((await read()).includes("Reason: credential-unreadable. Weave could not open the stored sign-in for that account, so it did not send it. Disconnect the account, connect it again"));
   await database.prepare("UPDATE external_actions SET status='unknown',failure=NULL,dispatched_at=decided_at WHERE action_id=?").bind(action.actionId).run();
   assert.ok((await read()).includes("could not confirm whether the platform accepted it. It will not be sent again"));
   await database.prepare("UPDATE external_actions SET status='approved',dispatched_at=NULL,expires_at=created_at+1 WHERE action_id=?").bind(action.actionId).run();
