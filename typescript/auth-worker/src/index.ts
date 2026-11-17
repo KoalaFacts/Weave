@@ -1,12 +1,12 @@
 import {WorkerEntrypoint} from "cloudflare:workers";
 import {AuthorizationError,CimdFetchError,OAuthAuthorizationServer,type AuthRequest} from "@cloudflare/workers-oauth-provider";
 import type {CreateAgentResult} from "../../mailbox-worker/src/humans.ts";
-import type {RecordGrantResult} from "../../mailbox-worker/src/client-grants.ts";
+import type {RecordGrantResult,RecordOwnerGrantResult} from "../../mailbox-worker/src/client-grants.ts";
 import type {OwnerActionResult,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import {validChallenge,validHandle,readConsent} from "./challenge.ts";
 import {allowedGithubSubjects} from "./trial-allowlist.ts";
 import {consentClientName,normalisedClientName} from "./client-name.ts";
-import {consentPage} from "./consent-page.ts";
+import {consentPage,manageScope,ownerConsentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
 import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
@@ -21,7 +21,7 @@ interface Env extends GithubLoginEnv,RegistrationLimitEnv,YoutubeConnectEnv {
   OAUTH_ISSUER:string;
   OAUTH_RESOURCE:string;
 }
-const scopes=["weave:addresses.read","weave:addresses.write","weave:contacts.read",
+const scopes=["weave:agents.manage","weave:addresses.read","weave:addresses.write","weave:contacts.read",
  "weave:contacts.write","weave:messages.read","weave:messages.send","weave:messages.ack","weave:actions.read","weave:actions.write","offline_access"];
 type Binding={issuer:string;resource:string};
 /** One exact HTTPS issuer origin and one canonical /mcp resource; anything else is a configuration error. */
@@ -96,7 +96,7 @@ const directoryUnavailable=()=>{
 };
 const agentRefused:Record<Exclude<CreateAgentResult,{ok:true}>["reason"],()=>Response>={
   "agent-limit":()=>messagePage(400,"Agent not created",
-    "This GitHub account already has the maximum of 10 agents. Choose an existing agent instead."),
+    "This GitHub account already owns as many agents as this server allows. Choose an existing agent instead."),
   "rate-limited":()=>messagePage(429,"Agent not created","Too many new agents were created recently. Try again later."),
   frozen:()=>messagePage(403,"Sign-in refused","This GitHub identity is frozen; contact the operator."),
   invalid:()=>messagePage(400,"Agent not created","The agent name must be 1 to 128 characters without control characters."),
@@ -149,10 +149,15 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
       // The name this page shows is the one the owner page will list; approval records it without fetching it again.
       if(!await putNonce(env,pending.handle,{challenge:await subjectBoundChallenge(pending.handle,human.humanId),
         clientName:consentClientName(details)}))return unavailable();
-      let agents;
-      try{agents=await env.MAILBOX.listAgents(human.humanId);}catch{return directoryUnavailable();}
-      const suggestedName=details.clientName.replace(controlCharacters,"").trim().slice(0,128);
-      const page=consentPage(details,pending.handle,{login:human.login},agents,suggestedName);
+      let page:Response;
+      // Managing agents is consented for all of them at once; every other request picks one agent.
+      if(parsed.scope.includes(manageScope))page=ownerConsentPage(details,pending.handle,{login:human.login});
+      else{
+        let agents;
+        try{agents=await env.MAILBOX.listAgents(human.humanId);}catch{return directoryUnavailable();}
+        const suggestedName=details.clientName.replace(controlCharacters,"").trim().slice(0,128);
+        page=consentPage(details,pending.handle,{login:human.login},agents,suggestedName);
+      }
       const headers=new Headers(page.headers);
       for(const cookie of pending.headers.getSetCookie())headers.append("Set-Cookie",cookie);
       return new Response(page.body,{status:200,headers});
@@ -195,6 +200,25 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     const nonce=await getNonce(env,handle);
     if(!nonce||nonce.challenge!==await subjectBoundChallenge(handle,human.humanId)||
       !await consumeNonce(env,handle,nonce.challenge))return denied();
+    // An owner grant only for a request that asked to manage agents, and that request only as an owner grant.
+    const owner=form.get("agent")==="all";
+    if(owner!==approved.request.scope.includes(manageScope))return denied();
+    if(owner){
+      const grantId=crypto.randomUUID();
+      let recorded:RecordOwnerGrantResult;
+      try{recorded=await env.MAILBOX.recordOwnerGrant({grantId,humanId:human.humanId,clientId:approved.request.clientId,clientName:nonce.clientName});}
+      catch{return directoryUnavailable();}
+      if(!recorded.ok)return recorded.reason==="grant-limit"
+        ?messagePage(400,"Not connected","You already let 20 apps manage all your agents. Revoke one on your Weave account page, then try again.")
+        :recorded.reason==="frozen"?messagePage(403,"Sign-in refused","This GitHub identity is frozen; contact the operator.")
+        :messagePage(503,"Not connected","Weave cannot record this connection right now. Try again later.");
+      // The human is the user: the SDK grant holds no agent, and every call names the agent it acts as.
+      const {redirectTo}=await oauth.completeAuthorization({request:approved.request,userId:human.humanId,metadata:{grantId},
+        scope:approved.request.scope,props:{owner:true,humanId:human.humanId,grantId}});
+      const headers=new Headers(approved.headers);
+      headers.set("Location",redirectTo);headers.set("Referrer-Policy","no-referrer");
+      return new Response(null,{status:302,headers});
+    }
     const accountId=await resolveAgent(env,req,human.humanId,form);
     if(accountId instanceof Response)return accountId;
     // The mailbox mirrors the grant before any code exists; private /mcp calls require that row to be live,
@@ -247,6 +271,8 @@ async function revokeClientTokens(env:Env,api:SdkGrants,humanId:string,grantId:s
     return false;
   }
   if(overview.frozen)return false;
+  // An owner grant's SDK user is the human; an agent grant's is its agent.
+  if(overview.revokedOwnerGrantIds.includes(grantId))return revokeRevokedSdkGrants(api,[{agentId:humanId,revokedGrantIds:[grantId]}]);
   const agent=overview.revokedGrants.find(x=>x.revokedGrantIds.includes(grantId));
   return agent!==undefined&&revokeRevokedSdkGrants(api,[{agentId:agent.agentId,revokedGrantIds:[grantId]}]);
 }
@@ -268,7 +294,8 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
     let overview:OwnerOverview;
     try{overview=await env.MAILBOX.ownerOverview(session.humanId,after);}catch{return directoryUnavailable();}
     // Retry SDK clean-up a failed or interrupted revocation left behind; the page renders either way.
-    const cleaned=!overview.frozen&&await revokeRevokedSdkGrants(api,overview.revokedGrants);
+    const cleaned=!overview.frozen&&await revokeRevokedSdkGrants(api,[...overview.revokedGrants,
+      {agentId:session.humanId,revokedGrantIds:overview.revokedOwnerGrantIds}]);
     const result=url.searchParams.get("result");
     let tokens:Map<string,string>;
     try{tokens=await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now,!!env.GOOGLE_CLIENT_ID);}

@@ -48,8 +48,8 @@ export async function readConsent(request: Request): Promise<URLSearchParams|nul
     form.getAll("handle").length!==1||form.getAll("decision").length!==1||
     form.getAll("agent").length>1||form.getAll("agentName").length>1)return null;
   const agent=form.get("agent");
-  // An approval names exactly one agent: an existing account UUID, or "new" with its name.
-  if(agent!==null&&agent!=="new"&&!accountId.test(agent))return null;
+  // An approval names exactly one agent (an existing account UUID, or "new" with its name), or "all" for an owner grant.
+  if(agent!==null&&agent!=="new"&&agent!=="all"&&!accountId.test(agent))return null;
   if(form.has("agentName")!==(agent==="new"))return null;
   if(form.get("decision")==="approve"&&agent===null)return null;
   return form;

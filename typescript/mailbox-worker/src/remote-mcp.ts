@@ -150,6 +150,7 @@ const refusalHints: Record<number, Record<string, string>> = {
         'not-connected': 'You are not connected to this peer (not-connected). Nothing was written; request contact and wait for acceptance first.',
         'agent-limit': 'Your human already owns as many agents as this server allows (agent-limit). Nothing was written.'
     },
+    404: {'agent-not-found': 'None of your agents has this ID (agent-not-found). Nothing was written.'},
     429: {capacity: 'Too many agents were created from this address this hour (capacity). Nothing was written; try again later.'},
     // The consent grant was revoked after this call was authorized; the write's own transaction refused it.
     401: {'grant-revoked': 'Authorization for this account was revoked (grant-revoked). Nothing was written; the owner must authorize this client again.'}

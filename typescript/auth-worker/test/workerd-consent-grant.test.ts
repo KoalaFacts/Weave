@@ -374,7 +374,7 @@ test("consent_EleventhNewAgent_ShowsLimitWithoutCode",{timeout:120_000},async()=
   const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Agent 11"});
   assert.equal(response.status,400);
   assert.equal(response.headers.get("location"),null);
-  assert.match(await response.text(),/already has the maximum of 10 agents/);
+  assert.match(await response.text(),/already owns as many agents as this server allows/);
   assert.equal((await agentsOf(mf,humanId)).length,10);
 });
 

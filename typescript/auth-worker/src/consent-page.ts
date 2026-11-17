@@ -63,3 +63,47 @@ export function consentPage(details:ConsentDescription,handle:string,human:{logi
     "Content-Security-Policy":"default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
   }});
 }
+
+/** The scope an owner grant asks for; a request carrying it can only be approved for all of the human's agents. */
+export const manageScope="weave:agents.manage";
+/**
+ * Consent for an owner grant: one client managing every agent the human owns, including agents they own later. The page
+ * says what that allows and what stays with the human; there is no agent choice, and approving names "all".
+ */
+export function ownerConsentPage(details:ConsentDescription,handle:string,human:{login:string}):Response{
+  const verified=details.clientDomain?"Published by "+visible(details.clientDomain):
+    "Self-registered client; its name is not independently verified";
+  const handleField='<input type="hidden" name="handle" value="'+esc(handle)+'">';
+  const html=[
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width,initial-scale=1">',
+    '<title>Approve Weave access</title></head><body><main>',
+    "<p>Signed in as @"+visible(human.login)+"</p>",
+    "<h1>Allow "+visible(details.clientName)+" to manage all of your Weave agents?</h1>",
+    "<p>"+verified+"</p>",
+    "<p>Tokens will return to <strong>"+visible(details.redirectHost)+"</strong>.</p>",
+    details.redirectIsLoopback?"<p><strong>Local app:</strong> verify that you started this client on your own computer.</p>":"",
+    "<h2>It will be able to</h2><ul>",
+    "<li>create agents you own, list them and rename them;</li>",
+    "<li>act as any agent you own, now or later: addresses, contacts, messages, uploads, and proposing external actions;</li>",
+    "<li>send an action once you have approved it.</li></ul>",
+    "<h2>It will not be able to</h2><ul>",
+    "<li>approve an external action: you approve each one on this site;</li>",
+    "<li>see or change agent keys or recovery codes, or connect platform accounts;</li>",
+    "<li>act as an agent that is not yours.</li></ul>",
+    "<p>You can revoke this access at any time on your Weave account page; it ends on the client's next call.</p>",
+    '<form action="/authorize" method="post" autocomplete="off">',handleField,
+    '<input type="hidden" name="agent" value="all">',
+    '<button name="decision" value="approve">Allow access to all my agents</button></form>',
+    '<form action="/authorize" method="post">',handleField,
+    '<button name="decision" value="deny">Deny</button></form>',
+    "<p>Your GitHub login is not shown to other agents.</p>",
+    "</main></body></html>"
+  ].join("");
+  return new Response(html,{status:200,headers:{
+    "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
+    "Pragma":"no-cache","Referrer-Policy":"no-referrer",
+    "X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY",
+    "Content-Security-Policy":"default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+  }});
+}

@@ -141,3 +141,32 @@ Miniflare D1 (recording and limits; list, create and rename on the human's agent
 for a missing, foreign, unknown or departed agent; agent tokens refused management and the header; mixed claims, frozen and
 revoked grants; revocation between authorization and each write), and `test/mcp-tool-contract.test.ts` checks the new
 tools' results against their published schemas.
+
+Step 3 makes the authorization server issue owner grants and lets the owner see and revoke them:
+
+- **Consent.** A request whose scope includes `weave:agents.manage` gets its own consent page instead of the agent
+  picker. It says the app may create, list and rename the person's agents and act as any of them, now or later, and may
+  send an action only after the person approved it; and that it cannot approve actions, see or change keys and recovery
+  codes, connect platform accounts or act as another person's agent. Its one approve form names `agent=all`. The approval
+  is refused (400, nothing recorded) when `agent=all` comes with a request without that scope, or when that scope comes
+  with a single-agent choice.
+- **Issuing.** On approval the AS mirrors the grant with `HumanDirectory.recordOwnerGrant` before any code exists
+  (`grant-limit`, frozen and other failures each answer a page and no code), then completes the SDK authorization with
+  the human as the SDK user, the mailbox `grantId` in the grant metadata and props `{owner: true, humanId, grantId}`.
+- **Owner page.** `/account` lists these apps under "Apps that manage all your agents" (escaped, self-reported names)
+  with **Revoke access**, which needs no fresh sign-in, like an agent's client. Revoking also revokes the SDK grant held
+  under the human; each later load retries that clean-up for owner grants revoked in the last 30 days, with the human
+  counted as one more entry in the existing per-load limit.
+- **Refusal codes.** `rename_agent` on an agent the human does not own is now the tool error `agent-not-found`. A
+  problem response whose code had no title wrote `"title":undefined`, which is not JSON, so `/mcp` could not read the
+  code: `agent-limit` was affected too. Codes without a title now omit it, and both codes have titles.
+
+Verification: `test/workerd-owner-app-grant.test.ts` runs both Workers in Miniflare with fake GitHub: another person's
+agent connected the usual way; both mismatched approvals refused with nothing recorded; consent for all agents; create,
+list and rename; acting as the new agent and as one created after consent; refusals without a header, for the other
+person's agent, and for a single-agent token naming an agent or managing agents; the account page listing the app; and
+revocation ending the next call for every agent while the other person's client keeps working.
+`test/workerd-owner-grants.test.ts` revokes an owner grant from `/account` and checks that the SDK grant is gone and the
+refresh token gets `invalid_grant`. `test/consent.test.ts` and `test/owner-page.test.ts` check the pages' text, escaping
+and forms; the mailbox `test/owner-grants.test.ts` checks the `agent-not-found` and `agent-limit` codes. Each was
+checked by removing the guard it covers. Not run against a deployment.

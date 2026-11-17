@@ -151,9 +151,9 @@ async function connect(githubId=++nextGithubId,agent="new",beforeApproval?:()=>v
     accessToken:issued.access_token,refreshToken:issued.refresh_token};
 }
 /** GitHub sign-in, the consent page, then (after `beforeApproval`) the approval POST, whose response it returns. */
-async function consent(githubId:number,agent:string,beforeApproval?:()=>void){
+async function consent(githubId:number,agent:string,beforeApproval?:()=>void,requestScope=scope){
   const verifier=randomBytes(32).toString("base64url"),url=new URL(issuer+"/authorize");
-  for(const [k,v] of Object.entries({response_type:"code",client_id:demoOAuthClientId,redirect_uri:redirectUri,scope,state:"s",resource,
+  for(const [k,v] of Object.entries({response_type:"code",client_id:demoOAuthClientId,redirect_uri:redirectUri,scope:requestScope,state:"s",resource,
     code_challenge:createHash("sha256").update(verifier).digest("base64url"),code_challenge_method:"S256"}))url.searchParams.set(k,v);
   const begin=await mf.dispatchFetch(url.href,{redirect:"manual"});
   const [login]=cookiePairs(begin.headers,"__Host-weave_login=");
@@ -169,6 +169,22 @@ async function consent(githubId:number,agent:string,beforeApproval?:()=>void){
     headers:{Origin:issuer,Cookie:[session,...page.headers.getSetCookie().map(x=>x.split(";")[0])].join("; "),"Content-Type":"application/x-www-form-urlencoded"},
     body:new URLSearchParams(agent==="new"?{handle,decision:"approve",agent,agentName:"Grants"}:{handle,decision:"approve",agent}).toString()});
   return {approved,verifier};
+}
+/** An app that manages all agents of a new human: the owner grant, its tokens and the human. */
+async function connectOwner():Promise<Connection>{
+  const githubId=++nextGithubId;
+  const {approved,verifier}=await consent(githubId,"all",undefined,"weave:agents.manage "+scope);
+  assert.equal(approved.status,302);
+  const code=new URL(approved.headers.get("location")!).searchParams.get("code")!;
+  const token=await mf.dispatchFetch(await tokenEndpoint(),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},
+    body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:redirectUri,code_verifier:verifier,client_id:demoOAuthClientId,resource}).toString()});
+  assert.equal(token.status,200,await token.clone().text());
+  const issued=await token.json() as {access_token:string;refresh_token:string};
+  const human=(await (await db()).prepare("SELECT human_id,display_login FROM humans WHERE subject=?").bind(String(githubId))
+    .first<{human_id:string;display_login:string}>())!;
+  const grant=(await (await db()).prepare("SELECT grant_id FROM owner_grants WHERE human_id=?").bind(human.human_id).first<{grant_id:string}>())!;
+  return {human:{humanId:human.human_id,login:human.display_login},accountId:human.human_id,grantId:grant.grant_id,
+    accessToken:issued.access_token,refreshToken:issued.refresh_token};
 }
 async function refresh(connection:Connection):Promise<Response>{
   return mf.dispatchFetch(await tokenEndpoint(),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},
@@ -345,4 +361,25 @@ test("account_RevokeGrantRevokedLongAgo_CleanupPendingNotDone",{timeout:60_000},
   assert.equal(response.status,303);
   assert.equal(result(response),"cleanup-pending");
   assert.equal((await sdkGrants(connection.accountId)).length,1);
+});
+
+test("account_RevokeOwnerGrant_SdkGrantGoneRefreshInvalidGrantAndManage401",{timeout:60_000},async()=>{
+  const connection=await connectOwner(),cookie=await sessionCookie(connection.human);
+  const grants=await sdkGrants(connection.human.humanId);
+  assert.equal(grants.length,1,"the SDK grant's user is the human");
+  assert.deepEqual(grants[0].metadata,{grantId:connection.grantId});
+  const refreshed=await refresh(connection);
+  assert.equal(refreshed.status,200,"positive control: the refresh token works before revocation");
+  const live={...connection,refreshToken:(await refreshed.json() as {refresh_token:string}).refresh_token};
+  const html=await (await account(cookie)).text();
+  assert.ok(html.includes("Apps that manage all your agents"));
+  const forms=revokeForms(html);
+  assert.equal(forms.length,1);
+  assert.equal(result(await postAccount(forms[0],cookie)),"done");
+  assert.ok((await (await db()).prepare("SELECT revoked_at FROM owner_grants WHERE grant_id=?").bind(connection.grantId).first<{revoked_at:unknown}>())!.revoked_at!==null);
+  assert.deepEqual(await sdkGrants(connection.human.humanId),[]);
+  const denied=await refresh(live);
+  assert.equal(denied.status,400);
+  assert.equal((await denied.json() as {error:string}).error,"invalid_grant");
+  assert.deepEqual(revokeForms(await (await account(cookie)).text()),[],"a revoked app is no longer listed");
 });

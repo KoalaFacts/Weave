@@ -93,11 +93,23 @@ test('ownerGrant_ManageTools_ListCreateRenameTheHumansAgentsOnly', async () => {
             { accountId: first, displayName: 'Front desk' });
         assert.equal(await h.db.prepare('SELECT display_name FROM accounts WHERE account_id=?').bind(first).first('display_name'), 'Front desk');
         const refused = await resultOf(await call({ name: 'rename_agent', args: { accountId: foreign, displayName: 'Mine now' } }));
-        assert.equal(refused.isError, true);
+        assert.deepEqual(refused.structuredContent, { status: 404, code: 'agent-not-found' });
         assert.equal(await h.db.prepare('SELECT display_name FROM accounts WHERE account_id=?').bind(foreign).first('display_name'), 'Foreign');
         const invisible = await resultOf(await call({ name: 'create_agent', args: { displayName: '​' } }));
         assert.equal(invisible.isError, true);
         assert.equal(invisible.structuredContent.field, 'displayName');
+    } finally { await h.close(); }
+});
+
+test('ownerGrant_CreateAtTheLimit_AgentLimitCodeNothingWritten', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db, { OWNED_AGENTS_PER_HUMAN: '1' }), humanId = await human(env), grantId = crypto.randomUUID();
+        await agentOf(env, humanId, 'Only');
+        assert.deepEqual(await recordOwnerGrant(env, { grantId, humanId, clientId }), { ok: true });
+        const refused = await resultOf(await mcp(env, () => ownerClaims(humanId, grantId))({ name: 'create_agent', args: { displayName: 'Second' } }));
+        assert.deepEqual(refused.structuredContent, { status: 409, code: 'agent-limit' });
+        assert.equal(await h.db.prepare('SELECT count(*) AS n FROM accounts WHERE human_id=?').bind(humanId).first('n'), 1);
     } finally { await h.close(); }
 });
 
