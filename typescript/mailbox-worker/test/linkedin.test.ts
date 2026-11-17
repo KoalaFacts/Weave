@@ -378,3 +378,68 @@ test('connectLinkedIn_LongOrBlankName_ShownCutOrAsLinkedInMember', () => scenari
         });
     }
 }));
+
+test('publishLinkedInPost_UploadAnsweredAnotherSuccess_MediaUploadRefusedAndNothingPosted', async () => {
+    // LinkedIn confirms stored bytes with 200 or 201; any other answer leaves the image unconfirmed, so nothing is posted.
+    for (const status of [202, 204]) {
+        const {outcome, sent} = await publishDirect(usual({put: () => new Response(null, {status})}), {media: 1});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'media-upload-refused'}, String(status));
+        assert.deepEqual(paths(sent), ['POST api.linkedin.com/rest/images', 'PUT www.linkedin.com/dms-uploads/C1/uploaded-image/0'], status + ': nothing is posted');
+    }
+});
+
+test('publishLinkedInPost_EveryCall_RedirectsNotFollowed', async () => {
+    const modes: string[] = [], answer = usual();
+    const {outcome} = await publishDirect(request => { modes.push(request.redirect); return answer(request); }, {media: 1});
+    assert.equal((outcome as {status: string}).status, 'completed');
+    assert.deepEqual(modes, ['manual', 'manual', 'manual'], 'initialisation, upload and post each refuse to follow a redirect');
+});
+
+test('publishLinkedInPost_InitialisationNotAnImageOnLinkedIn_MediaUploadRefusedAndNothingUploaded', async () => {
+    const id = (length: number) => 'urn:li:image:' + 'C'.repeat(length);
+    const answers: [string, () => Response][] = [
+        ['a host that only ends in linkedin.com', () => uploadAt('https://notlinkedin.com/dms-uploads/C1/uploaded-image/0')],
+        ['an image id over 100 characters', () => Response.json({value: {uploadUrl: 'https://www.linkedin.com/dms-uploads/C1/uploaded-image/0', image: id(101)}})],
+        ['an array instead of an object', () => Response.json([{value: {uploadUrl: 'https://www.linkedin.com/dms-uploads/C1/uploaded-image/0', image: id(10)}}])],
+        ['bytes that are not UTF-8', () => new Response(new Uint8Array([...Buffer.from('{"value":{"uploadUrl":"https://www.linkedin.com/dms-uploads/C1/uploaded-image/0","image":"urn:li:image:C1","x":"'), 0xff, ...Buffer.from('"}}')]))]];
+    for (const [name, init] of answers) {
+        const {outcome, sent} = await publishDirect(usual({init}), {media: 1});
+        assert.deepEqual(outcome, {status: 'rejected', reason: 'media-upload-refused'}, name);
+        assert.deepEqual(paths(sent), ['POST api.linkedin.com/rest/images'], name + ': nothing is uploaded or posted');
+    }
+    const control = await publishDirect(usual({init: () => Response.json({value: {uploadUrl: 'https://www.linkedin.com/dms-uploads/C1/uploaded-image/0', image: id(100)}})}), {media: 1});
+    assert.equal((control.outcome as {status: string}).status, 'completed', 'positive control: an image id of 100 characters');
+});
+
+test('publishLinkedInPost_ReceiptNotExactlyAPostId_UnconfirmedNeverCompleted', async () => {
+    const answered = (id: string) => usual({post: () => new Response(null, {status: 201, headers: {'x-restli-id': id}})});
+    for (const id of ['urn:li:share:' + '1'.repeat(31), 'x-urn:li:share:1', 'urn:li:share:1x']) {
+        const {outcome, sent} = await publishDirect(answered(id));
+        assert.deepEqual(outcome, {thrown: 'Unconfirmed LinkedIn response.'}, id + ' is not a post id, so the router records unknown');
+        assert.equal(sent.length, 1, id);
+    }
+    const id = 'urn:li:share:' + '1'.repeat(30);
+    assert.deepEqual((await publishDirect(answered(id))).outcome, {status: 'completed', receipt: id}, 'positive control: a 30-digit id');
+});
+
+test('connectLinkedIn_MemberAnswerNotConfirmed_RefusedWithoutStoring', () => scenario(async ({h, fake, env}) => {
+    const agent = await h.register(), humanId = await h.claim(agent);
+    const attempt = () => connectLinkedIn(env, {humanId, authAt: Date.now(), agentId: agent.accountId});
+    await withLinkedIn(fake, async () => {
+        for (const [name, me] of [['a member id over 64 characters', () => Response.json({sub: 'm'.repeat(65), name: 'HSC Beats'})],
+            ['a member id too long for a credential reference', () => Response.json({sub: 'm'.repeat(56), name: 'HSC Beats'})],
+            ['a member on 201 instead of 200', () => Response.json({sub: member, name: 'HSC Beats'}, {status: 201})],
+            ['an array instead of an object', () => Response.json([{sub: member, name: 'HSC Beats'}])],
+            ['bytes that are not UTF-8', () => new Response(new Uint8Array([...Buffer.from(`{"sub":"${member}","name":"`), 0xff, ...Buffer.from('"}')]))]] as const) {
+            fake.me = me;
+            assert.deepEqual(await attempt(), {ok: false, reason: 'provider-refused'}, name);
+        }
+    });
+    assert.equal(await h.db.prepare('SELECT count(*) n FROM external_credentials').first<number>('n'), 0);
+    // 'linkedin:' and the member id form the credential reference, which is at most 64 characters.
+    fake.me = () => Response.json({sub: 'm'.repeat(55), name: 'HSC Beats'});
+    await withLinkedIn(fake, async () => {
+        assert.deepEqual(await attempt(), {ok: true, accounts: ['HSC Beats']}, 'positive control: a member id of 55 characters');
+    });
+    assert.equal(await h.db.prepare('SELECT credential_ref FROM external_credentials').first<string>('credential_ref'), 'linkedin:' + 'm'.repeat(55));
+}));

@@ -54,7 +54,8 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const grantIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const kidPattern = /^[A-Za-z0-9_-]{43}$/;
 const digestPattern = /^[A-Za-z0-9_-]{43}$/;
-const credentialRefPattern = /^[A-Za-z0-9._:-]{1,64}$/;
+/** A credential reference as agents name it and the store keeps it: the provider, ':' and the account's own id. */
+export const credentialRefPattern = /^[A-Za-z0-9._:-]{1,64}$/;
 const destructive = new Set<string>(['confirm-binding', 'confirm-key', 'revoke-key', 'issue-recovery-code', 'confirm-action']);
 const notFound: OwnerFailure = {ok: false, reason: 'not-found'};
 const unavailable: OwnerFailure = {ok: false, reason: 'unavailable'};

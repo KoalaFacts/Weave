@@ -4,7 +4,7 @@
  */
 import { atomic, type Env, type Transaction } from './database.ts';
 import { writesRefused } from './humans.ts';
-import { reauthFutureSkewMs, reauthWindowMs, type OwnerDecision } from './owner-actions.ts';
+import { credentialRefPattern, reauthFutureSkewMs, reauthWindowMs, type OwnerDecision } from './owner-actions.ts';
 import { sealSecret } from './credential-vault.ts';
 import { connectYoutube, youtubeConfigured, type ConnectRefusal } from './youtube-provider.ts';
 import { provider, publishingAdapter, type MediaRules, type SettingRules, type TextRules } from './external-providers.ts';
@@ -153,6 +153,9 @@ export async function connectAccount(env: Env, input: ConnectAccountInput, clock
         const accounts = await adapter.connector.verify(values);
         if (accounts === null) return {ok: false, reason: 'provider-refused'};
         if (accounts.length === 0) return {ok: false, reason: 'no-channel'};
+        // An account whose id would not fit a credential reference can never be stored or proposed against: the owner is
+        // told the provider's answer is unusable instead of a storage failure that reads as an outage.
+        if (accounts.some(account => !credentialRefPattern.test(provider + ':' + account.ref))) return {ok: false, reason: 'provider-refused'};
         // One secret field is sealed as its value; several are sealed together as one JSON object of their values.
         const secret = secretFields.length === 1 ? values[secretFields[0].name]
             : JSON.stringify(Object.fromEntries(secretFields.map(field => [field.name, values[field.name]])));
