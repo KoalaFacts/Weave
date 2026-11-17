@@ -317,3 +317,34 @@ test("ownerPage_RecentActions_NoneOrUnlistedStatus_NeverGuessed",async()=>{
   assert.match(odd,/: status not shown here; /);
   assert.ok(!odd.includes("leftover"));
 });
+
+// A not-sent action explains its stored failure code in plain words and says what the owner can do; a code the page does not
+// know, or an inherited property name, adds nothing, and no explanation appears for an action with another status.
+test("actionPage_FailedWithKnownCode_ExplainsWhatHappenedAndWhatToDo",async()=>{
+  const actionId=randomUUID();
+  const page=async(settled:SettledActionView)=>html(actionPage({frozen:false,action:null,settled},human,actionId,new Map(),now));
+  const expected:Record<string,string>={
+    "owner-changed":"The agent's owner changed after the approval, so Weave did not send it.",
+    "owner-frozen":"The owner's GitHub identity was frozen before it could be sent, so Weave did not send it.",
+    "credential-changed":"The account it posts through was reconnected or disconnected after the approval, so Weave did not send it. Your agent can propose it again.",
+    "credential-unreadable":"Weave could not open the stored sign-in for that account, so it did not send it. Disconnect the account, connect it again, then have your agent propose it again.",
+    "plan-changed":"Weave's connector for this platform changed after the approval, so the approved plan no longer applies and Weave did not send it. Your agent can propose it again.",
+    "provider-rejected: credential-refused":"The platform refused the connected account's sign-in, so nothing was posted. Disconnect the account, connect it again, then have your agent propose it again.",
+    "provider-rejected: media-unavailable":"A file in it was no longer stored as approved, so nothing was posted. Your agent can upload it and propose it again.",
+    "provider-rejected: x-refused-403":"The platform refused it, so nothing was posted.",
+    "provider-rejected: toString":"The platform refused it, so nothing was posted."
+  };
+  for(const [code,text] of Object.entries(expected)){
+    const body=await page({status:"failed",failure:code});
+    assert.ok(body.includes("This action was not sent. Reason: "+code+". "+text+"</p>"),code+": "+body);
+  }
+  for(const code of ["later-code","toString","provider-rejected","provider-rejected: "]){
+    const body=await page({status:"failed",failure:code});
+    assert.ok(body.includes("This action was not sent. Reason: "+code+".</p>"),code+": "+body);
+  }
+  assert.ok((await page({status:"failed",failure:null})).includes("This action was not sent.</p>"));
+  for(const status of ["unknown","completed","rejected"]){
+    const body=await page({status,failure:"credential-unreadable"});
+    assert.ok(!body.includes("could not open")&&!body.includes("Reason:"),status+": "+body);
+  }
+});

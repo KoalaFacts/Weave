@@ -238,6 +238,26 @@ const settledText:Readonly<Record<string,string>>=Object.freeze({
   unknown:"Weave sent this action but could not confirm whether the platform accepted it. It will not be sent again; check the platform."
 });
 
+const reconnect="Disconnect the account, connect it again, then have your agent propose it again.";
+/** What a not-sent action's stored failure code means and what the owner can do; the mailbox's re-checks at send time and two platform refusals. */
+const failureText:Readonly<Record<string,string>>=Object.freeze({
+  "owner-changed":"The agent's owner changed after the approval, so Weave did not send it.",
+  "owner-frozen":"The owner's GitHub identity was frozen before it could be sent, so Weave did not send it.",
+  "credential-changed":"The account it posts through was reconnected or disconnected after the approval, so Weave did not send it. Your agent can propose it again.",
+  "credential-unreadable":"Weave could not open the stored sign-in for that account, so it did not send it. "+reconnect,
+  "plan-changed":"Weave's connector for this platform changed after the approval, so the approved plan no longer applies and Weave did not send it. Your agent can propose it again.",
+  "provider-rejected: credential-refused":"The platform refused the connected account's sign-in, so nothing was posted. "+reconnect,
+  "provider-rejected: media-unavailable":"A file in it was no longer stored as approved, so nothing was posted. Your agent can upload it and propose it again."
+});
+const rejectedPrefix="provider-rejected: ";
+/** The explanation for a stored failure code, or none for a code this page does not know: never guessed. */
+function explainFailure(code:string):string|null{
+  if(Object.hasOwn(failureText,code))return failureText[code]!;
+  // Any other definite platform refusal: the platform said no, so nothing was posted.
+  return code.startsWith(rejectedPrefix)&&code.length>rejectedPrefix.length?
+    "The platform refused it, so nothing was posted.":null;
+}
+
 /** A link the page may show for a published post: an absolute https URL only, so a stored value can never run script. */
 const publishedLink=(url:string|null|undefined)=>typeof url==="string"&&url.startsWith("https://")&&URL.canParse(url)?url:null;
 
@@ -280,7 +300,8 @@ export function actionPage(view:PendingActionView,human:HumanSession,actionId:st
   const all='<p><a href="/account">All your agents and actions</a></p>';
   if(!action){
     const settled=view.settled&&Object.hasOwn(settledText,view.settled.status)?view.settled:null;
-    const text=settled?settledText[settled.status]+(settled.status==="failed"&&settled.failure?" Reason: "+esc(settled.failure)+".":""):
+    const failure=settled?.status==="failed"&&settled.failure?settled.failure:null,why=failure===null?null:explainFailure(failure);
+    const text=settled?settledText[settled.status]+(failure===null?"":" Reason: "+esc(failure)+"."+(why===null?"":" "+why)):
       "This action is not waiting for your approval. It may already be decided or expired.";
     return shell("Approve an action",head+"<p>"+text+"</p>"+(settled?.status==="completed"?sentDetails(settled):"")+all);
   }

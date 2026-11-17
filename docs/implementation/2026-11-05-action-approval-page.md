@@ -54,6 +54,13 @@ remains possible later for chat channels.
   `https://` URL, as the store already requires. `settled` gains `receipt` and `publication`, both null unless the
   status is `completed`; an auth Worker reading a mailbox without them shows "This action was sent." alone. Reading
   sends and re-checks nothing.
+- **Why it was not sent (2026-11-18).** A not-sent action's page follows the stored failure code with what it means and
+  what the owner can do: the five re-checks at send time (`owner-changed`, `owner-frozen`, `credential-changed`,
+  `credential-unreadable`: disconnect and connect the account again; `plan-changed`), the platform's refusal of the
+  account's sign-in (`provider-rejected: credential-refused`: connect again) or of a file no longer stored as approved
+  (`provider-rejected: media-unavailable`), and any other `provider-rejected: <reason>` as "the platform refused it, so
+  nothing was posted". A code the page does not know, and an inherited property name, adds nothing: never guessed. The
+  text is fixed in the auth Worker; the mailbox RPC is unchanged.
 - **Recent actions on `/account` (2026-11-18).** The owner page lists, under "Recent actions", the actions of the agents
   the human owns now that stopped waiting in the last 7 days, newest change first, at most 20: decided, being sent, sent,
   not sent (with the stored failure code) or unknown by their last change, and a plan left pending past its expiry, by
@@ -105,6 +112,10 @@ Mutation checks: each of these fails a test:
   (`ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnlyForItsOwner` and the workerd tests above).
   Equivalent: the guard that a still-pending row is not described as settled (a live pending action of the owner is
   always returned for decision first).
+- explaining a failure code for an action that was not `failed`, dropping or swapping any explanation, explaining an
+  unknown code or an inherited property name, or giving the generic platform refusal for a bare `provider-rejected: `
+  (`actionPage_FailedWithKnownCode_ExplainsWhatHappenedAndWhatToDo` and the workerd test
+  `actionPage_OwnActionApprovedFailedOrUnknown_SaysWhatBecameOfIt`).
 - returning the receipt or the publication for an action that was not sent, showing either on the page for another
   status, linking a URL that is not absolute `https://` (`javascript:`, `http:`, protocol-relative), or showing the
   receipt, the publication's error or its URL unescaped (`ownerPendingAction_OwnActionNoLongerPending_…` and
