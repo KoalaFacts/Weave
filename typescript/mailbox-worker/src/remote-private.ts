@@ -15,7 +15,9 @@ import { sweep } from './cleanup';
 import { checkAgentCard, publishAgentCard } from './agent-cards.ts';
 import { checkMessage, inboxMessage, messagePayload } from './a2a-message.ts';
 import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyClaim } from './mcp-idempotency.ts';
-import { grantCaller, liveOwnedGrant } from './client-grants.ts';
+import { grantCaller, liveGrant } from './client-grants.ts';
+import { executeOwnerMcp } from './owner-tools.ts';
+import { ownerMcpTools } from './private-mcp-tools.ts';
 import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
 import { executeExternalAction, getExternalAction, proposalKey, proposeExternalAction } from './external-actions.ts';
 import { listAgentCredentials } from './external-credentials.ts';
@@ -95,7 +97,7 @@ const grantGuard=(accountId:string,grantId:string)=>grantCaller(accountId,grantI
 /** The production private-tool access: the consent grant, its human's current ownership and that human's freeze state are
  * read on every call, and again inside every write's own transaction. */
 export function oauthPrivateAccess(env:Env,origin:string,config:OAuthOptions,request:Request,
-    lookup:GrantLookup=grantId=>liveOwnedGrant(env.db,grantId)):PrivateAccess{
+    lookup:GrantLookup=grantId=>liveGrant(env.db,grantId)):PrivateAccess{
     let grantId:string|null=null;
     return {tools:privateMcpTools,scope:privateScope,
         authorize:async scope=>{
@@ -105,8 +107,10 @@ export function oauthPrivateAccess(env:Env,origin:string,config:OAuthOptions,req
             return access.accountId;
         },
         // remoteMcp authorizes the exact tool scope immediately before every invoke.
-        invoke:(accountId,name,args)=>grantId===null?Promise.resolve(problem(new Error('unauthorized invoke')))
-            :executePrivateMcp(env,origin,accountId,name,args,grantId)};
+        // A management tool's scope is granted only to an owner grant, whose authorized principal is then the human.
+        invoke:(principal,name,args)=>grantId===null?Promise.resolve(problem(new Error('unauthorized invoke')))
+            :ownerMcpTools.some(tool=>tool.name===name)?executeOwnerMcp(env,principal,name,args,grantId,request.headers.get('CF-Connecting-IP')??'unknown')
+            :executePrivateMcp(env,origin,principal,name,args,grantId)};
 }
 /** `grantId` names the OAuth consent grant behind the call; every write re-checks it in its own transaction. */
 export async function executePrivateMcp(env:Env,origin:string,accountId:string,name:string,args:Record<string,unknown>,grantId:string):Promise<Response> {

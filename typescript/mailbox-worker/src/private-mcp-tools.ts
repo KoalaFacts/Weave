@@ -123,6 +123,21 @@ const profile = tool('get_my_profile', 'Return the immutable account ID associat
         required:['id'], additionalProperties:false}, {readOnly:true});
 profile._meta['openai/profile'] = true;
 
+const agentName = {...str(128, '1 to 128 visible characters; no control, bidi or invisible-only names.'), minLength:1};
+const ownedAgent = out({accountId:id('Agent account ID. Name it in the Weave-Agent header to act as this agent.'),
+    displayName:nullable(str(128, 'Display name. Self-reported; not verified.'))}, ['accountId','displayName']);
+const manage = 'An owner grant only: tokens for one agent cannot use it. Do not send the Weave-Agent header.';
+/** Agent management for an owner grant: the human's agents, not one agent's own mailbox. */
+export const ownerMcpTools = [
+    tool('list_agents', 'List the agents your human owns, oldest first, 20 per page. ' + manage,
+        'weave:agents.manage', {afterCursor:str(2048, 'Opaque nextCursor from the previous page. Omit for the first page.')}, [], pageOf(ownedAgent), {readOnly:true}),
+    tool('create_agent', 'Create a new agent owned by your human, with no keys. Each call creates one agent, so do not repeat a call whose outcome is unknown: list_agents first. '
+        + 'Refused with agent-limit when the human owns as many agents as this server allows. ' + manage,
+        'weave:agents.manage', {displayName:agentName}, ['displayName'], ownedAgent),
+    tool('rename_agent', 'Change the display name of an agent your human owns. ' + manage,
+        'weave:agents.manage', {accountId:id('An agent your human owns.'), displayName:agentName}, ['accountId','displayName'], ownedAgent, {idempotent:true})
+];
+
 export const privateMcpTools = [
     profile,
     tool('list_my_addresses', 'List only addresses owned by your OAuth account, including unlisted addresses.',
@@ -212,5 +227,6 @@ export const privateMcpTools = [
         'weave:actions.read', {actionId:id('actionId from propose_external_action.')}, ['actionId'], externalAction, {readOnly:true}),
     tool('execute_external_action', 'Send an approved action once. Weave re-checks the plan (owner, credential revision, account) and refuses with nothing sent if it changed. '
         + 'Repeating returns the recorded result and never sends again; if the status is unknown, check the provider instead of proposing it again.',
-        'weave:actions.write', {actionId:id('actionId of an approved action.')}, ['actionId'], externalAction, {idempotent:true, openWorld:true})
+        'weave:actions.write', {actionId:id('actionId of an approved action.')}, ['actionId'], externalAction, {idempotent:true, openWorld:true}),
+    ...ownerMcpTools
 ];

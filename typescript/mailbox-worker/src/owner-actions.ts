@@ -3,7 +3,7 @@ import { confirmKeyRequest, revokeKeyForOwner } from './agent-keys.ts';
 import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, rejectBindingRequest } from './binding-requests.ts';
 import { ownedAgentLimit, ownedAgentPage, requireReadable, writesRefused } from './humans.ts';
 import { rejectKeyRequest } from './key-requests.ts';
-import { revokeGrantIn } from './client-grants.ts';
+import { maxLiveOwnerGrants, revokeGrantIn } from './client-grants.ts';
 import { confirmExternalAction, pendingForOwner, rejectExternalAction, type OwnerExternalAction } from './external-actions.ts';
 import { ownedCredentials, revokeExternalCredential, type OwnerCredential } from './external-credentials.ts';
 import { publishingAdapter, publishingAdapters } from './external-providers.ts';
@@ -25,16 +25,19 @@ export type OwnerGrant = {grantId: string; clientId: string; clientName: string 
 export type OwnerAddress = {addressId: string; label: string | null; isPublic: boolean; hasAgentCard: boolean; createdAt: string};
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[];
     grants: OwnerGrant[]; addresses: OwnerAddress[]; credentials: OwnerCredential[]};
+/** An owner grant: one client that may manage every agent the human owns. The name is self-reported. */
+export type OwnerAppGrant = {grantId: string; clientId: string; clientName: string | null; createdAt: string};
 /** Grants of one agent revoked in the last 30 days, for the authorization server's token clean-up retry; never rendered. */
 export type RevokedAgentGrants = {agentId: string; revokedGrantIds: string[]};
 /**
  * `agents` is one page of the human's agents, oldest first; `nextAgents` is the cursor of the following page, null on the last.
  * `externalActions` are the pending governed actions of all the human's agents, each confirmed by its `planDigest`, and
- * `revokedGrants` the recent revocations of all of them, whichever page is shown.
+ * `revokedGrants` the recent revocations of all of them, whichever page is shown. `ownerGrants` are the live grants that manage
+ * every agent, and `revokedOwnerGrantIds` those revoked in the last 30 days, for the same token clean-up; never rendered.
  * `connectors` are the publishing platforms an owner can connect an agent to, with the fields each asks for.
  */
 export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]; nextAgents: string | null;
-    externalActions: OwnerExternalAction[]; revokedGrants: RevokedAgentGrants[]; connectors: OwnerConnector[]};
+    externalActions: OwnerExternalAction[]; revokedGrants: RevokedAgentGrants[]; ownerGrants: OwnerAppGrant[]; revokedOwnerGrantIds: string[]; connectors: OwnerConnector[]};
 
 export type OwnerAction = {humanId: string; authAt: number} & (
     | {kind: 'confirm-binding'; requestId: string; keysDigest: string}
@@ -74,7 +77,7 @@ const placeholders = (values: unknown[]) => values.map(() => '?').join(',');
 export async function ownerOverview(env: Env, humanId: string, after: string | null = null, clock: () => bigint = nowUtc,
     revocationStart: () => string = () => crypto.randomUUID()): Promise<OwnerOverview> {
     requireReadable(env);
-    const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: [], nextAgents: null, externalActions: [], revokedGrants: [], connectors: []};
+    const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: [], nextAgents: null, externalActions: [], revokedGrants: [], ownerGrants: [], revokedOwnerGrantIds: [], connectors: []};
     if (typeof humanId !== 'string' || !uuidPattern.test(humanId) || (after !== null && (typeof after !== 'string' || !uuidPattern.test(after)))) return empty;
     return atomic(env.db, async tx => {
         const nowTicks = clock(), now = nowTicks.toString();
@@ -122,6 +125,10 @@ export async function ownerOverview(env: Env, humanId: string, after: string | n
                 keysDigest: await liveKeysDigest(liveKeys.map(key => key.kid)), createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!});
         }
         const externalActions = await pendingForOwner(tx, humanId, nowTicks);
+        const ownerGrants = (await tx.db.prepare('SELECT grant_id,client_id,client_name,CAST(created_at AS TEXT) created_at FROM owner_grants WHERE human_id=? AND revoked_at IS NULL ORDER BY created_at DESC,grant_id LIMIT ?')
+            .bind(humanId, maxLiveOwnerGrants).all<{grant_id: string; client_id: string; client_name: string | null; created_at: string}>()).results;
+        const revokedOwnerGrants = (await tx.db.prepare('SELECT grant_id FROM owner_grants WHERE human_id=? AND revoked_at IS NOT NULL AND revoked_at>CAST(? AS INTEGER) ORDER BY revoked_at DESC,grant_id LIMIT ?')
+            .bind(humanId, revokedSince, revokedGrantsPerRead).all<{grant_id: string}>()).results;
         const credentials = await ownedCredentials(tx, ownedIds);
         return {
             frozen: false as const,
@@ -129,6 +136,8 @@ export async function ownerOverview(env: Env, humanId: string, after: string | n
             nextAgents,
             externalActions,
             revokedGrants,
+            ownerGrants: ownerGrants.map(row => ({grantId: row.grant_id, clientId: row.client_id, clientName: row.client_name, createdAt: apiTime(row.created_at)!})),
+            revokedOwnerGrantIds: revokedOwnerGrants.map(row => row.grant_id),
             connectors: publishingAdapters.filter(adapter => publishingAdapter(env, adapter.name)).map(ownerConnector),
             agents: owned.map(agent => ({agentId: agent.account_id, displayName: agent.display_name,
                 keys: keys.filter(key => key.account_id === agent.account_id).map(ownerKey),

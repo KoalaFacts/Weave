@@ -115,3 +115,29 @@ Verification: `test/approved-owner-grants.test.ts` pins the statements to the ge
 `test/deploy.test.ts` runs opted-in completed-only releases on a real Miniflare D1 (owner_grants alone, both changes
 in one batch, refusals with either opt-in missing, an unapproved index, ambiguous values, maintain mode and the OAuth
 bootstrap); `test/deploy-entry.test.ts` checks the workflow input and gates. Not run against a deployment.
+
+Step 2 makes the mailbox honour owner grants on `/mcp`; the authorization server does not issue them yet (step 3):
+
+- **Recording.** `HumanDirectory.recordOwnerGrant` mirrors a grant for a human who is not frozen, at most 20 live per
+  human (`grant-limit`), counted in the same transaction as the insert. `revoke-grant` (owner page) and
+  `HumanDirectory.revokeGrant` revoke either kind of grant by its ID. `ownerOverview` lists the live owner grants
+  (`ownerGrants`) and those revoked in the last 30 days (`revokedOwnerGrantIds`) for token clean-up.
+- **Tokens.** An owner grant's claims carry `owner: true` and the human as both `userId` and `humanId`, never an
+  account; an agent's claims stay as they were. Claims that mix the two, or a grant row of the other kind, are `401`.
+- **Acting as an agent.** Every agent tool needs the `Weave-Agent` header naming an agent the grant's human owns at that
+  moment; a missing, malformed, foreign or departed agent is the tool error `invalid_agent` (HTTP 400 before MCP framing),
+  never a different agent. A token for one agent sending the header gets the same error. Each write re-checks, inside its
+  own transaction, that the grant is live and the agent is still the human's (`grantCaller` now accepts either kind).
+- **Managing agents.** `list_agents` (20 per page), `create_agent` and `rename_agent` need the new scope
+  `weave:agents.manage`, are refused to agent tokens whatever scopes they list (`403 insufficient_scope`), take no
+  header, and act only on the grant's human: another human's agent is not found. Creating still counts against
+  `OWNED_AGENTS_PER_HUMAN` (`agent-limit`) and the hourly registration limits by source address (`capacity`); creating
+  and renaming re-check the grant in their own transaction. Names follow the existing visible-name rule.
+- **Not recorded.** As with an agent's grant, the mailbox does not log which grant made each call; messages and actions
+  record their agent as before.
+
+Verification: `test/owner-grants.test.ts` drives the production `/mcp` composition with Service Binding claims on a real
+Miniflare D1 (recording and limits; list, create and rename on the human's agents only; acting as an owned agent, refusals
+for a missing, foreign, unknown or departed agent; agent tokens refused management and the header; mixed claims, frozen and
+revoked grants; revocation between authorization and each write), and `test/mcp-tool-contract.test.ts` checks the new
+tools' results against their published schemas.
