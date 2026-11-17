@@ -191,6 +191,23 @@ export async function getExternalAction(env: Env, caller: ActionCaller, actionId
     });
 }
 
+/**
+ * GET /v1/external-actions: this agent's waiting plans (pending or approved and not expired), oldest first. The
+ * waiting-plan limit bounds the list, so it has no cursor. A caller that lost a propose answer or an action ID finds
+ * the plan here while it can still be approved or executed; a settled plan is read by its ID.
+ */
+export async function listWaitingExternalActions(env: Env, caller: ActionCaller, clock: () => bigint = nowUtc): Promise<{actions: ExternalActionView[]}> {
+    return atomic(env.db, async tx => {
+        const at = tx.store.now;
+        await caller.check(tx);
+        const rows = (await tx.db.prepare(`SELECT ${columns} FROM external_actions WHERE account_id=? AND status IN ('pending','approved')
+            AND expires_at>CAST(? AS INTEGER) ORDER BY created_at,action_id LIMIT ?`)
+            .bind(caller.accountId, at.toString(), pendingActionsPerAgent).all<Row>()).results;
+        // A waiting plan has not been dispatched, so it has no publication to read.
+        return {actions: rows.map(row => view(env, row, at))};
+    }, clock);
+}
+
 /** A claimed dispatch carries the opened credential secret, which is never stored or returned. */
 type Claim = {row: Row; dispatch: true; secret: string | null} | {row: Row; dispatch: false; publication?: PublicationView | null};
 
