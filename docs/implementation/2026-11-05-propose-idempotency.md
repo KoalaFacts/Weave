@@ -183,7 +183,7 @@ in the inbox notices, whose 50 slots other changes can fill.
   (empty list, order by stored creation tick, another agent's plan absent, entry equal to the by-ID read, approved still
   listed without `approvalUrl`, completed/rejected/expired dropped, nothing sent), the capacity test (all 20 listed) and
   `listWaitingExternalActions_RevokedKey_Unauthenticated`, through the worker's HTTP entry.
-- Mutation checks, each caught: listing settled statuses, dropping the expiry filter, ordering by ID only, ordering
+- Mutation checks, each caught: listing settled statuses, dropping the expiry filter, listing a plan at its exact expiry tick (`>=`), ordering by ID only, ordering
   newest first, a limit of 10, dropping the agent filter, reading views at a later clock. Dropping the in-transaction
   key check is not caught: request authentication already refuses a revoked key, so the check is defence in depth, as
   for the by-ID read.

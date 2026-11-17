@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
-import { actionLifetimeTicks, approvalOrigin, executeExternalAction, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
+import { actionLifetimeTicks, approvalOrigin, executeExternalAction, listWaitingExternalActions, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
 import { apiTime } from '../src/time.ts';
 import type { Problem } from '../src/wire.ts';
 import type { Env } from '../src/database.ts';
@@ -989,4 +989,14 @@ test('listWaitingExternalActions_RevokedKey_Unauthenticated', () => scenario(asy
     const response = await h.request('/v1/external-actions', agent);
     assert.equal(response.status, 401);
     assert.equal((await response.json() as {code: string}).code, 'unauthenticated');
+}));
+
+test('listWaitingExternalActions_PlanAtItsExactExpiryTick_NoLongerListed', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    const expiry = await storedExpiry(h, action.actionId);
+    const caller: ActionCaller = {accountId: agent.accountId, check: async () => {}};
+    const listedAt = async (at: bigint) => (await listWaitingExternalActions(environment(h), caller, () => at)).actions.map(a => a.actionId + ':' + a.status);
+    assert.deepEqual(await listedAt(expiry - 1n), [action.actionId + ':pending'], 'listed until the tick before its expiry');
+    assert.deepEqual(await listedAt(expiry), [], 'not listed from its expiry tick, never as expired');
 }));
