@@ -212,6 +212,9 @@ test('executeDiscordPost_AnswerNotOneConfirmedMessage_UnknownAndNeverResent', ()
         ['an id that is not a Discord id', () => Response.json({...message, id: 'abc'})],
         ['a numeric id', () => Response.json({...message, id: 123456789012345678})],
         ['an answer over 64 KiB', () => Response.json({...message, content: 'x'.repeat(70_000)})],
+        // A redirect is never followed, so the post (and the webhook token in its URL) goes nowhere else.
+        ['a 307 redirect', () => new Response(null, {status: 307, headers: {location: 'https://elsewhere.example/hook'}})],
+        ['a 308 redirect', () => new Response(null, {status: 308, headers: {location: 'https://elsewhere.example/hook'}})],
     ];
     for (const [name, answer] of cases) {
         fake.answer = undefined;
@@ -221,6 +224,7 @@ test('executeDiscordPost_AnswerNotOneConfirmedMessage_UnknownAndNeverResent', ()
         fake.answer = undefined;
         assert.equal((await execute(h, agent, actionId)).status, 'unknown', name + ', again');
         assert.equal(posts(fake).length, 1, 'never sent again: ' + name);
+        assert.ok(fake.calls.every(call => call.url.origin === 'https://discord.com'), 'no redirect followed: ' + name);
         fake.calls.length = 0;
     }
     // Positive control: the same post answered with one message for this channel completes.
