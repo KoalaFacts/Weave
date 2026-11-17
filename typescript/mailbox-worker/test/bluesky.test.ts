@@ -132,6 +132,12 @@ test('facets_LinksAndTags_MarkedAtUtf8ByteOffsets', () => {
         {$type: 'app.bsky.richtext.facet#tag', tag: 'HSC'}, {$type: 'app.bsky.richtext.facet#tag', tag: 'beats'}]);
 });
 
+test('facets_TagOver64Characters_LeftAsText', () => {
+    const tags = (text: string) => facets(text).map(f => f.features[0].tag);
+    assert.deepEqual(tags('#' + 'a'.repeat(64)), ['a'.repeat(64)], 'Bluesky takes a tag of up to 64 characters');
+    assert.deepEqual(tags('#' + 'a'.repeat(65) + ' #ok'), ['ok'], 'a longer one stays plain text; the next tag is still marked');
+});
+
 test('facets_LinkEndingInItsOwnBracket_KeepsTheBracket', () => {
     const uri = (text: string) => facets(text).map(f => f.features[0].uri);
     assert.deepEqual(uri('See https://en.wikipedia.org/wiki/Function_(mathematics).'), ['https://en.wikipedia.org/wiki/Function_(mathematics)']);
@@ -311,6 +317,10 @@ test('publishBlueskyPost_UploadNotConfirmed_MediaUploadRefusedAndNothingPosted',
     const answers: [string, () => Response][] = [
         ['a blob on a non-2xx status', () => Response.json({blob}, {status: 500})],
         ['a blob that is not an object', () => Response.json({blob: 'bafkx'})],
+        ['a null blob', () => Response.json({blob: null})],
+        // Decoding must be strict: a lenient decoder would turn the bad byte into U+FFFD and embed a blob Bluesky never named.
+        ['a blob answer that is not UTF-8', () => new Response(new Uint8Array([...new TextEncoder().encode('{"blob":{"$type":"blob","ref":{"$link":"bafk'), 0xff,
+            ...new TextEncoder().encode('"},"mimeType":"image/png","size":300}}')]), {headers: {'Content-Type': 'application/json'}})],
     ];
     for (const [name, upload] of answers) {
         const {outcome, sent} = await publishDirect(method => method === 'com.atproto.repo.uploadBlob' ? upload() : posted()(method), {media: true});
