@@ -50,7 +50,7 @@ export async function executeOwnerMcp(env: Env, humanId: string, name: string, a
             const renamed = await renameOwnedAgent(env, {humanId, agentId: args.accountId as string, displayName: requested}, check);
             if (renamed.ok) return json(agentView(args.accountId as string, requested));
             if (renamed.reason === 'invalid') invalidField('displayName', 'must be 1 to 128 visible characters');
-            if (renamed.reason === 'not-found') fail(404, 'unavailable');
+            if (renamed.reason === 'not-found') fail(404, 'agent-not-found');
             fail(503, 'unavailable');
         }
         fail(404, 'unavailable');

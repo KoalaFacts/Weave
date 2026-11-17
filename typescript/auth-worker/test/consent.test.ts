@@ -3,7 +3,7 @@ import type {AgentPage,AgentSummary} from "../../mailbox-worker/src/humans.ts";
 import {randomUUID} from "node:crypto";
 import {test} from "node:test";
 import {createChallenge,validChallenge,readConsent} from "../src/challenge.ts";
-import {consentPage} from "../src/consent-page.ts";
+import {consentPage,ownerConsentPage} from "../src/consent-page.ts";
 import {consentClientName,ownerClientName} from "../src/client-name.ts";
 
 const consentRequest=(body:string)=>new Request("https://auth.example/authorize",{method:"POST",
@@ -48,6 +48,8 @@ test("readConsent_ValidChoices_ReturnForm",async()=>{
   assert.equal(created?.get("agentName"),"Claude Code");
   const existing=await readConsent(consentRequest(new URLSearchParams({handle,decision:"approve",agent:account}).toString()));
   assert.equal(existing?.get("agent"),account);
+  const all=await readConsent(consentRequest(new URLSearchParams({handle,decision:"approve",agent:"all"}).toString()));
+  assert.equal(all?.get("agent"),"all");
   const deny=await readConsent(consentRequest(new URLSearchParams({handle,decision:"deny"}).toString()));
   assert.equal(deny?.get("decision"),"deny");
 });
@@ -194,4 +196,29 @@ test("consentPage_MoreAgentsThanOnePage_OffersAnAgentIdThatReadConsentAccepts",a
   assert.match(html,/<input type="text" name="agent" id="agentId" required pattern="\[0-9a-f\]\{8\}/);
   const one=await consentPage(details,createChallenge(),{login:"alice"},agentPage([{accountId:listed,displayName:"A"}]),"Claude Code").text();
   assert.ok(!one.includes("agentId"),"no ID field when every agent is listed");
+});
+
+test("ownerConsentPage_SaysWhatTheAppMayAndMayNotDo_ApprovesOnlyAll",async()=>{
+  const handle=createChallenge();
+  const response=ownerConsentPage(details,handle,{login:"<b>alice</b>"});
+  const html=await response.text();
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get("cache-control"),"no-store");
+  assert.match(response.headers.get("content-security-policy")!,/frame-ancestors 'none'/);
+  assert.ok(!html.includes("<script>")&&!html.includes("<img")&&!html.includes("<b>alice"),"client metadata and login are escaped");
+  assert.match(html,/manage all of your Weave agents/);
+  assert.match(html,/now or later/);
+  assert.match(html,/approve an external action: you approve each one on this site/);
+  assert.match(html,/agent keys or recovery codes/);
+  assert.match(html,/revoke this access at any time/);
+  // Exactly one approve form, naming all agents, and one deny form; nothing else to choose.
+  assert.equal(html.match(/<form /g)!.length,2);
+  assert.equal(html.match(/name="agent"/g)!.length,1);
+  assert.match(html,/name="agent" value="all"/);
+  assert.doesNotMatch(html,/agentName/);
+  for(const form of html.match(/<form[\s\S]*?<\/form>/g)!){
+    const fields=new URLSearchParams();
+    for(const m of form.matchAll(/name="([a-z]+)" value="([^"]*)"/g))fields.set(m[1]!,m[2]!);
+    assert.ok(await readConsent(consentRequest(fields.toString())),"each form submits what readConsent accepts");
+  }
 });

@@ -1,4 +1,4 @@
-import type {OwnerAddress,OwnerBindingRequest,OwnerGrant,OwnerKey,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
+import type {OwnerAddress,OwnerAppGrant,OwnerBindingRequest,OwnerGrant,OwnerKey,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import type {OwnerExternalAction} from "../../mailbox-worker/src/external-actions.ts";
 import type {OwnerCredential} from "../../mailbox-worker/src/external-credentials.ts";
 import type {OwnerConnector} from "../../mailbox-worker/src/publishing.ts";
@@ -102,6 +102,13 @@ function grantsSection(grants:OwnerGrant[],tokens:ReadonlyMap<string,string>):st
     esc(grant.createdAt)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
 }
 
+/** Apps the owner let manage every agent they own, later ones included. Names are self-reported: escaped text, never a link. */
+function ownerGrantsSection(grants:readonly OwnerAppGrant[],tokens:ReadonlyMap<string,string>):string{
+  if(grants.length===0)return "<p>No app manages all your agents.</p>";
+  return "<ul>"+grants.map(grant=>"<li>"+(grant.clientName===null?"Unnamed client":esc(grant.clientName)+unverified)+"; client ID <code>"+esc(grant.clientId)+"</code>; connected "+
+    esc(grant.createdAt)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
+}
+
 /** The account each credential acts as is what the provider verified at connect time. Connect forms come from the platforms' own field lists. */
 function credentialsSection(agentId:string,credentials:OwnerCredential[],connectors:OwnerConnector[],tokens:ReadonlyMap<string,string>):string{
   const connect=form("Connect YouTube","connect-youtube:"+agentId,tokens);
@@ -165,6 +172,9 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
       "Your current sign-in is older, so you will be asked to sign in again first.")+" Revoking a connected client's access or disconnecting an account does not.</p>",
     "<h2>Binding requests</h2>",bindingSection(overview.bindingRequests,tokens,now),
     "<h2>Actions waiting for approval</h2>",actionsSection(overview.externalActions,tokens),
+    "<h2>Apps that manage all your agents</h2>",
+    "<p>Each can create, list and rename your agents and act as any of them, including agents you add later. Approving actions stays with you.</p>",
+    ownerGrantsSection(overview.ownerGrants,tokens),
     "<h2>Your agents</h2>",agentSection(overview,tokens,after)].join(""));
 }
 
@@ -233,6 +243,7 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
     if(!action.accountChanged)await add("confirm-action:"+action.actionId,{kind:"confirm-action",requestId:action.actionId,planDigest:action.planDigest});
     await add("reject-action:"+action.actionId,{kind:"reject-action",requestId:action.actionId});
   }
+  for(const g of overview.ownerGrants)await add("revoke-grant:"+g.grantId,{kind:"revoke-grant",grantId:g.grantId});
   for(const agent of overview.agents){
     await add("issue-recovery-code:"+agent.agentId,{kind:"issue-recovery-code",agentId:agent.agentId});
     for(const k of agent.keys)await add("revoke-key:"+agent.agentId+":"+k.kid,{kind:"revoke-key",agentId:agent.agentId,kid:k.kid});
