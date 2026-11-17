@@ -546,3 +546,47 @@ test('publicationStates_ListingOrUrlNotConfirmed_NotTrustedAsPostiz', async () =
     assert.deepEqual(await ask(() => Response.json(published('https://www.linkedin.com/feed/update/1'))),
         new Map([[item.receipt, {state: 'published', url: 'https://www.linkedin.com/feed/update/1', error: null}]]), 'positive control');
 });
+
+test('connectPostiz_KeyAndChannelIdBounds_OnlyPostizShapesSentOrListed', async () => {
+    const original = globalThis.fetch;
+    const verify = async (value: string, list: unknown[] = integrations) => {
+        let asked = 0;
+        globalThis.fetch = async () => { asked++; return Response.json(list); };
+        try { return {channels: await postiz.connector!.verify({apiKey: value}), asked}; } finally { globalThis.fetch = original; }
+    };
+    for (const length of [15, 513]) assert.deepEqual(await verify('k'.repeat(length)), {channels: null, asked: 0}, length + ' characters is not a Postiz key and is never sent');
+    for (const length of [16, 512]) assert.equal((await verify('k'.repeat(length))).asked, 1, length + ' characters is sent');
+    const channel = (id: string, extra: object = {}) => ({...integrations[1], id, ...extra});
+    const {channels} = await verify(apiKey, [channel('a'.repeat(64)), channel('b'.repeat(65)), channel('c1', {name: 7}), channel('c2', {profile: ''})]);
+    assert.deepEqual(channels?.map(({ref, targetDisplay}) => [ref, targetDisplay]), [
+        ['a'.repeat(64), 'linkedin-page · Koala Facts (@koalafacts)'],
+        ['c1', 'linkedin-page · c1 (@koalafacts)'],
+        ['c2', 'linkedin-page · Koala Facts']], 'a 65-character id is left out; a channel with no name shows its id; an empty profile adds no handle');
+});
+
+test('publishPostizPost_PostAsApproved_NoShortLinksAndPostIdBound', async () => {
+    const bodies: any[] = [];
+    const answer = (postId: string) => publishDirect(async request => {
+        if (new URL(request.url).pathname.endsWith('/posts')) bodies.push(await request.clone().json());
+        return usualPostiz({post: () => Response.json([{postId, integration: integrations[1].id}])})(request);
+    });
+    assert.equal(((await answer('p'.repeat(64))).outcome as {receipt?: string}).receipt, 'posted:' + 'p'.repeat(64), 'a 64-character post id confirms the post');
+    assert.equal(bodies[0].shortLink, false, 'Postiz is told not to replace links in the approved text with its short links');
+    assert.deepEqual((await answer('p'.repeat(65))).outcome, {thrown: 'Unconfirmed Postiz response.'}, 'a 65-character post id is not Postiz\'s, so the outcome is unknown');
+});
+
+test('publicationStates_ListingWindowAndBlankError_AsTracked', async () => {
+    const original = globalThis.fetch, asked: URL[] = [];
+    const item = {receipt: 'posted:post-1', trackFrom: Date.parse('2026-11-17T12:00:00Z')};
+    const ask = async (post: object) => {
+        globalThis.fetch = async input => { asked.push(new URL(String(input))); return Response.json({posts: [{id: 'post-1', ...post}]}); };
+        try { return await postiz.publicationStates!(apiKey, [item] as never); } finally { globalThis.fetch = original; }
+    };
+    for (const error of ['', '​\u0000', undefined])
+        assert.deepEqual(await ask({state: 'ERROR', error}), new Map([[item.receipt, {state: 'failed', url: null, error: null}]]), JSON.stringify(error) + ' carries no reason');
+    const url = (length: number) => 'https://www.linkedin.com/' + 'a'.repeat(length - 'https://www.linkedin.com/'.length);
+    assert.deepEqual(await ask({state: 'PUBLISHED', releaseURL: url(2048)}), new Map([[item.receipt, {state: 'published', url: url(2048), error: null}]]), 'a 2048-character URL is kept');
+    assert.deepEqual(await ask({state: 'PUBLISHED', releaseURL: url(2049)}), new Map([[item.receipt, {state: 'published', url: null, error: null}]]), 'a 2049-character URL is dropped');
+    assert.equal(asked[0].searchParams.get('startDate'), '2026-11-16T11:58:00.000Z', 'the listing starts a day before the post was due, so a post Postiz dated earlier is found');
+    assert.equal(asked[0].searchParams.get('endDate'), '2026-11-18T12:00:00.000Z');
+});

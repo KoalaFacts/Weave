@@ -57,7 +57,7 @@ The shared plan on #365 plus the "Weave scheduled-task ledger" section of [docs/
 
 0. Open-PR triage first (`autonomous-dev` §3 step 0): every open PR and stray branch in the repo, whoever opened it. Never open a new PR or branch for work that already has one.
 1. Open Envoylet requests on #365, oldest first.
-2. AI Office items from the seed (generic owner/app capabilities; Weave learns no AI Office concept). AI-1 (owned-agent limit) is done (#496). AI-2 (owner app grant) is being built in the owner's interactive session: do not start it, open a PR for it or push to its branches until the seed says otherwise.
+2. AI Office items from the seed (generic owner/app capabilities; Weave learns no AI Office concept). AI-1 (owned-agent limit) is done (#496). AI-2 (owner app grant) is done (#498, #501, #503). What remains here is defects AI Office reports against either.
 3. Anything Envoylet's integration is visibly missing per the shared plan and Envoylet's [weave-publishing guide](https://github.com/KoalaFacts/Envoylet/blob/main/docs/weave-publishing.md).
 4. Shared plan step 4, one PR each: a status-change notification for apps, then native X, then native LinkedIn (all delivered except the push webhook, blocked on a schema owner decision, and A1, an owner decision).
 5. The most valuable gap in the publishing router or owner pages (correctness, security, missing tests, clearer errors), stated in the PR.
