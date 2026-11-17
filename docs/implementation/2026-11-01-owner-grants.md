@@ -86,3 +86,32 @@ deployment. It builds on the [MCP record](2026-11-01-mcp-a2a-messages.md) and th
   re-entered.
 - Verified in local Miniflare/workerd emulation only. No deployment, real OAuth
   issuer, real GitHub consent or live client was exercised.
+
+## Owner app grants (2026-11-17)
+
+Owner decision of 2026-11-17 (item AI-2 of the plan in agent-harness `projects/weave.md`): a person can let one app
+manage every agent they own, including agents they own later: create agents, list them, rename them and act as any of
+them for addresses, contacts, messages and proposals. Approving an external action stays the person's, on Weave's own
+page, and keys and recovery codes stay on `/account`. The owner approved the new table that records these grants and
+applying it to production at deploy time.
+
+This is delivered in steps. Step 1 (this section) adds only storage and its release gate; nothing reads or writes the
+table yet:
+
+- **Table.** `owner_grants` mirrors one such consent grant per row (grant ID, human, client ID, the client's
+  self-reported name, creation and revocation times), with an index on `human_id` and the same checks as
+  `client_grants`. It holds no agent ID: the grant covers whatever agents the human owns at the time of each call.
+- **Release gate.** Completed-only releases refuse any pending schema statement unless an owner-approved change covers
+  it. The `external_action_keys` gate became one instance of `scripts/approved-schema-change.ts`, and
+  `scripts/approved-owner-grants.ts` is the second, with its own default-off `apply_owner_grants_schema` input, its
+  own workflow gates before release work and inside protected production, and its own deploy variable. With both on, one
+  batch applies both; each pending statement must belong to an enabled change, in that change's order. Messages and
+  behaviour of the `external_action_keys` opt-in are unchanged.
+- **Owner deploy.** Until production has `owner_grants`, every completed-only release must be a manual production
+  dispatch with `apply_owner_grants_schema: true` (and `apply_external_action_keys_schema: true` while that table is
+  also missing); otherwise it stops before any change, as it does for any missing table.
+
+Verification: `test/approved-owner-grants.test.ts` pins the statements to the generator and covers the combined plan;
+`test/deploy.test.ts` runs opted-in completed-only releases on a real Miniflare D1 (owner_grants alone, both changes
+in one batch, refusals with either opt-in missing, an unapproved index, ambiguous values, maintain mode and the OAuth
+bootstrap); `test/deploy-entry.test.ts` checks the workflow input and gates. Not run against a deployment.

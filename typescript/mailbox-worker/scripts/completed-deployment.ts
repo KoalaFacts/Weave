@@ -1,12 +1,13 @@
 import { setImmediate as yieldToIo } from 'node:timers/promises';
 import { latestSchemaStatements, planLatestSchema, type StorageDatabase, type StorageStatement } from './latest-schema.ts';
 import { ledgerSql, ledgerTableSql, verifyCompletedMigration } from './completed-migration.ts';
-import { approvedExternalActionKeysPlan, assertLiveExternalActionKeys, liveTriggerSql } from './approved-external-action-keys.ts';
+import { approvedPlan, liveSchemaSql, type ApprovedSchemaChange } from './approved-schema-change.ts';
+import { externalActionKeysChange } from './approved-external-action-keys.ts';
+import { ownerGrantsChange } from './approved-owner-grants.ts';
 
 const migrationGateSql="SELECT 1 found FROM sqlite_master WHERE type='trigger' AND name='data_migration_write_gate'";
-const metadataSql=new Set([ledgerTableSql,ledgerSql,migrationGateSql,liveTriggerSql,
-    "SELECT name FROM sqlite_master WHERE type='table'",
-    "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE type IN ('table','index')"]);
+const metadataSql=new Set([ledgerTableSql,ledgerSql,migrationGateSql,...[externalActionKeysChange,ownerGrantsChange].map(change=>change.liveTriggerSql),
+    "SELECT name FROM sqlite_master WHERE type='table'",liveSchemaSql]);
 
 // Do not pass the underlying database or statements to schema inspection. Even
 // a future planner change cannot dispatch a write through this capability.
@@ -25,9 +26,10 @@ function metadataDatabase(db:StorageDatabase):StorageDatabase {
     };
 }
 
-// With the owner's per-run opt-in (approvedKeys), the one exception to the empty schema plan is the approved
-// external_action_keys table and index (approved-external-action-keys.ts). Nothing else may be pending.
-export async function prepareCompletedDeployment(db:StorageDatabase,planSchema=planLatestSchema,approvedKeys=false) {
+// With the owner's per-run opt-ins (approved), the only exceptions to the empty schema plan are those approved changes'
+// tables and indexes (approved-schema-change.ts). Nothing else may be pending.
+export async function prepareCompletedDeployment(db:StorageDatabase,planSchema=planLatestSchema,approved:readonly ApprovedSchemaChange[]=[]) {
+    const names=approved.map(change=>change.table).join(' and ');
     const metadata=metadataDatabase(db);
     async function verify(stage:string,allowApproved=false) {
         const conversion=await verifyCompletedMigration(metadata);
@@ -36,11 +38,11 @@ export async function prepareCompletedDeployment(db:StorageDatabase,planSchema=p
         const schemaPlan=await planSchema(metadata);
         let pending:string[]=[];
         if(schemaPlan.statements.length){
-            if(!approvedKeys)throw Error('Restricted deployment requires an empty schema plan; no schema changes are permitted.');
-            if(!allowApproved)throw Error('Restricted deployment requires an empty schema plan after the approved external_action_keys statements; release stopped.');
-            pending=approvedExternalActionKeysPlan(schemaPlan.statements);
+            if(!approved.length)throw Error('Restricted deployment requires an empty schema plan; no schema changes are permitted.');
+            if(!allowApproved)throw Error('Restricted deployment requires an empty schema plan after the approved '+names+' statements; release stopped.');
+            pending=approvedPlan(schemaPlan.statements,approved);
         }
-        if(approvedKeys)await assertLiveExternalActionKeys(metadata,!pending.length);
+        for(const change of approved)await change.assertLive(metadata,!pending.some(sql=>change.owns(sql)));
         console.log('Completed-only validation: '+JSON.stringify({stage,...conversion,schemaStatements:pending.length}));
         return {conversion,schemaPlan,pending};
     }
@@ -53,7 +55,7 @@ export async function prepareCompletedDeployment(db:StorageDatabase,planSchema=p
         async confirm(){
             const before=(await verify('before-ledger-check',true)).pending;
             if(JSON.stringify(before)!==JSON.stringify(preflight))
-                throw Error('The approved external_action_keys statements changed after preflight; no schema statements applied.');
+                throw Error('The approved '+names+' statements changed after preflight; no schema statements applied.');
             // Without the opt-in this is the only write-capable operation in completed-only
             // mode; with it, only the approved batch below follows. Neither calls the
             // historical converter or the generic schema applier.
@@ -69,11 +71,11 @@ export async function prepareCompletedDeployment(db:StorageDatabase,planSchema=p
                 await yieldToIo();
                 const applied=await db.batch(preflight.map(sql=>db.prepare(sql)));
                 if(!Array.isArray(applied)||applied.length!==preflight.length||applied.some(item=>item?.success!==true))
-                    throw Error('Approved external_action_keys schema batch not confirmed; release stopped before any upload.');
-                console.log('Completed-only approved schema: '+JSON.stringify({statements:preflight.length,table:'external_action_keys'}));
+                    throw Error('Approved '+names+' schema batch not confirmed; release stopped before any upload.');
+                console.log('Completed-only approved schema: '+JSON.stringify({statements:preflight.length,tables:approved.filter(change=>preflight.some(sql=>change.owns(sql))).map(change=>change.table)}));
             }
             const {conversion,schemaPlan}=await verify('after-ledger-check');
-            return {conversion,schemaPlan,approvedSchemaApplied:approvedKeys?preflight:undefined};
+            return {conversion,schemaPlan,approvedSchemaApplied:approved.length?preflight:undefined};
         },
         verify:()=>verify('before-active')
     };

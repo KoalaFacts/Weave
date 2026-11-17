@@ -257,6 +257,23 @@ export const clientGrants = sqliteTable("client_grants", {
     check("client_grants_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
 ]);
 
+// Mirror of each OAuth consent grant that lets one client manage every agent its human owns, including agents the human
+// owns later. Private /mcp calls made with it require the row to be live and the named agent to be the human's.
+export const ownerGrants = sqliteTable("owner_grants", {
+    grant_id: text("grant_id").notNull().primaryKey(),
+    human_id: text("human_id").notNull().references(() => humans.human_id, {onDelete:"restrict"}),
+    client_id: text("client_id").notNull(),
+    // The client's self-reported name (CIMD/DCR client_name); unverified, shown to the owner only.
+    client_name: text("client_name"),
+    created_at: exactInteger("created_at").notNull(),
+    revoked_at: exactInteger("revoked_at"),
+}, t => [
+    index("owner_grants_human").on(t.human_id),
+    check("owner_grants_client_id",sql`length(client_id) BETWEEN 1 AND 2048`),
+    check("owner_grants_client_name",sql`client_name IS NULL OR length(client_name) BETWEEN 1 AND 128`),
+    check("owner_grants_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
+]);
+
 // Private MCP write idempotency keys, per account and retained 24 hours. result_id names the stored message or request.
 export const mcpIdempotency = sqliteTable("mcp_idempotency", {
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
