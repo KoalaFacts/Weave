@@ -1032,9 +1032,11 @@ test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnl
     assert.equal((pending as {settled: unknown}).settled, null, 'a pending action is offered for decision, not described as settled');
     const {humanId: stranger} = await ownedAgent(h);
     for (const [status, failure] of [['approved', null], ['rejected', null], ['dispatching', null], ['completed', null], ['failed', 'owner-changed'], ['unknown', null]] as const) {
-        await h.db.prepare(`UPDATE external_actions SET status=?,failure=?,decided_at=created_at,decided_by=?,
+        // A receipt is stored on every row here so that only a sent action shows one.
+        await h.db.prepare(`UPDATE external_actions SET status=?,failure=?,receipt='posted:r-1',decided_at=created_at,decided_by=?,
             dispatched_at=CASE WHEN ? IN ('dispatching','completed','unknown') THEN created_at END WHERE action_id=?`).bind(status, failure, humanId, status, actionId).run();
-        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: {status, failure}}, status);
+        const receipt = status === 'completed' ? 'posted:r-1' : null;
+        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: {status, failure, receipt, publication: null}}, status);
         assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: null}, 'another human learns nothing of ' + status);
     }
     // Pending or approved past its expiry reads expired, exactly from the expiry tick, as every other read does.
@@ -1042,15 +1044,26 @@ test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnl
     for (const status of ['pending', 'approved'] as const) {
         await h.db.prepare(`UPDATE external_actions SET status=?,failure=NULL,dispatched_at=NULL,decided_at=CASE WHEN ?='pending' THEN NULL ELSE created_at END,
             decided_by=CASE WHEN ?='pending' THEN NULL ELSE ? END WHERE action_id=?`).bind(status, status, status, humanId, actionId).run();
-        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId, () => expiry), {frozen: false, action: null, settled: {status: 'expired', failure: null}}, status);
+        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId, () => expiry), {frozen: false, action: null, settled: {status: 'expired', failure: null, receipt: null, publication: null}}, status);
         const before = await ownerPendingAction(environment(h), humanId, actionId, () => expiry - 1n);
-        assert.deepEqual((before as {settled: unknown}).settled, status === 'pending' ? null : {status: 'approved', failure: null}, status + ' one tick earlier');
+        assert.deepEqual((before as {settled: unknown}).settled, status === 'pending' ? null : {status: 'approved', failure: null, receipt: null, publication: null}, status + ' one tick earlier');
     }
+    // A sent action whose effect is tracked after sending carries the publication's state, only for its owner.
+    await h.db.prepare("UPDATE external_actions SET status='completed',failure=NULL,dispatched_at=created_at WHERE action_id=?").bind(actionId).run();
+    await h.db.prepare(`INSERT INTO external_publications(action_id,account_id,state,url,error,due_at,checks,next_check_at,updated_at,checked_at)
+        SELECT action_id,account_id,'published','https://example.test/p/1',NULL,created_at,1,NULL,created_at,created_at FROM external_actions WHERE action_id=?`).bind(actionId).run();
+    const sent = await ownerPendingAction(environment(h), humanId, actionId) as {settled: {receipt: string | null; publication: {state: string; url: string | null} | null}};
+    assert.equal(sent.settled.receipt, 'posted:r-1');
+    assert.deepEqual([sent.settled.publication?.state, sent.settled.publication?.url], ['published', 'https://example.test/p/1']);
+    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: null});
+    await h.db.prepare("UPDATE external_actions SET status='failed',failure='owner-changed' WHERE action_id=?").bind(actionId).run();
+    assert.equal((await ownerPendingAction(environment(h), humanId, actionId) as {settled: {publication: unknown}}).settled.publication, null, 'only a sent action reads its publication');
     // An action of an agent that passed to another human is no longer this human's to read.
-    await h.db.prepare("UPDATE external_actions SET status='completed',dispatched_at=created_at WHERE action_id=?").bind(actionId).run();
+    await h.db.prepare("UPDATE external_actions SET status='completed',failure=NULL,receipt=NULL,dispatched_at=created_at WHERE action_id=?").bind(actionId).run();
+    await h.db.prepare('DELETE FROM external_publications WHERE action_id=?').bind(actionId).run();
     await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(stranger, agent.accountId).run();
     assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: null});
-    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: {status: 'completed', failure: null}});
+    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: {status: 'completed', failure: null, receipt: null, publication: null}});
 }));
 
 // The page for one action reads it by ID: an action past the overview's 200 oldest can still be decided from its link.

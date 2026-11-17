@@ -362,16 +362,20 @@ export function mediaIdsOf(content: string): string[] {
     return ids;
 }
 
-/** What became of an action of the human's own agent that is no longer waiting for a decision. */
-export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null};
+/**
+ * What became of an action of the human's own agent that is no longer waiting for a decision: its status, stored failure code,
+ * and for a sent action the platform's receipt and, when the effect is tracked after sending, the publication's state.
+ */
+export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; receipt: string | null;
+    publication: PublicationView | null};
 /** The owner's page for one action: the pending action to decide, or what became of one of their own agents' actions. */
 export type OwnerActionPageView = {frozen: true} | {frozen: false; action: OwnerExternalAction | null; settled: OwnerSettledAction | null};
 
 /**
  * Owner RPC: one pending action of the human's agents, for the page that decides it, however many others are pending. An action
- * of the human's own agent that is no longer pending is described by `settled` (its status and stored failure code), so the owner
- * who returns to the link sees what happened. Another human's action, an unknown one or a malformed ID is `action` and `settled`
- * null alike; a frozen human sees only that.
+ * of the human's own agent that is no longer pending is described by `settled` (its status and stored failure code; once sent,
+ * its receipt and tracked publication), so the owner who returns to the link sees what happened. Another human's action, an
+ * unknown one or a malformed ID is `action` and `settled` null alike; a frozen human sees only that.
  */
 export async function ownerPendingAction(env: Env, humanId: string, actionId: string, clock: () => bigint = nowUtc): Promise<OwnerActionPageView> {
     if (env.MAINTENANCE_MODE === 'true') fail(503, 'maintenance', 30);
@@ -388,7 +392,10 @@ export async function ownerPendingAction(env: Env, humanId: string, actionId: st
         const row = await ownedByHuman(tx, {humanId}, actionId);
         if (!row) return none;
         const status = effectiveStatus(row.status, row.expires_at, now);
-        return status === 'pending' ? none : {frozen: false as const, action: null, settled: {status, failure: row.failure}};
+        if (status === 'pending') return none;
+        const sent = status === 'completed';
+        return {frozen: false as const, action: null, settled: {status, failure: row.failure, receipt: sent ? row.receipt : null,
+            publication: sent ? await readPublication(tx, actionId) : null}};
     });
 }
 

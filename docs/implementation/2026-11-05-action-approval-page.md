@@ -46,6 +46,14 @@ remains possible later for chat channels.
   "Own" is the agent's current owner, as for deciding: once an agent passes to another human, its actions are no
   longer described to the previous one. The mailbox RPC `ownerPendingAction` adds `settled: {status, failure} | null`;
   an auth Worker reading a mailbox without it shows the old sentence.
+- **Where it went (2026-11-18).** A sent action also shows the platform's reference for it (the stored receipt, escaped)
+  and, for an effect the platform finishes later and Weave tracks (a queued or scheduled Postiz post), whether the
+  platform has not reported it published yet (promising no further check, since tracking stops after 7 days, on a
+  revoked credential or for an adapter that cannot report it), published it, or reported a failure (its stored reason, escaped); a published
+  post's stored URL is a "View it on the platform" link (`rel="noopener noreferrer"`) only when it is an absolute
+  `https://` URL, as the store already requires. `settled` gains `receipt` and `publication`, both null unless the
+  status is `completed`; an auth Worker reading a mailbox without them shows "This action was sent." alone. Reading
+  sends and re-checks nothing.
 - **No open redirect, no forgeable outcome.** A decision is answered directly with what that request just did
   (approved, rejected or the failure reason), and the owner is told they can close the page. Nothing is redirected to
   the app. The page never reads an outcome from its URL, so a link carrying `?result=approved` or `?result=rejected`
@@ -64,6 +72,8 @@ auth-worker workerd tests, against the real mailbox and authorization Workers:
 - the owner's own action reads "This action was sent." after one execute, "This action was rejected." after Reject,
   and approved, failed (reason escaped), unknown and expired with what each means, with no forms and nothing sent;
   another human still reads "not waiting for your approval" for it;
+- after one execute the page shows the fake provider's receipt as the platform's reference, and with a tracked
+  publication recorded, "The platform published it." with its https link; another human sees neither;
 - the proposal's `approvalUrl` is exactly this page, opening it shows that action, and it becomes null once decided
   (the mailbox Worker bound to the authorization Worker, as deployed);
 - refused with no effect:
@@ -84,6 +94,10 @@ Mutation checks: each of these fails a test:
   (`ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnlyForItsOwner` and the workerd tests above).
   Equivalent: the guard that a still-pending row is not described as settled (a live pending action of the owner is
   always returned for decision first).
+- returning the receipt or the publication for an action that was not sent, showing either on the page for another
+  status, linking a URL that is not absolute `https://` (`javascript:`, `http:`, protocol-relative), or showing the
+  receipt, the publication's error or its URL unescaped (`ownerPendingAction_OwnActionNoLongerPending_…` and
+  `actionPage_SentWithReceiptAndPublication_ReferenceStateAndHttpsLinkOnly`).
 
 The mailbox's owner-decision RPC (`ownerAction`) checks the shape of every decision before reading anything. A
 malformed `planDigest` on a pending action, or a malformed `keysDigest` on a pending binding (not a string or

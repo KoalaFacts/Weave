@@ -178,8 +178,13 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
     "<h2>Your agents</h2>",agentSection(overview,tokens,after)].join(""));
 }
 
-/** What became of an action of the human's own agent that no longer waits for a decision: its status and stored failure code. */
-export type SettledActionView={status:string;failure:string|null};
+/** The later state of a sent action whose effect the platform finishes after sending, such as a scheduled post. */
+export type SettledPublicationView={state:string;url:string|null;error:string|null};
+/**
+ * What became of an action of the human's own agent that no longer waits for a decision: its status and stored failure code, and
+ * once sent the platform's receipt and tracked publication. A mailbox that predates them omits them, which reads as none.
+ */
+export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null};
 /**
  * What the mailbox answers for one action of the signed-in human: the pending action to decide, or, for their own agent's action
  * that no longer waits, what became of it. A mailbox that predates `settled` omits it, which reads as unknown.
@@ -207,6 +212,26 @@ const settledText:Readonly<Record<string,string>>=Object.freeze({
   unknown:"Weave sent this action but could not confirm whether the platform accepted it. It will not be sent again; check the platform."
 });
 
+/** A link the page may show for a published post: an absolute https URL only, so a stored value can never run script. */
+const publishedLink=(url:string|null|undefined)=>typeof url==="string"&&url.startsWith("https://")&&URL.canParse(url)?url:null;
+
+/**
+ * What the page adds for the owner's sent action: the platform's reference, and for an effect the platform finishes later (a
+ * scheduled post) whether it was published, with a link to it, or what the platform reported. All of it is read from the mailbox.
+ */
+function sentDetails(settled:SettledActionView):string{
+  const parts:string[]=[];
+  if(typeof settled.receipt==="string"&&settled.receipt)parts.push("<p>The platform's reference for it: <code>"+esc(settled.receipt)+"</code></p>");
+  const publication=settled.publication;
+  if(publication?.state==="queued")parts.push("<p>The platform has not reported it published yet. Nothing is sent again.</p>");
+  else if(publication?.state==="published"){
+    const url=publishedLink(publication.url);
+    parts.push("<p>The platform published it."+(url?' <a href="'+esc(url)+'" rel="noopener noreferrer">View it on the platform</a>':"")+"</p>");
+  }else if(publication?.state==="failed")
+    parts.push("<p>The platform reported that publishing failed"+(publication.error?": "+esc(publication.error):"")+". Weave will not send it again.</p>");
+  return parts.join("");
+}
+
 /**
  * The response to a decision posted on the page for one action. The outcome is what this request just did, never read back
  * from a URL, so a link cannot make the page claim a decision that was not made.
@@ -231,7 +256,7 @@ export function actionPage(view:PendingActionView,human:HumanSession,actionId:st
     const settled=view.settled&&Object.hasOwn(settledText,view.settled.status)?view.settled:null;
     const text=settled?settledText[settled.status]+(settled.status==="failed"&&settled.failure?" Reason: "+esc(settled.failure)+".":""):
       "This action is not waiting for your approval. It may already be decided or expired.";
-    return shell("Approve an action",head+"<p>"+text+"</p>"+all);
+    return shell("Approve an action",head+"<p>"+text+"</p>"+(settled?.status==="completed"?sentDetails(settled):"")+all);
   }
   const fresh=freshAuthentication(human,now);
   return shell("Approve an action",[head,
