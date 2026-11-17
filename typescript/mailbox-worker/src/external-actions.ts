@@ -11,7 +11,7 @@ import { base64url } from './jose.ts';
 import { apiTime, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Env, type Transaction } from './database.ts';
 import { writesRefused } from './humans.ts';
-import type { OwnerDecision, OwnerHuman } from './owner-actions.ts';
+import { credentialRefPattern, type OwnerDecision, type OwnerHuman } from './owner-actions.ts';
 import { provider as findProvider } from './external-providers.ts';
 import { openSecret } from './credential-vault.ts';
 import { openMedia, readMediaRecord } from './external-media.ts';
@@ -47,7 +47,6 @@ type Row = {action_id: string; account_id: string; provider: string; contract_re
 type Credential = {provider: string; revision: string; target_account: string; target_display: string; revoked_at: string | null; secret: ArrayBuffer | number[] | null};
 
 const statuses = new Set<string>(['pending', 'approved', 'rejected', 'dispatching', 'completed', 'failed', 'unknown']);
-const credentialRefPattern = /^[A-Za-z0-9._:-]{1,64}$/;
 const proposalKeyPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 
 /** An agent's optional proposal key, from the Idempotency-Key header or the MCP idempotencyKey argument; null when absent. */

@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { start, payload} from './harness.ts';
 import { agentKey, dpopProof, keyEndorsement, keyProof } from './agent-key.ts';
+import { credentialRefPattern } from '../src/owner-actions.ts';
+import { privateMcpTools } from '../src/private-mcp-tools.ts';
 
 const source = await readFile('src/openapi.json','utf8');
 const spec = JSON.parse(source);
@@ -226,4 +228,12 @@ test('503 maintenance response has its own exact contract without expanding shar
         assert.deepEqual(documented[1],{$ref:'#/components/schemas/maintenanceProblem'});
         assert.equal(spec.components.schemas.problem.properties.code.enum.includes('maintenance'),false);
     } finally {await h.close();}
+});
+
+test('the published credentialRef patterns are the server rule', () => {
+    // One server rule (owner-actions) checks a proposal, an owner revoke and a connected account;
+    // the HTTP and MCP proposal schemas must publish exactly that rule.
+    assert.equal(spec.components.schemas.ExternalActionSubmission.properties.credentialRef.pattern,credentialRefPattern.source);
+    const propose = privateMcpTools.find(tool => tool.name === 'propose_external_action');
+    assert.equal((propose?.inputSchema.properties.credentialRef as {pattern?: string} | undefined)?.pattern,credentialRefPattern.source);
 });
