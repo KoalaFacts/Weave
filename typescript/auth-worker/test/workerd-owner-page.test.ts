@@ -79,7 +79,20 @@ function fakeLinkedIn(request:Request):Response|null{
   if(request.method!=="GET"||request.url!=="https://api.linkedin.com/v2/userinfo")return null;
   return request.headers.get("authorization")==="Bearer "+linkedinToken?Response.json({sub:linkedinMember,name:"HSC Beats"}):Response.json({status:401},{status:401});
 }
+const slackBotToken="xoxb-owner-form-fixture",slackChannel="C0123456789",slackTeam="T0123456789";
+function fakeSlack(request:Request):Response|null{
+  const url=new URL(request.url);
+  if(url.origin!=="https://slack.com")return null;
+  if(request.headers.get("authorization")!=="Bearer "+slackBotToken)return Response.json({ok:false,error:"invalid_auth"});
+  if(request.method==="POST"&&url.pathname==="/api/auth.test")
+    return Response.json({ok:true,team:"Slack test workspace",team_id:slackTeam,bot_id:"B0123456789"});
+  if(request.method==="GET"&&url.pathname==="/api/conversations.info"&&url.searchParams.get("channel")===slackChannel)
+    return Response.json({ok:true,channel:{id:slackChannel,name:"publish-test",is_channel:true,is_member:true}});
+  return null;
+}
 async function mailboxOutbound(request:Request):Promise<Response>{
+  const slack=fakeSlack(request);
+  if(slack)return slack;
   const linkedin=fakeLinkedIn(request);
   if(linkedin)return linkedin;
   const google=await fakeGoogle(request);
@@ -848,6 +861,19 @@ const postizToken=(html:string)=>connectToken(html,"Postiz");
 const postConnect=async(human:Human,token:string,fields:Record<string,string>,authAt?:number)=>shared.mf.dispatchFetch(issuer+"/account/connect",{method:"POST",redirect:"manual",
   headers:{"Content-Type":"application/x-www-form-urlencoded",Origin:issuer,Cookie:await sessionCookie(human,authAt)},body:new URLSearchParams({action:token,...fields}).toString()});
 const postPostiz=(human:Human,token:string,apiKey:string,authAt?:number)=>postConnect(human,token,{apiKey},authAt);
+
+test("connectSlack_OwnerSubmitsBotToken_StoresOnlyVerifiedChannelCredential",{timeout:90_000},async()=>{
+  const human=await seedHuman(),agent=await ownedAgent(human,"slack publisher");
+  const token=connectToken(await (await account(await sessionCookie(human))).text(),"Slack");
+  const response=await postConnect(human,token,{botToken:slackBotToken,channelId:slackChannel});
+  assert.equal(response.headers.get("location"),"/account?result=account-connected");
+  const target=slackTeam+":"+slackChannel;
+  const rows=(await (await db()).prepare("SELECT credential_ref,target_account,secret IS NOT NULL sealed FROM external_credentials WHERE account_id=?").bind(agent.accountId).all()).results;
+  assert.deepEqual(rows,[{credential_ref:"slack:"+target,target_account:target,sealed:1}]);
+  const page=await (await account(await sessionCookie(human))).text();
+  assert.ok(page.includes("slack as Slack test workspace / #publish-test ("+slackChannel+")"));
+  assert.ok(!page.includes(slackBotToken),"the token is never rendered");
+});
 
 test("connectPostiz_OwnerSubmitsKey_ChannelsStoredSealedAndListed",{timeout:90_000},async()=>{
   const human=await seedHuman(),agent=await ownedAgent(human,"publisher");

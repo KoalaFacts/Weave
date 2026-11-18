@@ -654,3 +654,10 @@ a JSON answer that is not an object (no other shape carries the fields read).
   500 characters and asks apps to plan for at least 1000. The router and the owner's connect form take field values
   of up to 2048 printable ASCII characters; a longer token is refused at connect with nothing sent to LinkedIn.
 - Needs an owner deploy (no schema change) once merged.
+
+## Slack channel posts
+
+The Slack adapter ports the standalone text and single-image send from [Hermes Agent's Slack adapter](https://github.com/NousResearch/hermes-agent/blob/4ae451d4126327c871fd084e60c045dec0c85911/plugins/platforms/slack/adapter.py#L6733) to the Mailbox Worker.
+In the owner account page, use **Connect Slack** with a bot token and channel ID. Install the bot with `chat:write`, `files:write` and the channel read scope (`channels:read` or `groups:read`), and add it to the channel. Weave verifies the bot and channel membership, seals the token and binds approval to the verified workspace and channel.
+
+The adapter sends up to 4,000 characters and one image up to 10 MiB. Text sent with an image becomes its caption in Slack's file-completion call. Slack message timestamps and shared file IDs are recorded as receipts. A failed upload before sharing leaves the channel untouched. An unconfirmed channel send or image share is recorded as `unknown` and cannot be dispatched again. The [Worker regression tests](../../typescript/mailbox-worker/test/slack.test.ts) use a local Slack substitute.
