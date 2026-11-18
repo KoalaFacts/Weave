@@ -26,6 +26,7 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   const response=ownerPage(overview,human,tokens,null,now);
   assert.equal(response.status,200);
   assert.equal(response.headers.get("cache-control"),"no-store");
+  assert.equal(response.headers.get("referrer-policy"),"same-origin");
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   assert.match(response.headers.get("content-security-policy")!,/form-action 'self'/);
   const body=await html(response);

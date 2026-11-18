@@ -7,7 +7,8 @@ import {ownerActionToken} from "./owner-forms.ts";
 
 const esc=(s:string)=>s.replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
 const headers={
-  "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","Pragma":"no-cache","Referrer-Policy":"no-referrer",
+  // Native form POSTs need a non-null Origin for the auth worker's same-origin check.
+  "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","Pragma":"no-cache","Referrer-Policy":"same-origin",
   "X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY",
   // Images and video load only from this origin: the owner's own approval previews.
   "Content-Security-Policy":"default-src 'none'; img-src 'self'; media-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
