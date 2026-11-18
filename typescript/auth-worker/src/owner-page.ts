@@ -215,7 +215,7 @@ export type SettledPublicationView={state:string;url:string|null;error:string|nu
  * What became of an action of the human's own agent that no longer waits for a decision: its status and stored failure code, and
  * once sent the platform's receipt and tracked publication. A mailbox that predates them omits them, which reads as none.
  */
-export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null;about?:SettledPlanView|null};
+export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null;about?:SettledPlanView|null;sendBy?:string|null};
 /** What the settled action was: the agent, operation, the account the plan bound (its name while the credential still points there) and the content. */
 export type SettledPlanView={agentId:string;agentDisplayName:string|null;provider:string;operation:string;targetAccount:string;targetDisplay:string|null;content:string};
 /**
@@ -324,8 +324,10 @@ export function actionPage(view:PendingActionView,human:HumanSession,actionId:st
     const text=settled?settledText[settled.status]+(failure===null?"":" Reason: "+esc(failure)+"."+(why===null?"":" "+why)):
       "This action is not waiting for your approval. It may already be decided or expired.";
     // An approval the agent has not used yet can still be withdrawn here; the mailbox refuses it once sending has started.
+    // When an approval runs out, read from the mailbox; a mailbox that predates `sendBy`, or a malformed one, adds nothing.
+    const sendBy=settled?.status==="approved"&&typeof settled.sendBy==="string"&&settled.sendBy?"<p>The agent must send it by "+esc(settled.sendBy)+". After that it expires and is never sent.</p>":"";
     const withdraw=settled?.status==="approved"?form("Withdraw approval","reject-action:"+actionId,tokens,actionPagePath(actionId)):"";
-    return shell("Approve an action",head+"<p>"+text+"</p>"+(withdraw===""?"":"<p>Changed your mind? Withdraw the approval and it will never be sent. Once the agent has started sending it, it can no longer be withdrawn.</p>"+withdraw)+
+    return shell("Approve an action",head+"<p>"+text+"</p>"+sendBy+(withdraw===""?"":"<p>Changed your mind? Withdraw the approval and it will never be sent. Once the agent has started sending it, it can no longer be withdrawn.</p>"+withdraw)+
       (settled?.status==="completed"?sentDetails(settled):"")+(settled?settledPlan(settled.about):"")+all);
   }
   const fresh=freshAuthentication(human,now);

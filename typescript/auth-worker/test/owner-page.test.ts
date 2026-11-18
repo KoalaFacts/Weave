@@ -318,6 +318,24 @@ test("actionPage_SettledApprovedWithToken_OffersWithdrawalOnlyThen",async()=>{
   assert.ok(!unsigned.includes("<form")&&!unsigned.includes("Withdraw"),"no token, no form and no offer: "+unsigned);
 });
 
+// An approval the agent has not used says by when it must be sent, read from the mailbox and escaped; nothing else says it.
+test("actionPage_SettledApprovedWithSendBy_SaysWhenItExpires",async()=>{
+  const actionId=randomUUID(),deadline="2026-11-19T06:00:00Z";
+  const page=async(settled:SettledActionView)=>html(actionPage({frozen:false,action:null,settled},human,actionId,new Map(),now));
+  const approved=await page({status:"approved",failure:null,sendBy:deadline});
+  assert.ok(approved.includes("<p>The agent must send it by "+deadline+". After that it expires and is never sent.</p>"),approved);
+  assert.ok((await page({status:"approved",failure:null,sendBy:"<b>soon</b>"})).includes("send it by &#60;b&#62;soon&#60;/b&#62;."),"escaped");
+  for(const status of ["rejected","expired","dispatching","completed","failed","unknown","later"]){
+    const body=await page({status,failure:null,sendBy:deadline});
+    assert.ok(!body.includes("must send it by")&&!body.includes(deadline),status+": "+body);
+  }
+  // A mailbox that predates `sendBy`, or a malformed one, adds nothing.
+  for(const sendBy of [undefined,null,"",42 as unknown as string]){
+    const body=await page({status:"approved",failure:null,sendBy});
+    assert.ok(body.includes("You approved this action.")&&!body.includes("must send it by"),String(sendBy)+": "+body);
+  }
+});
+
 // The owner page lists what became of the owner's recent actions, each linking to its own page, with every stored value escaped.
 test("ownerPage_RecentActions_EachOutcomeLinkedAndEscaped",async()=>{
   const agentId=randomUUID();
