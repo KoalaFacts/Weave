@@ -94,7 +94,7 @@ const externalAction = out({
     credentialRef:str(64), credentialRevision:str(64, 'The credential revision the plan is bound to.'),
     targetAccount:str(256, 'The provider-verified account the action acts as.'),
     status:{type:'string', enum:['pending','approved','rejected','expired','dispatching','completed','failed','unknown'],
-        description:'pending waits for your owner; approved can be executed once; dispatching or unknown were sent with an unconfirmed outcome and are never sent again.'},
+        description:'pending waits for your owner; approved can be executed once, unless your owner withdraws the approval first, which makes it rejected; dispatching or unknown were sent with an unconfirmed outcome and are never sent again.'},
     createdAt:time('Creation time.'), expiresAt:time('Approval and execution must finish by this time.'),
     receipt:nullable(str(256, "The provider's external ID when completed.")),
     failure:nullable(str(320, 'Why nothing was sent (credential-changed, credential-unreadable, owner-changed, owner-frozen, plan-changed), provider-rejected, or outcome-unknown.')),
