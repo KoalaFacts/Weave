@@ -68,6 +68,15 @@ remains possible later for chat channels.
   `about: {agentId, agentDisplayName, provider, operation, targetAccount, targetDisplay, content}`; an auth Worker reading a
   mailbox without it, or a malformed one, shows the status alone. Another human still learns nothing; as for the status,
   "own" is the agent's current owner, so a new owner also sees what the agent proposed before it passed to them.
+- **Withdrawing an approval (2026-11-18).** The page of the owner's own approved action that the agent has not sent yet
+  offers "Withdraw approval" (a `reject-action` form signed for that action, posting back to the page). The mailbox's
+  `reject-action` now also takes an approved, unexpired action that execute has not claimed and makes it `rejected`,
+  re-stamping `decidedAt` and `decided_by` with the withdrawal; execute then returns it unchanged and sends nothing. Once
+  execute has committed `dispatching`, the withdrawal is `not-pending` and the page says the action no longer waits; an
+  approval past its expiry stays expired. Like rejecting, it is protective and needs no fresh sign-in at the mailbox (the
+  page itself requires one to open). The optimistic transaction serializes it against execute's claim, so exactly one
+  wins. The agent learns it as status `rejected` (and its inbox notice); OpenAPI's status and `decidedAt` descriptions
+  and `agent-start.md` say an approval can be withdrawn before execute.
 - **Recent actions on `/account` (2026-11-18).** The owner page lists, under "Recent actions", the actions of the agents
   the human owns now that stopped waiting in the last 7 days, newest change first, at most 20: decided, being sent, sent,
   not sent (with the stored failure code) or unknown by their last change, and a plan left pending past its expiry, by
@@ -129,6 +138,16 @@ Mutation checks: each of these fails a test:
   status, linking a URL that is not absolute `https://` (`javascript:`, `http:`, protocol-relative), or showing the
   receipt, the publication's error or its URL unescaped (`ownerPendingAction_OwnActionNoLongerPending_…` and
   `actionPage_SentWithReceiptAndPublication_ReferenceStateAndHttpsLinkOnly`).
+
+- withdrawing an approval (2026-11-18): refusing it for an approved action (the old pending-only check), withdrawing an
+  approval past its expiry, offering the withdrawal on the page for any other settled status, or dropping the page's
+  `not-pending` explanation each fails a test (`rejectExternalAction_ApprovedNotYetSent_WithdrawsSoNothingIsEverSent`,
+  `rejectExternalAction_ApprovedButAnotherHumanOrExpiredOrDispatching_NothingChanges`,
+  `actionPage_SettledApprovedWithToken_OffersWithdrawalOnlyThen` and the workerd tests
+  `actionPage_WithdrawApprovalBeforeSending_RejectedAndNeverSent` and `actionPage_WithdrawAfterAgentSent_NotPendingAndSentOnce`,
+  which also show that a withdrawal posted after the agent sent changes nothing and the action is sent once). Equivalent:
+  minting the form token for every settled status (the page renders the form only for `approved`), and binding the update
+  to the read status instead of `IN ('pending','approved')` (the transaction is serialized).
 
 - dropping the settled action's description, showing its content unescaped, naming the account with a credential that
   now points elsewhere, showing a null name, accepting a malformed description, or describing an unlisted status

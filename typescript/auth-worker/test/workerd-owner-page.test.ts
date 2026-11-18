@@ -665,7 +665,8 @@ test("actionPage_OwnActionApprovedFailedOrUnknown_SaysWhatBecameOfIt",{timeout:6
   await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),await sessionCookie(human));
   const read=async()=>(await (await actionPage(action.actionId,await sessionCookie(human))).text());
   const approved=await read();
-  assert.ok(approved.includes("You approved this action. Nothing is sent until the agent sends it")&&forms(approved).length===0,approved);
+  assert.ok(approved.includes("You approved this action. Nothing is sent until the agent sends it"),approved);
+  assert.deepEqual(forms(approved).map(x=>x.label),["Withdraw approval"],"an unused approval offers only its withdrawal");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0,"reading the page sends nothing");
   const database=await db();
   // A stored failure code is shown escaped, and only for a failed action.
@@ -681,6 +682,42 @@ test("actionPage_OwnActionApprovedFailedOrUnknown_SaysWhatBecameOfIt",{timeout:6
   assert.ok((await read()).includes("This action expired without being sent."));
   assert.equal((await executeAction(agent,action.actionId)).status,"expired");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
+});
+
+// An approval the agent has not used yet can be withdrawn on the action's page, and then nothing is ever sent.
+test("actionPage_WithdrawApprovalBeforeSending_RejectedAndNeverSent",{timeout:60_000},async()=>{
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"withdraw "+randomUUID());
+  const cookie=await sessionCookie(human);
+  await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),cookie);
+  assert.equal((await readAction(agent,action.actionId)).status,"approved");
+  const page=await (await actionPage(action.actionId,cookie)).text();
+  assert.ok(page.includes("Withdraw the approval and it will never be sent."),page);
+  const withdrawn=await (await postActionPage(action.actionId,await pageToken(human,action.actionId,"Withdraw approval"),cookie)).text();
+  assert.ok(withdrawn.includes("Rejected. Nothing will be sent."),withdrawn);
+  assert.equal((await executeAction(agent,action.actionId)).status,"rejected");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0,"a withdrawn approval is never sent");
+  const after=await (await actionPage(action.actionId,cookie)).text();
+  assert.ok(after.includes("This action was rejected. Nothing will be sent.")&&forms(after).length===0,after);
+  // Another human sees no withdrawal and learns nothing.
+  const stranger=await seedHuman(),other=await proposeAction(human,"withdraw other "+randomUUID());
+  await postActionPage(other.action.actionId,await pageToken(human,other.action.actionId,"Approve and allow sending once"),cookie);
+  const theirs=await (await actionPage(other.action.actionId,await sessionCookie(stranger))).text();
+  assert.ok(theirs.includes("not waiting for your approval")&&forms(theirs).length===0,theirs);
+  assert.equal((await readAction(other.agent,other.action.actionId)).status,"approved");
+});
+
+// Once the agent has sent it, a withdrawal form opened earlier changes nothing and says the action no longer waits.
+test("actionPage_WithdrawAfterAgentSent_NotPendingAndSentOnce",{timeout:60_000},async()=>{
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"too late "+randomUUID());
+  const cookie=await sessionCookie(human);
+  await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),cookie);
+  const withdraw=await pageToken(human,action.actionId,"Withdraw approval");
+  assert.equal((await executeAction(agent,action.actionId)).status,"completed");
+  const late=await (await postActionPage(action.actionId,withdraw,cookie)).text();
+  assert.ok(late.includes("This action is no longer waiting: the agent may already have started sending it"),late);
+  assert.equal((await readAction(agent,action.actionId)).status,"completed");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,1);
+  assert.equal(forms(await (await actionPage(action.actionId,cookie)).text()).length,0,"a sent action offers no withdrawal");
 });
 
 // Opened after the account was reconnected, both pages say so and offer only Reject: no approval the confirm would refuse.

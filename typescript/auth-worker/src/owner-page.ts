@@ -223,7 +223,8 @@ export const actionPagePath=(actionId:string)=>"/account/actions/"+actionId;
 /** The outcome of a decision on the page for one action; failure reasons share the owner page's text. */
 const actionResultText:Readonly<Record<string,string>>=Object.freeze({
   approved:"Approved. The agent may now send it once. You can close this page.",
-  rejected:"Rejected. Nothing will be sent. You can close this page."
+  rejected:"Rejected. Nothing will be sent. You can close this page.",
+  "not-pending":"This action is no longer waiting: the agent may already have started sending it, or it was decided or expired. Open it again to see what became of it."
 });
 
 /**
@@ -317,7 +318,10 @@ export function actionPage(view:PendingActionView,human:HumanSession,actionId:st
     const failure=settled?.status==="failed"&&settled.failure?settled.failure:null,why=failure===null?null:explainFailure(failure);
     const text=settled?settledText[settled.status]+(failure===null?"":" Reason: "+esc(failure)+"."+(why===null?"":" "+why)):
       "This action is not waiting for your approval. It may already be decided or expired.";
-    return shell("Approve an action",head+"<p>"+text+"</p>"+(settled?.status==="completed"?sentDetails(settled):"")+(settled?settledPlan(settled.about):"")+all);
+    // An approval the agent has not used yet can still be withdrawn here; the mailbox refuses it once sending has started.
+    const withdraw=settled?.status==="approved"?form("Withdraw approval","reject-action:"+actionId,tokens,actionPagePath(actionId)):"";
+    return shell("Approve an action",head+"<p>"+text+"</p>"+(withdraw===""?"":"<p>Changed your mind? Withdraw the approval and it will never be sent. Once the agent has started sending it, it can no longer be withdrawn.</p>"+withdraw)+
+      (settled?.status==="completed"?sentDetails(settled):"")+(settled?settledPlan(settled.about):"")+all);
   }
   const fresh=freshAuthentication(human,now);
   return shell("Approve an action",[head,

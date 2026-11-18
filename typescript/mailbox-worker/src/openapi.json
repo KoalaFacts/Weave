@@ -5941,7 +5941,7 @@
               "failed",
               "unknown"
             ],
-            "description": "pending waits for the owner; approved may be executed until expiresAt; pending or approved past expiresAt reads as expired. dispatching was committed before the provider call and its outcome is not recorded yet; unknown means the provider outcome is unconfirmed. Neither is ever dispatched again: read the provider to learn what happened. failed with a null dispatchedAt sent nothing."
+            "description": "pending waits for the owner; approved may be executed until expiresAt, unless the owner withdraws the approval first, which makes it rejected; pending or approved past expiresAt reads as expired. dispatching was committed before the provider call and its outcome is not recorded yet; unknown means the provider outcome is unconfirmed. Neither is ever dispatched again: read the provider to learn what happened. failed with a null dispatchedAt sent nothing."
           },
           "createdAt": {
             "type": "string",
@@ -5967,7 +5967,7 @@
                 "type": "null"
               }
             ],
-            "description": "When the owner approved or rejected the plan. Set only by that decision and never changed afterwards; null while pending and for a plan that expired undecided."
+            "description": "When the owner last decided the plan: approved it, rejected it, or withdrew an approval before it was sent (which makes it rejected). Set only by those decisions and never changed by execute; null while pending and for a plan that expired undecided."
           },
           "dispatchedAt": {
             "anyOf": [

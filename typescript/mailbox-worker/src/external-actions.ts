@@ -370,13 +370,21 @@ export async function confirmExternalAction(env: Env, tx: Transaction, human: Ow
 }
 
 /** A pending action is rejected even after its expiry; rejecting needs no fresh authentication. */
+/**
+ * Owner rejection of a pending plan, or withdrawal of an approval the agent has not used yet: an approved, unexpired action
+ * that was never claimed for sending becomes rejected, so it is never sent. Once execute has committed `dispatching` the
+ * action is past recall and this is `not-pending`; an approval past its expiry is already expired and stays so. Protective,
+ * like rejecting: it needs no fresh sign-in.
+ */
 export async function rejectExternalAction(tx: Transaction, human: OwnerHuman, actionId: string, at: bigint): Promise<OwnerDecision> {
     const row = await ownedByHuman(tx, human, actionId);
     if (!row) return {ok: false, reason: 'not-found'};
-    if (row.status !== 'pending') return {ok: false, reason: 'not-pending'};
+    const status = effectiveStatus(row.status, row.expires_at, at);
+    // A pending plan past its expiry may still be rejected (it stays unsent either way); an expired approval is left as it is.
+    if (row.status !== 'pending' && status !== 'approved') return {ok: false, reason: 'not-pending'};
     const stamp = at.toString();
     tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='rejected',decided_at=CAST(? AS INTEGER),decided_by=?,updated_at=CAST(? AS INTEGER)
-        WHERE action_id=? AND status='pending'`).bind(stamp, human.humanId, stamp, actionId));
+        WHERE action_id=? AND status=?`).bind(stamp, human.humanId, stamp, actionId, row.status));
     return {ok: true};
 }
 
