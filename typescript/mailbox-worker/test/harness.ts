@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { Miniflare, convertV4MiniflareOptions, type V4WorkerOptions } from 'miniflare';
+import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { initializeDatabase } from '../scripts/latest-schema.ts';
@@ -11,16 +11,13 @@ const tokens = new Map<string, { accessToken: string; expiresAt: number }>();
 let humanSubjects = 900000;
 /** The demo's saved key-file form of a registered credential. */
 export const keyFile = (as: AgentCredential) => JSON.stringify({ accountId: as.accountId, key: { kty: 'OKP', crv: 'Ed25519', x: as.key.privateJwk.x, d: as.key.privateJwk.d } });
-export type StartOptions = { persist?: string; migrate?: boolean; bindings?: Record<string, string>; scriptPath?: string; legacy?: boolean; outboundService?: any;
-    serviceBindings?: V4WorkerOptions['serviceBindings']; additionalWorkers?: V4WorkerOptions[] };
-export async function start({ persist, migrate = true, bindings = {}, scriptPath = 'dist/index.js', legacy = false, outboundService,
-    serviceBindings, additionalWorkers = [] }: StartOptions = {}) {
-    const main: V4WorkerOptions = { modules: true, scriptPath, compatibilityDate: '2026-07-01', compatibilityFlags:['nodejs_compat'],
+export type StartOptions = { persist?: string; migrate?: boolean; bindings?: Record<string, string>; scriptPath?: string; legacy?: boolean; outboundService?: any };
+export async function start({ persist, migrate = true, bindings = {}, scriptPath = 'dist/index.js', legacy = false, outboundService }: StartOptions = {}) {
+    const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath, compatibilityDate: '2026-07-01', compatibilityFlags:['nodejs_compat'],
         d1Databases: ['db'], r2Buckets: ['EXTERNAL_MEDIA'], ...(persist ? { resourcePersistencePath: persist } : {}), bindings: {
             REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
             REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
-            ...bindings }, serviceBindings, ...(outboundService ? {outboundService} : {}) };
-    const mf = new Miniflare(convertV4MiniflareOptions(additionalWorkers.length ? {workers: [main, ...additionalWorkers]} : main));
+            ...bindings }, ...(outboundService ? {outboundService} : {}) }));
     try {
         const db = await mf.getD1Database('db');
         if(migrate){

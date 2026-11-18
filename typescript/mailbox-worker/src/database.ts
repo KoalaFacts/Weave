@@ -39,8 +39,6 @@ export interface Env {
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;
     EXTERNAL_CREDENTIAL_KEY?: string;
-    // Private service binding to the pinned Hermes sender. No public connector URL.
-    HERMES_PUBLISHER?: { fetch(request: Request): Promise<Response> };
     // R2 bucket for uploaded action media; unbound means media upload and YouTube upload are unavailable.
     EXTERNAL_MEDIA?: MediaBucket;
     // Public https origin of this Worker, used to mint signed media URLs that a provider fetches.

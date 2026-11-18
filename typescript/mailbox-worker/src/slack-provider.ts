@@ -50,10 +50,6 @@ async function call(token: string, method: Method, body: RecordValue | URLSearch
     const response = await fetch(api + method + (read ? '?' + String(body) : ''), {method: read ? 'GET' : 'POST', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
         headers: {authorization: 'Bearer ' + token, 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json'},
         body: read ? undefined : form ? body : JSON.stringify(body)});
-    return slackAnswer(response);
-}
-
-async function slackAnswer(response: Response) {
     const status = response.status;
     const reader = status === 200 ? response.body?.getReader() : null;
     if (!reader) { drop(response); return {status, data: null}; }
@@ -97,16 +93,9 @@ function refusal(answer: Awaited<ReturnType<typeof call>>): ProviderResult | nul
     return answer.data?.ok === false && typeof error === 'string' && refused.has(error) ? rejected('slack-' + error) : null;
 }
 
-async function sendText({env, secret, post}: PublishCall, channelId: string): Promise<ProviderResult> {
-    const message = {channel: channelId, text: slackText(post.text)};
-    const answer = env.HERMES_PUBLISHER
-        ? await slackAnswer(await env.HERMES_PUBLISHER.fetch(new Request('https://hermes.internal/slack/text', {
-            method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15_000),
-            headers: {authorization: 'Bearer ' + secret, 'content-type': 'application/json'},
-            body: JSON.stringify(message)
-        })))
-        : await call(secret, 'chat.postMessage', {...message, mrkdwn: true,
-            parse: 'none', unfurl_links: false, unfurl_media: false});
+async function sendText(token: string, channelId: string, text: string): Promise<ProviderResult> {
+    const answer = await call(token, 'chat.postMessage', {channel: channelId, text: slackText(text), mrkdwn: true,
+        parse: 'none', unfurl_links: false, unfurl_media: false});
     const refusalResult = refusal(answer);
     if (refusalResult) return refusalResult;
     if (answer.data?.ok !== true || answer.data.channel !== channelId || typeof answer.data.ts !== 'string'
@@ -185,6 +174,6 @@ export const slack: PublishingAdapter = {
     async publish(call) {
         const target = targetPattern.exec(call.targetAccount);
         if (!target || !tokenPattern.test(call.secret)) return rejected('credential-refused');
-        return call.post.media.length ? sendImage(call, target[2]) : sendText(call, target[2]);
+        return call.post.media.length ? sendImage(call, target[2]) : sendText(call.secret, target[2], call.post.text);
     }
 };

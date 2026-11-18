@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { openSecret } from '../src/credential-vault.ts';
@@ -15,7 +14,6 @@ const secret = 'xoxb-fixture-token';
 const approvedImage = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf1sAAAAASUVORK5CYII=', 'base64');
 const display = 'Test workspace / #acceptance (' + channel + ')';
 const uploadUrl = 'https://files.slack.com/upload/v1/fixture';
-const hermesPublisher = new URL('../../../python/hermes-publisher/', import.meta.url);
 
 type Scenario = Awaited<ReturnType<typeof start>> & {env: Env; agent: AgentCredential; humanId: string};
 type Call = {route: string; value: unknown};
@@ -63,30 +61,13 @@ async function connect(s: Scenario, fake: SlackFake) {
     } finally { globalThis.fetch = original; }
 }
 
-async function scenario(run: (s: Scenario, fake: SlackFake) => Promise<void>, throughHermes = false) {
+async function scenario(run: (s: Scenario, fake: SlackFake) => Promise<void>) {
     const fake: SlackFake = {calls: [], member: true, uploadUrl};
-    let directTextAttempts = 0;
-    const h = await start({bindings: {EXTERNAL_CREDENTIAL_KEY: key}, outboundService: (request: Request) => {
-        if (new URL(request.url).pathname === '/api/chat.postMessage') directTextAttempts++;
-        return dispatch(fake, request);
-    }, ...(throughHermes ? {
-        serviceBindings: {HERMES_PUBLISHER: 'hermes'},
-        additionalWorkers: [{
-            name: 'hermes',
-            compatibilityDate: '2026-07-01',
-            compatibilityFlags: ['python_workers', 'disable_python_external_sdk'],
-            modulesRoot: fileURLToPath(hermesPublisher),
-            modules: ['worker.py', 'slack_sender.py'].map(file => ({
-                type: 'PythonModule', path: fileURLToPath(new URL(file, hermesPublisher))
-            })),
-            outboundService: (request: Request) => dispatch(fake, request)
-        }]
-    } : {})});
+    const h = await start({bindings: {EXTERNAL_CREDENTIAL_KEY: key}, outboundService: (request: Request) => dispatch(fake, request)});
     try {
         const agent = await h.register(), humanId = await h.claim(agent);
         const env = {db: h.db, EXTERNAL_CREDENTIAL_KEY: key} as unknown as Env;
         await run({...h, env, agent, humanId}, fake);
-        if (throughHermes) assert.equal(directTextAttempts, 0, 'a bound sender never falls back to the mailbox transport');
     } finally { await h.close(); }
 }
 
@@ -143,33 +124,6 @@ test('executeSlackApprovedText_PostsOnceAndRecordsReceipt', () => scenario(async
     assert.deepEqual(fake.calls, [{route: 'chat.postMessage', value: {channel, text: '&lt;!channel&gt; hello &amp; goodbye', mrkdwn: true,
         parse: 'none', unfurl_links: false, unfurl_media: false}}]);
 }));
-
-test('executeSlackViaHermes_UsesApprovedTextAndChannel_DoesNotReplayAnUnknownOutcome', () => scenario(async (s, fake) => {
-    assert.deepEqual(await connect(s, fake), {ok: true, accounts: [display]});
-    fake.calls.length = 0;
-    const text = '你好 <!channel> & goodbye';
-    const id = await approve(s, {text, media: []});
-    assert.deepEqual(fake.calls, []);
-    const sent = await execute(s, id);
-    assert.equal(sent.status, 'completed');
-    assert.equal(sent.receipt, channel + '/' + timestamp);
-    assert.deepEqual(await execute(s, id), sent);
-    const expected = {route: 'chat.postMessage', value: {channel, text: '你好 &lt;!channel&gt; &amp; goodbye', mrkdwn: true,
-        parse: 'none', unfurl_links: false, unfurl_media: false}};
-    assert.deepEqual(fake.calls, [expected]);
-
-    fake.chatReply = new Response(null, {status: 502});
-    const ambiguousId = await approve(s, {text, media: []});
-    assert.equal((await execute(s, ambiguousId)).status, 'unknown');
-    assert.equal((await execute(s, ambiguousId)).status, 'unknown');
-    assert.deepEqual(fake.calls, [expected, expected]);
-
-    fake.chatReply = undefined;
-    // U+0085 is not whitespace under the Mailbox Worker's text validation.
-    const controlId = await approve(s, {text: '\u0085', media: []});
-    assert.equal((await execute(s, controlId)).status, 'completed');
-    assert.deepEqual(fake.calls.at(-1), {...expected, value: {...expected.value, text: '\u0085'}});
-}, true));
 
 test('executeSlackApprovedImage_SharesImageAndCaptionTogether', () => scenario(async (s, fake) => {
     assert.deepEqual(await connect(s, fake), {ok: true, accounts: [display]});
