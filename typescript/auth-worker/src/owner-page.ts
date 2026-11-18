@@ -224,7 +224,7 @@ export const actionPagePath=(actionId:string)=>"/account/actions/"+actionId;
 const actionResultText:Readonly<Record<string,string>>=Object.freeze({
   approved:"Approved. The agent may now send it once. You can close this page.",
   rejected:"Rejected. Nothing will be sent. You can close this page.",
-  "not-pending":"This action is no longer waiting: the agent may already have started sending it, or it was decided or expired. Open it again to see what became of it."
+  "not-pending":"This action is no longer waiting for a decision: it was already decided or expired, or the agent started sending it. Open it again to see what became of it."
 });
 
 /**

@@ -369,9 +369,8 @@ export async function confirmExternalAction(env: Env, tx: Transaction, human: Ow
     return {ok: true};
 }
 
-/** A pending action is rejected even after its expiry; rejecting needs no fresh authentication. */
 /**
- * Owner rejection of a pending plan, or withdrawal of an approval the agent has not used yet: an approved, unexpired action
+ * Owner rejection of a pending plan (even after its expiry), or withdrawal of an approval the agent has not used yet: an approved, unexpired action
  * that was never claimed for sending becomes rejected, so it is never sent. Once execute has committed `dispatching` the
  * action is past recall and this is `not-pending`; an approval past its expiry is already expired and stays so. Protective,
  * like rejecting: it needs no fresh sign-in.

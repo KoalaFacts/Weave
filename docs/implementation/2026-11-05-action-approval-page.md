@@ -75,7 +75,8 @@ remains possible later for chat channels.
   execute has committed `dispatching`, the withdrawal is `not-pending` and the page says the action no longer waits; an
   approval past its expiry stays expired. Like rejecting, it is protective and needs no fresh sign-in at the mailbox (the
   page itself requires one to open). The optimistic transaction serializes it against execute's claim, so exactly one
-  wins. The agent learns it as status `rejected` (and its inbox notice); OpenAPI's status and `decidedAt` descriptions
+  wins. A Reject form signed while the action was pending (on `/account` or this page, within the form's lifetime) now also
+  withdraws it once approved: protective, since it can only stop a send. The agent learns it as status `rejected` (and its inbox notice); OpenAPI's status and `decidedAt` descriptions
   and `agent-start.md` say an approval can be withdrawn before execute.
 - **Recent actions on `/account` (2026-11-18).** The owner page lists, under "Recent actions", the actions of the agents
   the human owns now that stopped waiting in the last 7 days, newest change first, at most 20: decided, being sent, sent,

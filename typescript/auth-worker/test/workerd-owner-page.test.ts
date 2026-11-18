@@ -714,7 +714,7 @@ test("actionPage_WithdrawAfterAgentSent_NotPendingAndSentOnce",{timeout:60_000},
   const withdraw=await pageToken(human,action.actionId,"Withdraw approval");
   assert.equal((await executeAction(agent,action.actionId)).status,"completed");
   const late=await (await postActionPage(action.actionId,withdraw,cookie)).text();
-  assert.ok(late.includes("This action is no longer waiting: the agent may already have started sending it"),late);
+  assert.ok(late.includes("This action is no longer waiting for a decision: it was already decided or expired, or the agent started sending it."),late);
   assert.equal((await readAction(agent,action.actionId)).status,"completed");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,1);
   assert.equal(forms(await (await actionPage(action.actionId,cookie)).text()).length,0,"a sent action offers no withdrawal");
