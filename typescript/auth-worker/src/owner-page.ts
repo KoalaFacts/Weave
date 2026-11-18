@@ -210,7 +210,9 @@ export type SettledPublicationView={state:string;url:string|null;error:string|nu
  * What became of an action of the human's own agent that no longer waits for a decision: its status and stored failure code, and
  * once sent the platform's receipt and tracked publication. A mailbox that predates them omits them, which reads as none.
  */
-export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null};
+export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null;about?:SettledPlanView|null};
+/** What the settled action was: the agent, operation, the account the plan bound (its name while the credential still points there) and the content. */
+export type SettledPlanView={agentId:string;agentDisplayName:string|null;provider:string;operation:string;targetAccount:string;targetDisplay:string|null;content:string};
 /**
  * What the mailbox answers for one action of the signed-in human: the pending action to decide, or, for their own agent's action
  * that no longer waits, what became of it. A mailbox that predates `settled` omits it, which reads as unknown.
@@ -258,6 +260,18 @@ function explainFailure(code:string):string|null{
     "The platform refused it, so nothing was posted.":null;
 }
 
+/**
+ * Which action the settled page is about, so the owner who returns to it sees what it was: agent-supplied text, escaped and shown
+ * verbatim. A mailbox that predates `about`, or a malformed one, adds nothing.
+ */
+function settledPlan(about:SettledPlanView|null|undefined):string{
+  if(!about)return "";
+  const {agentId,agentDisplayName,provider,operation,targetAccount,targetDisplay,content}=about;
+  if(![agentId,provider,operation,targetAccount,content].every(value=>typeof value==="string"))return "";
+  const display=typeof agentDisplayName==="string"?agentDisplayName:null,account=typeof targetDisplay==="string"?esc(targetDisplay)+" (<code>"+esc(targetAccount)+"</code>)":"<code>"+esc(targetAccount)+"</code>";
+  return "<p>"+agentName(agentId,display)+" asked to "+esc(operation)+" on "+esc(provider)+" as "+account+".</p><p>Content, exactly as proposed:</p><pre>"+esc(content)+"</pre>";
+}
+
 /** A link the page may show for a published post: an absolute https URL only, so a stored value can never run script. */
 const publishedLink=(url:string|null|undefined)=>typeof url==="string"&&url.startsWith("https://")&&URL.canParse(url)?url:null;
 
@@ -303,7 +317,7 @@ export function actionPage(view:PendingActionView,human:HumanSession,actionId:st
     const failure=settled?.status==="failed"&&settled.failure?settled.failure:null,why=failure===null?null:explainFailure(failure);
     const text=settled?settledText[settled.status]+(failure===null?"":" Reason: "+esc(failure)+"."+(why===null?"":" "+why)):
       "This action is not waiting for your approval. It may already be decided or expired.";
-    return shell("Approve an action",head+"<p>"+text+"</p>"+(settled?.status==="completed"?sentDetails(settled):"")+all);
+    return shell("Approve an action",head+"<p>"+text+"</p>"+(settled?.status==="completed"?sentDetails(settled):"")+(settled?settledPlan(settled.about):"")+all);
   }
   const fresh=freshAuthentication(human,now);
   return shell("Approve an action",[head,

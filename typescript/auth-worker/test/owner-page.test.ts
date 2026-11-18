@@ -281,6 +281,28 @@ test("actionPage_SentWithReceiptAndPublication_ReferenceStateAndHttpsLinkOnly",a
   assert.ok(older.includes("This action was sent.")&&!older.includes("reference"),older);
 });
 
+// The page of a settled action says which action it was: agent, operation, the account the plan bound and the content, escaped
+// and verbatim; without the credential's name only the account ID; an older mailbox or a malformed description adds nothing.
+test("actionPage_SettledWithPlan_SaysWhichActionItWasEscaped",async()=>{
+  const actionId=randomUUID(),agentId=randomUUID();
+  const page=async(settled:SettledActionView)=>html(actionPage({frozen:false,action:null,settled},human,actionId,new Map(),now));
+  const about={agentId,agentDisplayName:"<b>Desk</b>",provider:"post<iz>",operation:"publish_post",targetAccount:"acct<1>",targetDisplay:"Shop & Co",content:"Line 1\n<script>x</script>"};
+  for(const status of ["approved","rejected","expired","dispatching","completed","failed","unknown"]){
+    const body=await page({status,failure:status==="failed"?"owner-changed":null,about});
+    assert.ok(body.includes("<p>&#60;b&#62;Desk&#60;/b&#62; (self-reported, not verified) asked to publish_post on post&#60;iz&#62; as Shop &#38; Co (<code>acct&#60;1&#62;</code>).</p>"),status+": "+body);
+    assert.ok(body.includes("<p>Content, exactly as proposed:</p><pre>Line 1\n&#60;script&#62;x&#60;/script&#62;</pre>")&&!body.includes("<script>")&&!body.includes("<b>Desk"),status+": "+body);
+  }
+  const unnamed=await page({status:"rejected",failure:null,about:{...about,agentDisplayName:null,targetDisplay:null}});
+  assert.ok(unnamed.includes("<p>Unnamed agent "+agentId.slice(0,8)+" asked to publish_post on post&#60;iz&#62; as <code>acct&#60;1&#62;</code>.</p>"),unnamed);
+  for(const odd of [undefined,null,{...about,content:7},{...about,provider:undefined},"text"] as unknown[]){
+    const body=await page({status:"rejected",failure:null,about:odd as SettledActionView["about"]});
+    assert.ok(body.includes("This action was rejected.")&&!body.includes("asked to")&&!body.includes("<pre>"),JSON.stringify(odd)+": "+body);
+  }
+  // An unlisted status reads as the generic sentence and never shows the plan.
+  const generic=await page({status:"later",failure:null,about});
+  assert.ok(generic.includes("not waiting for your approval")&&!generic.includes("asked to")&&!generic.includes("<pre>"),generic);
+});
+
 // The owner page lists what became of the owner's recent actions, each linking to its own page, with every stored value escaped.
 test("ownerPage_RecentActions_EachOutcomeLinkedAndEscaped",async()=>{
   const agentId=randomUUID();

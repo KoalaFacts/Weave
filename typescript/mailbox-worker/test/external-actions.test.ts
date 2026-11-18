@@ -1095,13 +1095,16 @@ test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnl
     const pending = await ownerPendingAction(environment(h), humanId, actionId);
     assert.equal((pending as {action: {actionId: string} | null}).action?.actionId, actionId);
     assert.equal((pending as {settled: unknown}).settled, null, 'a pending action is offered for decision, not described as settled');
+    // What the action was is the same whatever became of it (its own test covers the fields).
+    const about = {agentId: agent.accountId, agentDisplayName: null, provider: 'test-http', operation: 'publish_text', targetAccount: 'urn:li:person:alpha',
+        targetDisplay: 'Desk Alpha', content: 'A plan that settles.'};
     const {humanId: stranger} = await ownedAgent(h);
     for (const [status, failure] of [['approved', null], ['rejected', null], ['dispatching', null], ['completed', null], ['failed', 'owner-changed'], ['unknown', null]] as const) {
         // A receipt is stored on every row here so that only a sent action shows one.
         await h.db.prepare(`UPDATE external_actions SET status=?,failure=?,receipt='posted:r-1',decided_at=created_at,decided_by=?,
             dispatched_at=CASE WHEN ? IN ('dispatching','completed','unknown') THEN created_at END WHERE action_id=?`).bind(status, failure, humanId, status, actionId).run();
         const receipt = status === 'completed' ? 'posted:r-1' : null;
-        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: {status, failure, receipt, publication: null}}, status);
+        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: {status, failure, receipt, publication: null, about}}, status);
         assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: null}, 'another human learns nothing of ' + status);
     }
     // Pending or approved past its expiry reads expired, exactly from the expiry tick, as every other read does.
@@ -1109,9 +1112,9 @@ test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnl
     for (const status of ['pending', 'approved'] as const) {
         await h.db.prepare(`UPDATE external_actions SET status=?,failure=NULL,dispatched_at=NULL,decided_at=CASE WHEN ?='pending' THEN NULL ELSE created_at END,
             decided_by=CASE WHEN ?='pending' THEN NULL ELSE ? END WHERE action_id=?`).bind(status, status, status, humanId, actionId).run();
-        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId, () => expiry), {frozen: false, action: null, settled: {status: 'expired', failure: null, receipt: null, publication: null}}, status);
+        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId, () => expiry), {frozen: false, action: null, settled: {status: 'expired', failure: null, receipt: null, publication: null, about}}, status);
         const before = await ownerPendingAction(environment(h), humanId, actionId, () => expiry - 1n);
-        assert.deepEqual((before as {settled: unknown}).settled, status === 'pending' ? null : {status: 'approved', failure: null, receipt: null, publication: null}, status + ' one tick earlier');
+        assert.deepEqual((before as {settled: unknown}).settled, status === 'pending' ? null : {status: 'approved', failure: null, receipt: null, publication: null, about}, status + ' one tick earlier');
     }
     // A sent action whose effect is tracked after sending carries the publication's state, only for its owner.
     await h.db.prepare("UPDATE external_actions SET status='completed',failure=NULL,dispatched_at=created_at WHERE action_id=?").bind(actionId).run();
@@ -1128,7 +1131,31 @@ test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnl
     await h.db.prepare('DELETE FROM external_publications WHERE action_id=?').bind(actionId).run();
     await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(stranger, agent.accountId).run();
     assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: null});
-    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: {status: 'completed', failure: null, receipt: null, publication: null}});
+    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: {status: 'completed', failure: null, receipt: null, publication: null, about}});
+}));
+
+// The page for one action names what the settled action was: its agent, operation, the account the plan bound and the content.
+test('ownerPendingAction_OwnSettledAction_DescribesThePlanAndTheAccountNameOnlyWhileTheCredentialStillPointsThere', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    await h.db.prepare("UPDATE accounts SET display_name='Release bot' WHERE account_id=?").bind(agent.accountId).run();
+    const response = await propose(h, agent, 'Episode <13> is live.');
+    assert.equal(response.status, 200, await response.clone().text());
+    const {actionId} = await response.json() as {actionId: string};
+    await h.db.prepare("UPDATE external_actions SET status='rejected',decided_at=created_at,decided_by=? WHERE action_id=?").bind(humanId, actionId).run();
+    const credential = (await h.db.prepare("SELECT target_account,target_display FROM external_credentials WHERE account_id=? AND credential_ref='linkedin-main'")
+        .bind(agent.accountId).first<{target_account: string; target_display: string}>())!;
+    const read = async () => (await ownerPendingAction(environment(h), humanId, actionId) as {settled: {about: unknown}}).settled.about;
+    assert.deepEqual(await read(), {agentId: agent.accountId, agentDisplayName: 'Release bot', provider: 'test-http', operation: 'publish_text',
+        targetAccount: credential.target_account, targetDisplay: credential.target_display, content: 'Episode <13> is live.'});
+    // A revoked credential that still names the same account keeps its name.
+    await h.db.prepare("UPDATE external_credentials SET revoked_at=updated_at WHERE account_id=?").bind(agent.accountId).run();
+    assert.equal((await read() as {targetDisplay: string | null}).targetDisplay, credential.target_display);
+    // Re-pointed at another account, the credential's name is not this plan's: only the account the plan bound is shown.
+    await h.db.prepare("UPDATE external_credentials SET target_account='someone-else',target_display='Someone else' WHERE account_id=?").bind(agent.accountId).run();
+    assert.deepEqual(await read() as {targetAccount: string; targetDisplay: string | null}, {agentId: agent.accountId, agentDisplayName: 'Release bot', provider: 'test-http',
+        operation: 'publish_text', targetAccount: credential.target_account, targetDisplay: null, content: 'Episode <13> is live.'});
+    const {humanId: stranger} = await ownedAgent(h);
+    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: null});
 }));
 
 // The page for one action reads it by ID: an action past the overview's 200 oldest can still be decided from its link.

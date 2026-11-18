@@ -61,6 +61,12 @@ remains possible later for chat channels.
   (`provider-rejected: media-unavailable`), and any other `provider-rejected: <reason>` as "the platform refused it, so
   nothing was posted". A code the page does not know, and an inherited property name, adds nothing: never guessed. The
   text is fixed in the auth Worker; the mailbox RPC is unchanged.
+- **Which action it was (2026-11-18).** The page of the owner's own settled action, whatever became of it, also says what
+  the action was: the agent (its self-reported name, marked unverified), the operation and provider, the account the plan
+  bound (the provider-verified ID, with the credential's name for it only while that credential still points at that
+  account, revoked or not) and the content exactly as proposed, all escaped. `settled` gains
+  `about: {agentId, agentDisplayName, provider, operation, targetAccount, targetDisplay, content}`; an auth Worker reading a
+  mailbox without it, or a malformed one, shows the status alone. Another human still learns nothing.
 - **Recent actions on `/account` (2026-11-18).** The owner page lists, under "Recent actions", the actions of the agents
   the human owns now that stopped waiting in the last 7 days, newest change first, at most 20: decided, being sent, sent,
   not sent (with the stored failure code) or unknown by their last change, and a plan left pending past its expiry, by
@@ -90,6 +96,8 @@ auth-worker workerd tests, against the real mailbox and authorization Workers:
 - the owner's own action reads "This action was sent." after one execute, "This action was rejected." after Reject,
   and approved, failed (reason escaped), unknown and expired with what each means, with no forms and nothing sent;
   another human still reads "not waiting for your approval" for it;
+- after one execute the page also shows the exact content and "as Desk Alpha (`urn:li:person:alpha`)"; another human
+  sees neither;
 - after one execute the page shows the fake provider's receipt as the platform's reference, and with a tracked
   publication recorded, "The platform published it." with its https link; another human sees neither;
 - the proposal's `approvalUrl` is exactly this page, opening it shows that action, and it becomes null once decided
@@ -120,6 +128,11 @@ Mutation checks: each of these fails a test:
   status, linking a URL that is not absolute `https://` (`javascript:`, `http:`, protocol-relative), or showing the
   receipt, the publication's error or its URL unescaped (`ownerPendingAction_OwnActionNoLongerPending_…` and
   `actionPage_SentWithReceiptAndPublication_ReferenceStateAndHttpsLinkOnly`).
+
+- dropping the settled action's description, showing its content unescaped, naming the account with a credential that
+  now points elsewhere, showing a null name, accepting a malformed description, or describing an unlisted status
+  (`ownerPendingAction_OwnSettledAction_DescribesThePlanAndTheAccountNameOnlyWhileTheCredentialStillPointsThere` and
+  `actionPage_SettledWithPlan_SaysWhichActionItWasEscaped`).
 
 The mailbox's owner-decision RPC (`ownerAction`) checks the shape of every decision before reading anything. A
 malformed `planDigest` on a pending action, or a malformed `keysDigest` on a pending binding (not a string or
