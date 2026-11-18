@@ -176,6 +176,27 @@ test("ownerPage_ConnectedAccounts_ShowVerifiedChannelDisconnectAndConnectOnlyWhe
   assert.ok((await html(ownerPage(base({agents:[agent()]}),human,new Map(),"no-channel",now))).includes(ownerResultText["no-channel"]));
 });
 
+test("ownerPage_DisconnectWithWaitingActions_SaysTheyCanNeverBeApproved",async()=>{
+  const agentId=randomUUID(),other=randomUUID();
+  const credential=(credentialRef:string)=>({credentialRef,provider:"telegram",targetAccount:"-100"+credentialRef.length,targetDisplay:"Chan "+credentialRef,revision:"r1",connectedAt:iso(now)});
+  const action=(over:Partial<Extract<OwnerOverview,{frozen:false}>["externalActions"][number]>)=>({actionId:randomUUID(),agentId,agentDisplayName:"a",
+    operation:"publish_post",provider:"telegram",content:"x",credentialRef:"tg",credentialRevision:"r1",targetAccount:"-1002",targetDisplay:"Chan tg",
+    planDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1),media:[],accountChanged:false,...over});
+  const agents=[agent({agentId,credentials:[credential("tg"),credential("tg2"),credential("one")]}),agent({agentId:other,credentials:[credential("tg")]})];
+  const pending=[action({}),action({}),action({accountChanged:true}),action({credentialRef:"one"}),action({agentId:other,credentialRef:"tg2"})];
+  const items=(body:string)=>body.split("<h2>Your agents</h2>")[1]!.split("<li>").filter(item=>item.includes("credential <code>"));
+  const [tg,tg2,one,otherTg]=items(await html(ownerPage(base({agents,externalActions:pending}),human,new Map(),null,now)));
+  // Two live actions on this agent's tg; the account-changed one and another agent's are not counted.
+  assert.ok(tg!.includes("<p>2 actions waiting for your approval use this account. Disconnecting it means those actions can never be approved or sent.</p>"),tg);
+  assert.ok(one!.includes("<p>1 action waiting for your approval uses this account. Disconnecting it means that action can never be approved or sent.</p>"),one);
+  assert.ok(!tg2!.includes("waiting for your approval"),"another agent's action on the same reference is not this credential's");
+  assert.ok(!otherTg!.includes("waiting for your approval"),"this agent's actions are not the other agent's");
+  const cut=items(await html(ownerPage(base({agents,externalActions:pending,moreExternalActions:true}),human,new Map(),null,now)));
+  assert.ok(cut[0]!.includes("<p>At least 2 actions waiting"),cut[0]);
+  const none=items(await html(ownerPage(base({agents}),human,new Map(),null,now)));
+  assert.ok(none.every(item=>!item.includes("waiting for your approval")));
+});
+
 test("ownerPage_ActionWithMedia_PreviewsOnlyItsFilesAndOffersPostizConnect",async()=>{
   const actionId=randomUUID(),agentId=randomUUID(),image=randomUUID(),video=randomUUID();
   const overview=base({agents:[agent({agentId})],connectors,externalActions:[{actionId,agentId,agentDisplayName:null,provider:"postiz",operation:"publish_post",

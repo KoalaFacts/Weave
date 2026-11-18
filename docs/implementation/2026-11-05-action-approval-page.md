@@ -94,6 +94,12 @@ remains possible later for chat channels.
   mailbox overview now reads one more of each and adds `moreExternalActions` and `moreRecentActions`; when true the page
   says under that list that only the oldest N (or most recent N) are shown and that each action's own page, linked from
   the app that proposed it, still works. A mailbox without the flags adds no note.
+- **Warning before disconnecting an account with waiting actions (2026-11-18).** Each connected account on `/account`
+  that the owner's waiting actions use says, above its Disconnect button, how many of that agent's actions waiting for
+  approval use it and that disconnecting it means they can never be approved or sent (the confirm would answer
+  `account-changed`). It counts the shown pending list only: an action of another agent, on another credential, or
+  already flagged `accountChanged` is not counted, and a cut list says "at least". Approved actions not yet sent are not
+  in that list and not counted. No mailbox or agent API change.
 - **No open redirect, no forgeable outcome.** A decision is answered directly with what that request just did
   (approved, rejected or the failure reason), and the owner is told they can close the page. Nothing is redirected to
   the app. The page never reads an outcome from its URL, so a link carrying `?result=approved` or `?result=rejected`
