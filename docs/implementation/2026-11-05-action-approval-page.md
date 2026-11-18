@@ -116,8 +116,8 @@ auth-worker workerd tests, against the real mailbox and authorization Workers:
 - by when an approval must be used (2026-11-18): after approving, the page says the agent must send it by the
   proposal's own `expiresAt`; the mailbox test pins `sendBy` to that time for approved only (null for every other
   status, for an approval past expiry and for another human); page tests pin escaping, other statuses and a missing or
-  malformed `sendBy`. Mutants (no status check in the mailbox, `sendBy` always the expiry, the page's status check
-  dropped, the type check dropped, no escaping) each fail a test;
+  malformed `sendBy`. Mutants (`sendBy` always the expiry or always null in the mailbox; on the page the status check
+  dropped, the type check dropped, no escaping, the line not shown) each fail a test;
 - no session or a stale one signs in and returns to exactly this page, and a query is dropped;
 - a malformed id gives 404; another method gives 405;
 - only the linked action is shown, and its forms post back to the page;
