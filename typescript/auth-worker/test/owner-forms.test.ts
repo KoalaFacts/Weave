@@ -3,6 +3,8 @@ import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
 import {signedCookieValue,type HumanSession} from "../src/human-session.ts";
 import {destructiveKinds,ownerActionToken,readConnectForm,readOwnerAction,type OwnerFormAction} from "../src/owner-forms.ts";
+import {publishingAdapters} from "../../mailbox-worker/src/external-providers.ts";
+import {ownerConnector} from "../../mailbox-worker/src/publishing.ts";
 
 const now=1_800_000_000_000;
 const key=randomBytes(32).toString("base64url");
@@ -144,6 +146,21 @@ test("readOwnerAction_InvalidUtf8Body_Null",async()=>{
   const request=new Request("https://auth.weave.example/account/action",{method:"POST",
     headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new Uint8Array([0x61,0x63,0x74,0x69,0x6f,0x6e,0x3d,0xff,0xfe])});
   assert.equal(await readOwnerAction(key,request,sessionFor(randomUUID()),now),null);
+});
+
+test("readConnectForm_AllPublishingAdapters_TheirDeclaredFieldsRoundTrip",async()=>{
+  const humanId=randomUUID(),agentId=randomUUID(),session=sessionFor(humanId);
+  const providers=new Set<string>();
+  for(const adapter of publishingAdapters){
+    const connector=ownerConnector(adapter);
+    assert.ok(!providers.has(connector.provider),"duplicate provider "+connector.provider);
+    providers.add(connector.provider);
+    assert.ok(connector.fields.some(field=>field.secret),connector.provider+" must declare its credential fields");
+    const fields: [string,string][]=connector.fields.map(({name})=>[name,"fixture-"+name]);
+    const token=await ownerActionToken(key,humanId,{kind:"connect-account",agentId,provider:connector.provider},now);
+    assert.deepEqual(await readConnectForm(key,form(["action",token],...fields),session,now+1000),
+      {agentId,provider:connector.provider,fields:Object.fromEntries(fields)},connector.provider);
+  }
 });
 
 test("readConnectForm_LongValues_UpTo2048CharactersEachAccepted",async()=>{
