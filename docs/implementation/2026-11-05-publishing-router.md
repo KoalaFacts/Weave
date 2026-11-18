@@ -661,3 +661,16 @@ The Slack adapter ports the standalone text and single-image send from [Hermes A
 In the owner account page, use **Connect Slack** with a bot token and channel ID. Install the bot with `chat:write`, `files:write` and the channel read scope (`channels:read` or `groups:read`), and add it to the channel. Weave verifies the bot and channel membership, seals the token and binds approval to the verified workspace and channel.
 
 The adapter sends up to 4,000 characters and one image up to 10 MiB. Text sent with an image becomes its caption in Slack's file-completion call. Slack message timestamps and shared file IDs are recorded as receipts. A failed upload before sharing leaves the channel untouched. An unconfirmed channel send or image share is recorded as `unknown` and cannot be dispatched again. The [Worker regression tests](../../typescript/mailbox-worker/test/slack.test.ts) use a local Slack substitute.
+
+## Reusing Hermes messaging adapters
+
+Use the [existing `PublishingAdapter` contract](../../typescript/mailbox-worker/src/publishing.ts) for each outgoing channel. Its connector verifies the signed-in owner's credential and a stable target. Its rules describe the payload that can be approved, and its publish function returns a confirmed receipt or a definite refusal. An uncertain outcome is recorded by Weave and never replayed. Preserve each imported module's revision, source path and license alongside the port.
+
+The [pinned Hermes source](https://github.com/NousResearch/hermes-agent/tree/4ae451d4126327c871fd084e60c045dec0c85911/plugins/platforms) contains 26 bundled platform manifests. The following source inventory records where a standalone sender is declared. Running a sender still requires its actual platform dependencies and credentials.
+
+| Hermes source surface | Platform directories |
+|---|---|
+| Declares a standalone sender | `bluebubbles`, `buzz`, `dingtalk`, `discord`, `email`, `feishu`, `google_chat`, `irc`, `line`, `matrix`, `mattermost`, `ntfy`, `photon`, `qqbot`, `signal`, `simplex`, `slack`, `sms`, `teams`, `telegram`, `wecom`, `weixin`, `whatsapp` |
+| Sender entry point requires separate inspection | `a2a`, `raft`, `whatsapp_cloud` |
+
+Keep channel-specific contracts in their adapters. A standalone entry point can still depend on another service, such as [Signal's daemon](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/signal/) or the [WhatsApp bridge](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/whatsapp). Verify that a reused sender preserves the approved workspace, channel and thread, including when the platform refuses the target. Run the [registered connector form test](../../typescript/auth-worker/test/owner-forms.test.ts) and exercise each adapted provider through the Workers with a substituted platform before real-account acceptance. Record outbound, attachments, thread replies and inbound capabilities against the actual cases exercised.
