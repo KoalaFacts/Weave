@@ -303,6 +303,21 @@ test("actionPage_SettledWithPlan_SaysWhichActionItWasEscaped",async()=>{
   assert.ok(generic.includes("not waiting for your approval")&&!generic.includes("asked to")&&!generic.includes("<pre>"),generic);
 });
 
+// Only an approval not yet used offers its withdrawal, and only with a signed token posting back to the action's own page.
+test("actionPage_SettledApprovedWithToken_OffersWithdrawalOnlyThen",async()=>{
+  const actionId=randomUUID(),tokens=new Map([["reject-action:"+actionId,"signed<token>"]]);
+  const page=async(status:string,map:ReadonlyMap<string,string>=tokens)=>html(actionPage({frozen:false,action:null,settled:{status,failure:null}},human,actionId,map,now));
+  const approved=await page("approved");
+  assert.ok(approved.includes('<form method="post" action="/account/actions/'+actionId+'"><input type="hidden" name="action" value="signed&#60;token&#62;"><button type="submit">Withdraw approval</button></form>'),approved);
+  assert.ok(approved.includes("Withdraw the approval and it will never be sent."),approved);
+  for(const status of ["rejected","expired","dispatching","completed","failed","unknown","later"]){
+    const body=await page(status);
+    assert.ok(!body.includes("Withdraw")&&!body.includes("<form"),status+": "+body);
+  }
+  const unsigned=await page("approved",new Map());
+  assert.ok(!unsigned.includes("<form")&&!unsigned.includes("Withdraw"),"no token, no form and no offer: "+unsigned);
+});
+
 // The owner page lists what became of the owner's recent actions, each linking to its own page, with every stored value escaped.
 test("ownerPage_RecentActions_EachOutcomeLinkedAndEscaped",async()=>{
   const agentId=randomUUID();

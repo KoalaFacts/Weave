@@ -374,6 +374,9 @@ async function actionApproval(req:Request,env:Env,actionId:string):Promise<Respo
         // The approval is bound to the plan shown on this page; the mailbox refuses it if anything in that plan changed.
         tokens.set("confirm-action:"+actionId,await ownerActionToken(env.HUMAN_SESSION_KEY,session.humanId,{kind:"confirm-action",requestId:actionId,planDigest:action.planDigest},now));
         tokens.set("reject-action:"+actionId,await ownerActionToken(env.HUMAN_SESSION_KEY,session.humanId,{kind:"reject-action",requestId:actionId},now));
+      }else if(!view.frozen&&view.settled?.status==="approved"){
+        // An approval the agent has not used yet can be withdrawn; the mailbox refuses it once sending has started.
+        tokens.set("reject-action:"+actionId,await ownerActionToken(env.HUMAN_SESSION_KEY,session.humanId,{kind:"reject-action",requestId:actionId},now));
       }
     }catch{
       console.error(failureLog.formSigning);

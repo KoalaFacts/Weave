@@ -362,12 +362,54 @@ test('decideExternalAction_AlreadyDecided_NotPendingAndOutcomeKept',() => scenar
     assert.equal(shown.actionId, second.actionId);
     assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: second.actionId}), {ok: true});
 
-    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: actionId}), {ok: false, reason: 'not-pending'});
     assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: second.actionId, planDigest: shown.planDigest}), {ok: false, reason: 'not-pending'});
     assert.equal((await execute(h, agent, second.actionId)).status, 'rejected');
     assert.equal((await execute(h, agent, actionId)).status, 'completed');
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: actionId}), {ok: false, reason: 'not-pending'}, 'a sent action is past recall');
+    assert.equal((await execute(h, agent, actionId)).status, 'completed');
     assert.equal(provider.calls.length, 1);
 }));
+
+test('rejectExternalAction_ApprovedNotYetSent_WithdrawsSoNothingIsEverSent', () => scenario(async ({h, provider}) => {
+    const {agent, humanId, actionId} = await approved(h);
+    const before = await h.ok(`/v1/external-actions/${actionId}`, agent) as {status: string; decidedAt: string};
+    assert.equal(before.status, 'approved');
+    await new Promise(resolve => setTimeout(resolve, 5));
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: actionId}), {ok: true});
+    const after = await h.ok(`/v1/external-actions/${actionId}`, agent) as {status: string; decidedAt: string; dispatchedAt: string | null};
+    assert.equal(after.status, 'rejected');
+    assert.ok(Date.parse(after.decidedAt) > Date.parse(before.decidedAt), 'decidedAt records the withdrawal, the last decision');
+    assert.equal((await execute(h, agent, actionId)).status, 'rejected');
+    assert.equal(provider.calls.length, 0, 'a withdrawn approval is never sent');
+    assert.equal(after.dispatchedAt, null);
+    const page = await ownerPendingAction(environment(h), humanId, actionId);
+    assert.equal(page.frozen === false && page.settled?.status, 'rejected');
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: actionId}), {ok: false, reason: 'not-pending'});
+    assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: actionId, planDigest: 'A'.repeat(43)}), {ok: false, reason: 'not-pending'});
+}));
+
+test('rejectExternalAction_ApprovedButAnotherHumanOrExpiredOrDispatching_NothingChanges', () => scenario(async ({h, provider}) => {
+    const {agent, humanId, actionId} = await approved(h);
+    const other = await ownedAgent(h);
+    assert.deepEqual(await decide(h, other.humanId, {kind: 'reject-action', requestId: actionId}), {ok: false, reason: 'not-found'});
+
+    const expiring = await approvedFor(h, agent, humanId, 'Episode 14 is live.');
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind(ticks(), expiring).run();
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: expiring}), {ok: false, reason: 'not-pending'});
+    assert.equal((await h.ok(`/v1/external-actions/${expiring}`, agent) as {status: string}).status, 'expired', 'an expired approval stays expired');
+
+    await h.db.prepare("UPDATE external_actions SET status='dispatching',dispatched_at=updated_at WHERE action_id=?").bind(actionId).run();
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: actionId}), {ok: false, reason: 'not-pending'});
+    assert.equal((await h.ok(`/v1/external-actions/${actionId}`, agent) as {status: string}).status, 'dispatching', 'a claimed dispatch is past recall');
+    assert.equal(provider.calls.length, 0);
+}));
+
+async function approvedFor(h: Harness, agent: AgentCredential, humanId: string, content: string) {
+    const action = await (await propose(h, agent, content)).json() as {actionId: string};
+    const shown = (await pendingFor(h, humanId)).find(pending => pending.actionId === action.actionId)!;
+    assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: action.actionId, planDigest: shown.planDigest}), {ok: true});
+    return action.actionId;
+}
 
 for (const change of ['rotated', 'revoked', 'retargeted', 'reprovidered'] as const)
     test(`executeExternalAction_CredentialChangedAfterApproval_${change}_FailsWithoutSending`, () => scenario(async ({h, provider}) => {
