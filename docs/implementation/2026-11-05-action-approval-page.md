@@ -78,6 +78,11 @@ remains possible later for chat channels.
   wins. A Reject form signed while the action was pending (on `/account` or this page, within the form's lifetime) now also
   withdraws it once approved: protective, since it can only stop a send. The agent learns it as status `rejected` (and its inbox notice); OpenAPI's status and `decidedAt` descriptions
   and `agent-start.md` say an approval can be withdrawn before execute.
+- **By when an approval must be used (2026-11-18).** The page of the owner's own approved, unsent action also says the time
+  by which the agent must send it (the plan's expiry) and that after it the action expires and is never sent, so an owner
+  deciding whether to withdraw knows how long the approval stands. `settled` gains `sendBy`, the plan's `expiresAt` while
+  the action is approved and unsent, otherwise null; an auth Worker reading a mailbox without it, or a malformed one, adds
+  nothing. No schema or agent API change.
 - **Recent actions on `/account` (2026-11-18).** The owner page lists, under "Recent actions", the actions of the agents
   the human owns now that stopped waiting in the last 7 days, newest change first, at most 20: decided, being sent, sent,
   not sent (with the stored failure code) or unknown by their last change, and a plan left pending past its expiry, by
@@ -108,6 +113,11 @@ auth-worker workerd tests, against the real mailbox and authorization Workers:
   (200 pending, 20 recent) and one over; mutants (`>=` for either flag, no extra row read for either list, no slice for
   either list, the page's note shown for a missing flag, the pending note keyed on the recent flag, the recent note
   counting the pending list) each fail a test;
+- by when an approval must be used (2026-11-18): after approving, the page says the agent must send it by the
+  proposal's own `expiresAt`; the mailbox test pins `sendBy` to that time for approved only (null for every other
+  status, for an approval past expiry and for another human); page tests pin escaping, other statuses and a missing or
+  malformed `sendBy`. Mutants (`sendBy` always the expiry or always null in the mailbox; on the page the status check
+  dropped, the type check dropped, no escaping, the line not shown) each fail a test;
 - no session or a stale one signs in and returns to exactly this page, and a query is dropped;
 - a malformed id gives 404; another method gives 405;
 - only the linked action is shown, and its forms post back to the page;

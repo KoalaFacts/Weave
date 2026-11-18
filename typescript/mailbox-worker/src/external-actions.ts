@@ -402,10 +402,11 @@ export function mediaIdsOf(content: string): string[] {
 
 /**
  * What became of an action of the human's own agent that is no longer waiting for a decision: its status, stored failure code,
- * and for a sent action the platform's receipt and, when the effect is tracked after sending, the publication's state.
+ * and for a sent action the platform's receipt and, when the effect is tracked after sending, the publication's state. `sendBy` is
+ * the plan's expiry while it is approved and unsent (the time by which the agent must send it, after which it is never sent), else null.
  */
 export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; receipt: string | null;
-    publication: PublicationView | null; about: OwnerSettledPlan};
+    publication: PublicationView | null; about: OwnerSettledPlan; sendBy: string | null};
 /**
  * What the settled action was, so the owner who returns to its page sees which action it is: the agent, the operation, the
  * account the plan bound (`targetDisplay` is the credential's name for it while the credential still points at that account,
@@ -445,7 +446,7 @@ export async function ownerPendingAction(env: Env, humanId: string, actionId: st
         const about: OwnerSettledPlan = {agentId: row.account_id, agentDisplayName: names?.display_name ?? null, provider: row.provider, operation: row.operation,
             targetAccount: row.target_account, targetDisplay: names?.target_account === row.target_account ? names.target_display : null, content: row.content};
         return {frozen: false as const, action: null, settled: {status, failure: row.failure, receipt: sent ? row.receipt : null,
-            publication: sent ? await readPublication(tx, actionId) : null, about}};
+            publication: sent ? await readPublication(tx, actionId) : null, about, sendBy: status === 'approved' ? apiTime(row.expires_at) : null}};
     });
 }
 

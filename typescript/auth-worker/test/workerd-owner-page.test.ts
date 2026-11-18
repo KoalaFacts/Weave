@@ -231,7 +231,7 @@ async function ownedAgent(human:Human,displayName="owned"):Promise<Agent>{
   return agent;
 }
 
-type ActionView={actionId:string;status:string;receipt:string|null;approvalUrl:string|null};
+type ActionView={actionId:string;status:string;receipt:string|null;approvalUrl:string|null;expiresAt:string};
 async function proposeAction(human:Human,content:string):Promise<{agent:Agent;action:ActionView}>{
   const agent=await ownedAgent(human,"publisher"),at=(BigInt(Date.now())*10000n).toString();
   await (await db()).prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
@@ -686,6 +686,7 @@ test("actionPage_OwnActionApprovedFailedOrUnknown_SaysWhatBecameOfIt",{timeout:6
   const read=async()=>(await (await actionPage(action.actionId,await sessionCookie(human))).text());
   const approved=await read();
   assert.ok(approved.includes("You approved this action. Nothing is sent until the agent sends it"),approved);
+  assert.ok(approved.includes("<p>The agent must send it by "+action.expiresAt+". After that it expires and is never sent.</p>"),approved);
   assert.deepEqual(forms(approved).map(x=>x.label),["Withdraw approval"],"an unused approval offers only its withdrawal");
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0,"reading the page sends nothing");
   const database=await db();
