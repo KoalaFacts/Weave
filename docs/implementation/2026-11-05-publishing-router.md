@@ -666,6 +666,14 @@ The adapter sends up to 4,000 characters and one image up to 10 MiB. Text sent w
 
 Use the [existing `PublishingAdapter` contract](../../typescript/mailbox-worker/src/publishing.ts) for each outgoing channel. Its connector verifies the signed-in owner's credential and a stable target. Its rules describe the payload that can be approved, and its publish function returns a confirmed receipt or a definite refusal. An uncertain outcome is recorded by Weave and never replayed. Preserve each imported module's revision, source path and license alongside the port.
 
+### Direct Slack text sender
+
+The optional [Hermes publisher Worker](../../python/hermes-publisher/worker.py) executes the pinned upstream [Slack text functions](../../python/hermes-publisher/slack_sender.py) through a private Cloudflare service binding. Weave verifies and seals the bot credential, approves the exact channel and text, and records the receipt. The publisher accepts one Slack text request, calls the fixed Slack API once and returns the bounded result. It has no public routes or agent runtime. The Slack image-and-caption path uses the existing TypeScript transport.
+
+Enable the direct text path by deploying `weave-hermes-publisher` privately and adding a service binding named `HERMES_PUBLISHER` to the Mailbox Worker with service `weave-hermes-publisher`. Existing installations without the binding use the in-Worker Slack transport. A request handled by the binding never falls back to another transport. The local Slack suite exercises both Workers with a substituted Slack API, including approval, exact wire payload, receipt and missing outcome without replay.
+
+### Candidate platforms
+
 The [pinned Hermes source](https://github.com/NousResearch/hermes-agent/tree/4ae451d4126327c871fd084e60c045dec0c85911/plugins/platforms) contains 26 bundled platform manifests. The following source inventory records where a standalone sender is declared. Running a sender still requires its actual platform dependencies and credentials.
 
 | Hermes source surface | Platform directories |
@@ -674,3 +682,5 @@ The [pinned Hermes source](https://github.com/NousResearch/hermes-agent/tree/4ae
 | Sender entry point requires separate inspection | `a2a`, `raft`, `whatsapp_cloud` |
 
 Keep channel-specific contracts in their adapters. A standalone entry point can still depend on another service, such as [Signal's daemon](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/signal/) or the [WhatsApp bridge](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/whatsapp). Verify that a reused sender preserves the approved workspace, channel and thread, including when the platform refuses the target. Run the [registered connector form test](../../typescript/auth-worker/test/owner-forms.test.ts) and exercise each adapted provider through the Workers with a substituted platform before real-account acceptance. Record outbound, attachments, thread replies and inbound capabilities against the actual cases exercised.
+
+The Teams and Google Chat standalone senders are candidates for governed text delivery. Teams uses a Bot Framework conversation and returns an activity ID. Google Chat uses a service account and a Chat space and supports a thread parameter. Verify target ownership and receipt handling before exposing either as an owner connection. Leave existing working Telegram and Discord routes in place while comparing their contracts to Hermes.
