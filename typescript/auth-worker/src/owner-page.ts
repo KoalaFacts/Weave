@@ -197,7 +197,12 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
       "Your current sign-in is older, so you will be asked to sign in again first.")+" Revoking a connected client's access or disconnecting an account does not.</p>",
     "<h2>Binding requests</h2>",bindingSection(overview.bindingRequests,tokens,now),
     "<h2>Actions waiting for approval</h2>",actionsSection(overview.externalActions,tokens),
+    // A mailbox that predates these flags omits them, which reads as nothing left out.
+    overview.moreExternalActions===true?"<p>Only the "+overview.externalActions.length+" oldest actions waiting for approval are shown. "+
+      "Approve or reject some to see the rest here; each one's own page, where the app that proposed it links you, also works.</p>":"",
     "<h2>Recent actions</h2>",recentSection(overview.recentActions),
+    overview.moreRecentActions===true?"<p>Only the "+overview.recentActions.length+" most recent are listed; older ones from the last 7 days are not shown here. "+
+      "Each one's own page, where the app that proposed it links you, still says what became of it.</p>":"",
     "<h2>Apps that manage all your agents</h2>",
     "<p>Each can create, list and rename your agents and act as any of them, including agents you add later. Approving actions stays with you.</p>",
     ownerGrantsSection(overview.ownerGrants,tokens),

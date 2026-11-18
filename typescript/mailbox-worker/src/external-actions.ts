@@ -21,7 +21,8 @@ import { readPublication, trackPublication, type PublicationView } from './exter
 export const actionLifetimeTicks = 36_000_000_000n; // 1 h to approve and execute
 export const pendingActionsPerAgent = 20;
 /** The oldest pending actions the owner page lists, across all of one human's agents. */
-const pendingActionsShownToOwner = 200;
+/** How many of the human's agents' pending actions the owner page shows, oldest first; the rest wait for their own page or a later visit. */
+export const pendingActionsShownToOwner = 200;
 export const maxContentLength = 8000;
 
 export type ActionStatus = 'pending' | 'approved' | 'rejected' | 'dispatching' | 'completed' | 'failed' | 'unknown';
@@ -285,8 +286,8 @@ export async function executeExternalAction(env: Env, caller: ActionCaller, acti
     }
 }
 
-/** Pending actions of the human's agents, for the owner page: the oldest ones, or only `actionId` when it is given. */
-export async function pendingForOwner(tx: Transaction, humanId: string, now: bigint, actionId: string | null = null): Promise<OwnerExternalAction[]> {
+/** Pending actions of the human's agents, for the owner page: the oldest `limit`, or only `actionId` when it is given. */
+export async function pendingForOwner(tx: Transaction, humanId: string, now: bigint, actionId: string | null = null, limit = pendingActionsShownToOwner): Promise<OwnerExternalAction[]> {
     // The display name is the credential's current one; accountChanged says whether that credential still matches the plan, as the confirmation re-checks.
     const rows = (await tx.db.prepare(`SELECT x.action_id,x.account_id,x.provider,x.operation,x.content,x.credential_ref,x.credential_revision,
         x.target_account,x.plan_digest,CAST(x.created_at AS TEXT) created_at,CAST(x.expires_at AS TEXT) expires_at,c.target_display,
@@ -294,7 +295,7 @@ export async function pendingForOwner(tx: Transaction, humanId: string, now: big
         FROM external_actions x JOIN accounts a ON a.account_id=x.account_id JOIN external_credentials c ON c.account_id=x.account_id AND c.credential_ref=x.credential_ref
         WHERE a.human_id=? AND x.status='pending' AND x.expires_at>CAST(? AS INTEGER)${actionId === null ? '' : ' AND x.action_id=?'}
         ORDER BY x.created_at,x.action_id LIMIT ?`)
-        .bind(humanId, now.toString(), ...(actionId === null ? [] : [actionId]), pendingActionsShownToOwner).all<Row & {target_display: string; c_provider: string; c_revision: string; c_target_account: string; c_revoked_at: string | null; display_name: string | null}>()).results;
+        .bind(humanId, now.toString(), ...(actionId === null ? [] : [actionId]), limit).all<Row & {target_display: string; c_provider: string; c_revision: string; c_target_account: string; c_revoked_at: string | null; display_name: string | null}>()).results;
     const actions: OwnerExternalAction[] = [];
     for (const row of rows) {
         const media: OwnerExternalAction['media'] = [];
@@ -320,8 +321,9 @@ export type OwnerRecentAction = {actionId: string; agentId: string; agentDisplay
 /**
  * The human's agents' actions that stopped waiting in the last 7 days, newest change first, at most 20: decided, sent, failed or
  * unknown by their last change, and a plan left pending or approved past its expiry (expired) by that expiry. Only agents the human owns now.
+ * `limit` lets the overview read one more to tell whether any were left out.
  */
-export async function recentForOwner(tx: Transaction, humanId: string, now: bigint): Promise<OwnerRecentAction[]> {
+export async function recentForOwner(tx: Transaction, humanId: string, now: bigint, limit = recentActionsShownToOwner): Promise<OwnerRecentAction[]> {
     const since = (now - recentActionWindowTicks).toString(), at = now.toString();
     const rows = (await tx.db.prepare(`SELECT action_id,account_id,provider,operation,status,failure,expires_at,CAST(changed AS TEXT) changed_at,display_name FROM (SELECT x.action_id,x.account_id,x.provider,x.operation,x.status,x.failure,CAST(x.expires_at AS TEXT) expires_at,
         CASE WHEN x.status IN ('pending','approved') AND x.expires_at<=CAST(? AS INTEGER) THEN x.expires_at ELSE x.updated_at END changed,a.display_name
@@ -329,7 +331,7 @@ export async function recentForOwner(tx: Transaction, humanId: string, now: bigi
         WHERE a.human_id=? AND (x.status<>'pending' OR x.expires_at<=CAST(? AS INTEGER)))
         WHERE changed>CAST(? AS INTEGER) AND changed<=CAST(? AS INTEGER)
         ORDER BY changed DESC,action_id LIMIT ?`)
-        .bind(at, humanId, at, since, at, recentActionsShownToOwner)
+        .bind(at, humanId, at, since, at, limit)
         .all<{action_id: string; account_id: string; provider: string; operation: string; status: string; failure: string | null; expires_at: string; changed_at: string; display_name: string | null}>()).results;
     return rows.map(row => {
         const status = effectiveStatus(row.status, row.expires_at, now);

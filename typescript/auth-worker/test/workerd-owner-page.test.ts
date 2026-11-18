@@ -555,6 +555,26 @@ test("account_SentExternalAction_ListedUnderRecentActionsForItsOwnerOnly",{timeo
   assert.ok(!(await (await account(await sessionCookie(stranger))).text()).includes(action.actionId));
 });
 
+// More recent outcomes than the page lists: the page says only the newest are listed, through the real mailbox read.
+test("account_MoreRecentActionsThanListed_SaysSomeAreLeftOut",{timeout:90_000},async()=>{
+  const human=await seedHuman(),{action}=await proposeAction(human,"Many "+randomUUID());
+  const recentOf=(html:string)=>html.slice(html.indexOf("<h2>Recent actions</h2>"),html.indexOf("<h2>Apps that manage all your agents</h2>"));
+  const copies=async(n:number)=>(await db()).prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<?)
+    INSERT INTO external_actions(action_id,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,target_account,plan_digest,status,decided_at,decided_by,created_at,expires_at,updated_at)
+    SELECT lower(hex(randomblob(4)))||'-0000-4000-8000-'||printf('%012d',i),account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,
+    target_account,plan_digest,'rejected',created_at,?,created_at,expires_at,updated_at-i FROM external_actions,n WHERE action_id=?`).bind(n,human.humanId,action.actionId).run();
+  await copies(20);
+  const twenty=recentOf(await (await account(await sessionCookie(human))).text());
+  assert.equal(twenty.split("<li>").length-1,20);
+  assert.ok(!twenty.includes("most recent are listed"),"exactly as many as listed: no note");
+  await copies(1);
+  const more=recentOf(await (await account(await sessionCookie(human))).text());
+  assert.equal(more.split("<li>").length-1,20);
+  assert.ok(more.includes("<p>Only the 20 most recent are listed; older ones from the last 7 days are not shown here."),more);
+  const stranger=await seedHuman();
+  assert.ok(!recentOf(await (await account(await sessionCookie(stranger))).text()).includes("most recent are listed"));
+});
+
 test("account_ApproveExternalAction_Stale_RedirectsToGithubNoEffect",{timeout:60_000},async()=>{
   const human=await seedHuman(),{agent,action}=await proposeAction(human,"stale "+randomUUID());
   const stale=Date.now()-11*60_000;
