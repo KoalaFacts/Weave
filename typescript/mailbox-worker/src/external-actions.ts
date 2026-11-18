@@ -396,14 +396,21 @@ export function mediaIdsOf(content: string): string[] {
  * and for a sent action the platform's receipt and, when the effect is tracked after sending, the publication's state.
  */
 export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; receipt: string | null;
-    publication: PublicationView | null};
+    publication: PublicationView | null; about: OwnerSettledPlan};
+/**
+ * What the settled action was, so the owner who returns to its page sees which action it is: the agent, the operation, the
+ * account the plan bound (`targetDisplay` is the credential's name for it while the credential still points at that account,
+ * otherwise null) and the content exactly as proposed.
+ */
+export type OwnerSettledPlan = {agentId: string; agentDisplayName: string | null; provider: string; operation: string; targetAccount: string;
+    targetDisplay: string | null; content: string};
 /** The owner's page for one action: the pending action to decide, or what became of one of their own agents' actions. */
 export type OwnerActionPageView = {frozen: true} | {frozen: false; action: OwnerExternalAction | null; settled: OwnerSettledAction | null};
 
 /**
  * Owner RPC: one pending action of the human's agents, for the page that decides it, however many others are pending. An action
- * of the human's own agent that is no longer pending is described by `settled` (its status and stored failure code; once sent,
- * its receipt and tracked publication), so the owner who returns to the link sees what happened. Another human's action, an
+ * of the human's own agent that is no longer pending is described by `settled` (what it was, its status and stored failure code;
+ * once sent, its receipt and tracked publication), so the owner who returns to the link sees what happened. Another human's action, an
  * unknown one or a malformed ID is `action` and `settled` null alike; a frozen human sees only that.
  */
 export async function ownerPendingAction(env: Env, humanId: string, actionId: string, clock: () => bigint = nowUtc): Promise<OwnerActionPageView> {
@@ -423,8 +430,13 @@ export async function ownerPendingAction(env: Env, humanId: string, actionId: st
         const status = effectiveStatus(row.status, row.expires_at, now);
         if (status === 'pending') return none;
         const sent = status === 'completed';
+        const names = await tx.db.prepare(`SELECT a.display_name,c.target_account,c.target_display FROM accounts a
+            LEFT JOIN external_credentials c ON c.account_id=a.account_id AND c.credential_ref=? WHERE a.account_id=?`)
+            .bind(row.credential_ref, row.account_id).first<{display_name: string | null; target_account: string | null; target_display: string | null}>();
+        const about: OwnerSettledPlan = {agentId: row.account_id, agentDisplayName: names?.display_name ?? null, provider: row.provider, operation: row.operation,
+            targetAccount: row.target_account, targetDisplay: names?.target_account === row.target_account ? names.target_display : null, content: row.content};
         return {frozen: false as const, action: null, settled: {status, failure: row.failure, receipt: sent ? row.receipt : null,
-            publication: sent ? await readPublication(tx, actionId) : null}};
+            publication: sent ? await readPublication(tx, actionId) : null, about}};
     });
 }
 
