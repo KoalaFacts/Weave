@@ -134,12 +134,25 @@ function ownerGrantsSection(grants:readonly OwnerAppGrant[],tokens:ReadonlyMap<s
     esc(grant.createdAt)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
 }
 
+/**
+ * What disconnecting a credential does to the actions waiting for approval on it: they can never be approved (the confirm answers
+ * account-changed). Counted from the shown pending list only, so a cut list says "at least"; an action already flagged
+ * accountChanged is not counted again.
+ */
+function disconnectWarning(agentId:string,credentialRef:string,pending:Pending):string{
+  const count=pending.actions.filter(action=>action.agentId===agentId&&action.credentialRef===credentialRef&&!action.accountChanged).length;
+  if(count===0)return "";
+  return "<p>"+(pending.more?"At least ":"")+count+(count===1?" action waiting for your approval uses":" actions waiting for your approval use")+
+    " this account. Disconnecting it means "+(count===1?"that action":"those actions")+" can never be approved or sent.</p>";
+}
+type Pending={actions:readonly OwnerExternalAction[];more:boolean};
+
 /** The account each credential acts as is what the provider verified at connect time. Connect forms come from the platforms' own field lists. */
-function credentialsSection(agentId:string,credentials:OwnerCredential[],connectors:OwnerConnector[],tokens:ReadonlyMap<string,string>):string{
+function credentialsSection(agentId:string,credentials:OwnerCredential[],connectors:OwnerConnector[],tokens:ReadonlyMap<string,string>,pending:Pending):string{
   const connect=form("Connect YouTube","connect-youtube:"+agentId,tokens);
   const list=credentials.length===0?"<p>No connected accounts.</p>":"<ul>"+credentials.map(credential=>"<li>"+esc(credential.provider)+" as "+
     esc(credential.targetDisplay)+" (<code>"+esc(credential.targetAccount)+"</code>); credential <code>"+esc(credential.credentialRef)+"@"+
-    esc(credential.revision)+"</code>; connected "+esc(credential.connectedAt)+
+    esc(credential.revision)+"</code>; connected "+esc(credential.connectedAt)+disconnectWarning(agentId,credential.credentialRef,pending)+
     form("Disconnect","revoke-credential:"+agentId+":"+credential.credentialRef,tokens)+"</li>").join("")+"</ul>";
   const forms=connectors.map(connector=>{
     const token=tokens.get("connect-account:"+agentId+":"+connector.provider);
@@ -177,7 +190,8 @@ function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:Read
       "endorsed by "+fingerprint(request.endorsedBy)+
       "; expires "+esc(request.expiresAt)+form("Confirm","confirm-key:"+request.requestId,tokens)+
       form("Reject","reject-key:"+request.requestId,tokens)+"</li>").join("")+"</ul>"),
-    grantsSection(agent.grants,tokens),addressesSection(agent.addresses),credentialsSection(agent.agentId,agent.credentials,overview.connectors,tokens),
+    grantsSection(agent.grants,tokens),addressesSection(agent.addresses),credentialsSection(agent.agentId,agent.credentials,overview.connectors,tokens,
+      {actions:overview.externalActions,more:overview.moreExternalActions===true}),
     "<h4>Lost every key?</h4><p>A recovery code lets the agent add a new key without any existing key. It replaces any earlier code.</p>",
     form("Issue recovery code","issue-recovery-code:"+agent.agentId,tokens),"</section>"
   ].join("")).join("")+nav;
