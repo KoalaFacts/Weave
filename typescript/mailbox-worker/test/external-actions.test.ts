@@ -1123,9 +1123,15 @@ test('ownerOverview_RecentActions_AtMostTheNewestTwenty', () => scenario(async (
     for (const [i, id] of ids.entries()) await h.db.prepare("UPDATE external_actions SET status='rejected',decided_at=created_at,decided_by=?,updated_at=CAST(? AS INTEGER) WHERE action_id=?")
         .bind(humanId, (now - 50n + BigInt(i)).toString(), id).run();
     const overview = await ownerOverview(environment(h), humanId, null, () => now);
-    assert.equal(overview.frozen, false);
-    const listed = (overview as {recentActions: {actionId: string}[]}).recentActions.map(action => action.actionId);
-    assert.deepEqual(listed, ids.slice(1).reverse());
+    if (overview.frozen) throw Error('frozen');
+    assert.deepEqual(overview.recentActions.map(action => action.actionId), ids.slice(1).reverse());
+    assert.equal(overview.moreRecentActions, true, 'one more than is listed: the owner is told some were left out');
+    // Exactly as many as are listed: nothing left out.
+    await h.db.prepare("UPDATE external_actions SET updated_at=CAST(? AS INTEGER) WHERE action_id=?").bind((now - recentActionWindowTicks).toString(), ids[0]!).run();
+    const exact = await ownerOverview(environment(h), humanId, null, () => now);
+    if (exact.frozen) throw Error('frozen');
+    assert.equal(exact.recentActions.length, recentActionsShownToOwner);
+    assert.equal(exact.moreRecentActions, false);
 }));
 
 // The page for one action tells its owner what became of an action no longer waiting, and nobody else anything.
@@ -1216,6 +1222,8 @@ test('ownerPendingAction_ActionBeyondTheOverviewCap_FoundByIdForItsOwnerOnly', (
     const overview = await ownerOverview(environment(h), humanId);
     if (overview.frozen) throw Error('frozen');
     assert.equal(overview.externalActions.length, 200);
+    assert.equal(overview.moreExternalActions, true, 'the owner is told some were left out');
+    assert.equal(overview.moreRecentActions, false);
     assert.ok(!overview.externalActions.some(action => action.actionId === actionId), 'the newest is past the overview cap');
     const found = await ownerPendingAction(environment(h), humanId, actionId);
     assert.equal(found.frozen, false);
@@ -1223,6 +1231,13 @@ test('ownerPendingAction_ActionBeyondTheOverviewCap_FoundByIdForItsOwnerOnly', (
     const {humanId: stranger} = await ownedAgent(h);
     assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: null});
     assert.deepEqual(await ownerPendingAction(environment(h), humanId, 'not-an-id'), {frozen: false, action: null, settled: null});
+    // Exactly as many pending as are shown: nothing left out, so no note.
+    await h.db.prepare(`DELETE FROM external_actions WHERE action_id IN (SELECT action_id FROM external_actions WHERE account_id=? AND status='pending'
+        ORDER BY created_at DESC LIMIT (SELECT COUNT(*)-200 FROM external_actions WHERE account_id=? AND status='pending'))`).bind(agent.accountId, agent.accountId).run();
+    const exact = await ownerOverview(environment(h), humanId);
+    if (exact.frozen) throw Error('frozen');
+    assert.equal(exact.externalActions.length, 200);
+    assert.equal(exact.moreExternalActions, false);
     await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(humanId).run();
     assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: true});
 }));

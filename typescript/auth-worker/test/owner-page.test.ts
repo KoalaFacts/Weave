@@ -13,7 +13,7 @@ const now=1_800_000_000_000;
 const kid=()=>randomBytes(32).toString("base64url");
 const human:HumanSession={humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now};
 const iso=(ms:number)=>new Date(ms).toISOString();
-const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],nextAgents:null,externalActions:[],recentActions:[],revokedGrants:[],ownerGrants:[],revokedOwnerGrantIds:[],connectors:[],...over});
+const base=(over:Partial<Extract<OwnerOverview,{frozen:false}>>={}):OwnerOverview=>({frozen:false,bindingRequests:[],agents:[],nextAgents:null,externalActions:[],moreExternalActions:false,recentActions:[],moreRecentActions:false,revokedGrants:[],ownerGrants:[],revokedOwnerGrantIds:[],connectors:[],...over});
 const html=(response:Response)=>response.text();
 
 test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
@@ -353,6 +353,25 @@ test("ownerPage_RecentActions_NoneOrUnlistedStatus_NeverGuessed",async()=>{
     status:"pending" as never,failure:"leftover",changedAt:iso(now)}]}),human,new Map(),null,now).text();
   assert.match(odd,/: status not shown here; /);
   assert.ok(!odd.includes("leftover"));
+});
+
+// When the mailbox left some actions out of either list, the page says so instead of reading as the whole list; otherwise, or from
+// a mailbox that predates the flags, it says nothing.
+test("ownerPage_ListsLeftSomeOut_SaysOnlyHowManyAreShownAndWhereTheRestAre",async()=>{
+  const agentId=randomUUID();
+  const recentActions=[0,1].map(i=>({actionId:randomUUID(),agentId,agentDisplayName:null,provider:"x",operation:"publish_post",status:"rejected" as const,failure:null,changedAt:iso(now-i)}));
+  const both=await ownerPage(base({recentActions,moreExternalActions:true,moreRecentActions:true}),human,new Map(),null,now).text();
+  assert.match(both,/<p>Only the 0 oldest actions waiting for approval are shown\. Approve or reject some to see the rest here; each one's own page, where the app that proposed it links you, also works\.<\/p>/);
+  assert.match(both,/<p>Only the 2 most recent are listed; older ones from the last 7 days are not shown here\. Each one's own page, where the app that proposed it links you, still says what became of it\.<\/p>/);
+  assert.ok(both.indexOf("Only the 0 oldest")<both.indexOf("<h2>Recent actions</h2>")&&both.indexOf("Only the 2 most recent")>both.indexOf("<h2>Recent actions</h2>"),"each note under its own list");
+  const pendingOnly=await ownerPage(base({recentActions,moreExternalActions:true}),human,new Map(),null,now).text();
+  assert.ok(pendingOnly.includes("oldest actions waiting")&&!pendingOnly.includes("most recent are listed"));
+  const recentOnly=await ownerPage(base({recentActions,moreRecentActions:true}),human,new Map(),null,now).text();
+  assert.ok(!recentOnly.includes("oldest actions waiting")&&recentOnly.includes("most recent are listed"));
+  const complete=await ownerPage(base({recentActions}),human,new Map(),null,now).text();
+  assert.ok(!complete.includes("Only the "),"nothing left out, no note");
+  const older={...base({recentActions})} as Record<string,unknown>;delete older.moreExternalActions;delete older.moreRecentActions;
+  assert.ok(!(await ownerPage(older as OwnerOverview,human,new Map(),null,now).text()).includes("Only the "),"a mailbox without the flags adds no note");
 });
 
 // A not-sent action explains its stored failure code in plain words and says what the owner can do; a code the page does not

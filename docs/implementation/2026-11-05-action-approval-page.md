@@ -84,6 +84,11 @@ remains possible later for chat channels.
   that expiry, as expired. Each links to its own page above, which shows the rest. The mailbox overview adds
   `recentActions: {actionId, agentId, agentDisplayName, provider, operation, status, failure, changedAt}[]`; an auth
   Worker reading a mailbox without it lists none. Everything shown is escaped; another human's actions are never listed.
+- **Saying when a list left some out (2026-11-18).** `/account` shows at most the 200 oldest pending actions and the 20
+  most recent outcomes, and used to read as the whole list when there were more (likely with many owned agents). The
+  mailbox overview now reads one more of each and adds `moreExternalActions` and `moreRecentActions`; when true the page
+  says under that list that only the oldest N (or most recent N) are shown and that each action's own page, linked from
+  the app that proposed it, still works. A mailbox without the flags adds no note.
 - **No open redirect, no forgeable outcome.** A decision is answered directly with what that request just did
   (approved, rejected or the failure reason), and the owner is told they can close the page. Nothing is redirected to
   the app. The page never reads an outcome from its URL, so a link carrying `?result=approved` or `?result=rejected`
@@ -98,6 +103,11 @@ auth-worker workerd tests, against the real mailbox and authorization Workers:
   20 cap, the read's own clock, a pending plan only from its expiry, and other and former owners; nine mutants (owner
   filter, order, window edge, future changes, the expiry branch, the failure only on `failed`, escaping, the missing
   list, the link) each fail a test;
+- lists that left some out (2026-11-18): with 21 outcomes `/account` lists 20 and says only the 20 most recent are
+  listed; with exactly 20 it says nothing; another human sees no note. Mailbox tests pin both flags at the exact cap
+  (200 pending, 20 recent) and one over; mutants (`>=` for either flag, no extra row read for either list, no slice for
+  either list, the page's note shown for a missing flag, the pending note keyed on the recent flag, the recent note
+  counting the pending list) each fail a test;
 - no session or a stale one signs in and returns to exactly this page, and a query is dropped;
 - a malformed id gives 404; another method gives 405;
 - only the linked action is shown, and its forms post back to the page;
