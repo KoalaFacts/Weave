@@ -66,7 +66,8 @@ remains possible later for chat channels.
   bound (the provider-verified ID, with the credential's name for it only while that credential still points at that
   account, revoked or not) and the content exactly as proposed, all escaped. `settled` gains
   `about: {agentId, agentDisplayName, provider, operation, targetAccount, targetDisplay, content}`; an auth Worker reading a
-  mailbox without it, or a malformed one, shows the status alone. Another human still learns nothing.
+  mailbox without it, or a malformed one, shows the status alone. Another human still learns nothing; as for the status,
+  "own" is the agent's current owner, so a new owner also sees what the agent proposed before it passed to them.
 - **Recent actions on `/account` (2026-11-18).** The owner page lists, under "Recent actions", the actions of the agents
   the human owns now that stopped waiting in the last 7 days, newest change first, at most 20: decided, being sent, sent,
   not sent (with the stored failure code) or unknown by their last change, and a plan left pending past its expiry, by

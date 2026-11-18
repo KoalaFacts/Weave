@@ -1154,6 +1154,9 @@ test('ownerPendingAction_OwnSettledAction_DescribesThePlanAndTheAccountNameOnlyW
     await h.db.prepare("UPDATE external_credentials SET target_account='someone-else',target_display='Someone else' WHERE account_id=?").bind(agent.accountId).run();
     assert.deepEqual(await read() as {targetAccount: string; targetDisplay: string | null}, {agentId: agent.accountId, agentDisplayName: 'Release bot', provider: 'test-http',
         operation: 'publish_text', targetAccount: credential.target_account, targetDisplay: null, content: 'Episode <13> is live.'});
+    // A credential that no longer exists names nothing either.
+    await h.db.prepare('DELETE FROM external_credentials WHERE account_id=?').bind(agent.accountId).run();
+    assert.equal((await read() as {targetDisplay: string | null}).targetDisplay, null);
     const {humanId: stranger} = await ownedAgent(h);
     assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: null});
 }));
