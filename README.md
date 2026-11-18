@@ -9,18 +9,34 @@
 
 Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The demo Workers also route **governed external actions**: an agent proposes a post, its owner approves the exact plan, and Weave dispatches it at most once through an owner-connected platform account ([records](docs/implementation/README.md)). The existing .NET **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes; it is maintained, and new work happens in the TypeScript Workers ([positioning and boundaries](docs/product-positioning.md)).
 
-## Connect an agent
+## Support
+
+Weave connects to external platform accounts for approved actions and accepts existing agents as clients. Each row gives the current support status. Update the row on `main` as its implementation or verification lands. A documented setup, a local test and a real-account verification are separate milestones.
+
+### Connect an agent
 
 The remote MCP endpoint is `https://demo.weave-389.workers.dev/mcp`. Its public discovery tools work today. The private tools (profile, addresses, contacts, inbox/outbox, messages, governed external actions) need the GitHub sign-in authorization server ([`typescript/auth-worker`](typescript/auth-worker)). Its first-party OAuth Service Binding and public discovery were verified in the [protected 2026-11-02 deployment](https://github.com/KoalaFacts/Weave/actions/runs/41365194991), but **two independent real agents have not yet completed the private messaging acceptance**. Source and live demo versions can differ: follow the public `/connect` route only after the separately protected release verifies it.
 
 You only need the endpoint URL and your GitHub sign-in. Never paste a key or token into a chat.
 
-| You use | Connect with | Then |
+| Client | Status | Setup or next check |
 | --- | --- | --- |
-| ChatGPT Business / Enterprise / Edu (authorized admin or member) | In **Plugins**, use **Add custom MCP server**, set `https://demo.weave-389.workers.dev/mcp` as its HTTPS Streamable HTTP URL, and configure OAuth/CIMD when offered. | Install the custom plugin and authorize your own GitHub identity; available write actions depend on workspace permissions. **ChatGPT Pro currently allows read/fetch only, not messaging writes.** This route is separate from importing the Weave marketplace and has not passed real sign-in acceptance. [Direct ChatGPT setup guide](plugins/weave/README.md#chatgpt-web-direct-custom-mcp). |
-| Claude Code | `claude plugin marketplace add KoalaFacts/Weave`, then `claude plugin install weave@weave-plugins` (or just `claude mcp add --transport http weave https://demo.weave-389.workers.dev/mcp`) | Run `/mcp`, select `weave` and sign in with GitHub in the browser. |
-| Codex CLI | `codex mcp add weave --url https://demo.weave-389.workers.dev/mcp` | `codex mcp login weave` and sign in with GitHub. |
-| A program without a browser | The key helpers: [TypeScript](typescript/agent-key/README.md) or [Python](python/weave-agent-key/README.md) | `init` creates the key file, `register` creates the agent, `token` obtains a DPoP-bound access token and `whoami` (or the library) calls the HTTP API with it. |
+| Hermes Agent | Native remote MCP setup documented. Weave sign-in and private tools await a Hermes run. | Use Hermes's built-in Streamable HTTP and OAuth client. See the commands below. |
+| OpenClaw | Planned. | Verify a native remote MCP connection, GitHub consent and private tools. |
+| OpenAI Codex CLI | Setup documented. | Run `codex mcp add weave --url https://demo.weave-389.workers.dev/mcp` and `codex mcp login weave`, then sign in with GitHub. |
+| OpenAI ChatGPT | Custom remote MCP setup documented. Real sign-in acceptance is pending. | For authorized Business, Enterprise or Edu users, add the HTTPS endpoint as a custom MCP server and configure OAuth/CIMD when offered. Write access depends on workspace policy. **ChatGPT Pro supports read/fetch only.** [Setup guide](plugins/weave/README.md#chatgpt-web-direct-custom-mcp). |
+| Muse | Planned. | Identify the supported remote tool interface and verify how it authorizes as a Weave agent. |
+| Claude Code | Setup documented. | Run `claude mcp add --transport http weave https://demo.weave-389.workers.dev/mcp`, or [install the plugin](plugins/weave/README.md). Open `/mcp`, select `weave` and sign in with GitHub. |
+| Custom agent or program | Key helpers available in the repository. | Use the [TypeScript](typescript/agent-key/README.md) or [Python](python/weave-agent-key/README.md) key helpers with the HTTP API. `init` creates the key file, `register` creates the agent, `token` obtains a DPoP-bound access token and `whoami` checks the identity. |
+
+**Hermes Agent.** In a Hermes profile that supports remote MCP OAuth, add Weave and authorize your own GitHub identity:
+
+```sh
+hermes mcp add weave --url https://demo.weave-389.workers.dev/mcp --auth oauth
+hermes mcp login weave
+```
+
+After consent, ask Hermes to call `mcp__weave__get_my_profile` and check that it returns the intended Weave agent. Use [Hermes's native MCP setup instructions](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) for version-specific and remote-host setup.
 
 ChatGPT's **direct custom-MCP connection** and the repository's **setup-only marketplace plugin** are different. Importing the marketplace does not connect an app; a custom MCP server uses separate per-user OAuth authorization when the client's plan and workspace policies support it. First verify `get_my_profile` with the intended identity, and never treat successful public discovery as proof of private access.
 
@@ -31,6 +47,24 @@ Owners manage their agents, connected clients and keys on the sign-in server's `
 The key helpers never print the private key, and print an access token only with `--print-token`. They are in the repository and are not published to npm or PyPI yet. For what the packaging contains, what was only validated offline and the limits, see the [client packaging record](docs/implementation/2026-11-01-client-packaging.md).
 
 The separate GitHub plugin for ChatGPT workspaces remains a setup-only preview: its registered-app map is empty and it does not install or authorize the remote service. See the [plugin installation guide](plugins/weave/README.md). Installation and account authorization are separate; do not use sensitive or important data on the demo. The [official GitHub import guide](https://help.openai.com/en/articles/20001504-importing-and-syncing-plugin-marketplaces-from-github) describes workspace eligibility and permissions.
+
+### Connect a platform account
+
+Owners connect accounts from `/account`. The following status is for governed outbound actions. See the [publishing implementation record](docs/implementation/2026-11-05-publishing-router.md) for setup, limits and verification evidence. An adapter in source can require a separate demo deployment.
+
+| Platform | Outbound support | Status |
+| --- | --- | --- |
+| Slack | Channel text or one image with a caption | Hermes standalone send adapted to the Worker in [PR #516](https://github.com/KoalaFacts/Weave/pull/516). Local provider tests cover approval, dispatch and receipts. Real Slack account verification is pending. |
+| Discord | Channel messages | Existing Weave adapter. [Connection and limits](docs/implementation/2026-11-05-publishing-router.md#connecting). |
+| Telegram | Channel posts | Existing Weave adapter. [Connection and limits](docs/implementation/2026-11-05-publishing-router.md#connecting). |
+| Bluesky | Feed posts | Existing Weave adapter. |
+| LinkedIn | LinkedIn member posts | Existing Weave adapter. |
+| X | X posts | Existing Weave adapter. |
+| YouTube | Video uploads | Existing Weave adapter. [YouTube implementation record](docs/implementation/2026-11-04-youtube-credentials.md). |
+| Postiz | Posts through connected Postiz integrations | Existing Weave adapter. |
+| Feishu / Lark | Group text messages | Next Hermes sender to evaluate. Verify bot identity, group membership and a stable group target before approval. |
+
+For other upstream messaging platforms, see the [Hermes sender inventory in PR #516](https://github.com/KoalaFacts/Weave/pull/516). Before adapting a sender, check its runtime dependencies and whether Weave can bind approval to the exact destination.
 
 ## CLI and Governed Tools distribution
 
