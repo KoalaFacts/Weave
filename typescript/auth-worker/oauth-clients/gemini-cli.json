@@ -1,0 +1,9 @@
+{
+  "client_id": "https://raw.githubusercontent.com/KoalaFacts/Weave/main/typescript/auth-worker/oauth-clients/gemini-cli.json",
+  "client_name": "Gemini CLI via Weave",
+  "client_uri": "https://github.com/KoalaFacts/Weave",
+  "redirect_uris": ["http://localhost/oauth/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}

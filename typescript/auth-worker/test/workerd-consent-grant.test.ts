@@ -15,6 +15,8 @@ const issuer="https://auth.weave.example";
 const resource="https://demo.weave-389.workers.dev/mcp";
 // Exercise the deployed demo's public CIMD contract, not a seeded KV client.
 const clientId=demoOAuthClientId;
+const geminiMetadata=readFileSync(new URL("../oauth-clients/gemini-cli.json",import.meta.url),"utf8");
+const geminiClientId="https://raw.githubusercontent.com/KoalaFacts/Weave/main/typescript/auth-worker/oauth-clients/gemini-cli.json";
 const redirectUri="http://127.0.0.1:53621/callback";
 const redirectUriB="http://127.0.0.1:53622/callback";
 const scope="weave:addresses.read weave:addresses.write weave:contacts.read weave:contacts.write weave:messages.read weave:messages.send weave:messages.ack";
@@ -58,6 +60,7 @@ export default {
 // Fake GitHub: the code "gh-<id>" signs in GitHub user <id> as login "human<id>".
 function outbound(request:Request):Response|Promise<Response>{
   if(request.method==="GET"&&request.url===clientId)return demoOAuthClientMetadata();
+  if(request.method==="GET"&&request.url===geminiClientId)return new Response(geminiMetadata,{headers:{"Content-Type":"text/plain; charset=utf-8"}});
   return fakeGithub(request);
 }
 async function fakeGithub(request:Request):Promise<Response>{
@@ -154,15 +157,15 @@ async function stop(instance:Instance){
   await rm(instance.storage,{recursive:true,force:true});
 }
 
-type Authorization={url:URL;verifier:string;redirectUri:string;state:string};
-function authorization(redirect=redirectUri):Authorization{
+type Authorization={url:URL;verifier:string;redirectUri:string;state:string;clientId:string};
+function authorization(redirect=redirectUri,oauthClientId=clientId,requestedScope=scope):Authorization{
   const verifier=randomBytes(32).toString("base64url"),state="state-"+randomUUID();
   const url=new URL(issuer+"/authorize");
   for(const [k,v] of Object.entries({
-    response_type:"code",client_id:clientId,redirect_uri:redirect,scope,state,resource,
+    response_type:"code",client_id:oauthClientId,redirect_uri:redirect,scope:requestedScope,state,resource,
     code_challenge:createHash("sha256").update(verifier).digest("base64url"),code_challenge_method:"S256"
   }))url.searchParams.set(k,v);
-  return {url,verifier,redirectUri:redirect,state};
+  return {url,verifier,redirectUri:redirect,state,clientId:oauthClientId};
 }
 const cookiePairs=(headers:{getSetCookie():string[]},prefix:string)=>
   headers.getSetCookie().filter(x=>x.startsWith(prefix)).map(x=>x.split(";")[0]);
@@ -209,14 +212,14 @@ function codeFrom(response:{status:number;headers:{get(name:string):string|null}
   return code;
 }
 type Tokens={access_token:string;refresh_token:string};
-async function tokenRequest(mf:Miniflare,fields:Record<string,string>):Promise<Tokens>{
+async function tokenRequest(mf:Miniflare,fields:Record<string,string>,oauthClientId=clientId):Promise<Tokens>{
   // Discover the SDK's actual token endpoint; v1.2.4 defaults to /oauth/token.
   const metadata=await mf.dispatchFetch(issuer+"/.well-known/oauth-authorization-server");
   const {token_endpoint:tokenEndpoint}=await metadata.json() as {token_endpoint:string};
   assert.equal(new URL(tokenEndpoint).origin,issuer);
   const token=await mf.dispatchFetch(tokenEndpoint,{method:"POST",redirect:"manual",
     headers:{"Content-Type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams({...fields,client_id:clientId,resource}).toString()});
+    body:new URLSearchParams({...fields,client_id:oauthClientId,resource}).toString()});
   assert.equal(token.status,200,"actual AS must issue a resource-bound token for "+fields.grant_type);
   const grant=await token.json() as {access_token?:string;refresh_token?:string;expires_in?:number;resource?:string};
   assert.ok(grant.access_token);
@@ -226,7 +229,7 @@ async function tokenRequest(mf:Miniflare,fields:Record<string,string>):Promise<T
   return grant as Tokens;
 }
 async function exchangeTokens(mf:Miniflare,code:string,auth:Authorization){
-  return tokenRequest(mf,{grant_type:"authorization_code",code,redirect_uri:auth.redirectUri,code_verifier:auth.verifier});
+  return tokenRequest(mf,{grant_type:"authorization_code",code,redirect_uri:auth.redirectUri,code_verifier:auth.verifier},auth.clientId);
 }
 async function exchange(mf:Miniflare,code:string,auth:Authorization){
   return (await exchangeTokens(mf,code,auth)).access_token;
@@ -328,6 +331,28 @@ test("consent_NewAgent_IssuesTokenForThatAccount",{timeout:60_000},async()=>{
   const owner=await identify(mf,token);
   assert.equal(owner.status,200,"real resource must accept the AS-issued token");
   assert.deepEqual(await owner.json(),{accountId});
+});
+
+test("consent_GeminiCliPublicMetadata_PinsLoopbackAndGrantsPrivateProfile",{timeout:60_000},async()=>{
+  const {mf}=shared;
+  const requested="weave:addresses.read offline_access";
+  const auth=authorization("http://localhost:43127/oauth/callback",geminiClientId,requested);
+  const substituted=authorization("http://localhost:43127/different-callback",geminiClientId,requested);
+  const refused=await mf.dispatchFetch(substituted.url.href,{redirect:"manual"});
+  assert.equal(refused.status,400);
+  assert.equal(refused.headers.get("location"),null,"no redirect to an unregistered path");
+
+  const metadata=await (await mf.dispatchFetch(issuer+"/.well-known/oauth-authorization-server")).json() as Record<string,unknown>;
+  assert.equal(metadata.client_id_metadata_document_supported,true);
+  assert.equal(metadata.registration_endpoint,undefined);
+  const session=await signIn(mf,auth,7410);
+  const consent=await openConsent(mf,auth,session);
+  assert.match(consent.html,/Gemini CLI via Weave/);
+  const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Gemini acceptance"});
+  const token=await exchange(mf,codeFrom(response,auth),auth);
+  const [accountId]=await agentsOf(mf,await humanIdOf(mf,7410));
+  assert.ok(accountId);
+  assert.equal(await profileId(mf,token),accountId,"the private tool returns the agent created by this owner's consent");
 });
 
 test("consent_SecondClientPicksExistingAgent_SameAccountId",{timeout:60_000},async()=>{
