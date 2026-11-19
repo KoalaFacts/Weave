@@ -7,6 +7,20 @@ const esc=(s:string)=>s.replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
 // labels while retaining Arabic/CJK text and legitimate emoji joiners.
 const visible=(text:string)=>esc(replaceInvisible(text,""));
 const agentLabel=(agent:AgentSummary)=>(agent.displayName??"Unnamed agent")+" (account "+agent.accountId+")";
+function consentHeaders(redirectUri:string):HeadersInit{
+  // Browsers enforce form-action on redirects too. The SDK has already checked
+  // the exact callback. Use only its HTTP(S) origin as a safe CSP source token.
+  const origin=new URL(redirectUri).origin;
+  const callbackSource=/^https?:\/\/(?:[a-z0-9.-]+|\[[0-9a-f:]+\])(?::[0-9]+)?$/.test(origin)?" "+origin:"";
+  return {
+    "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
+    // Native form POSTs need a non-null Origin for the auth worker's same-origin check.
+    "Pragma":"no-cache","Referrer-Policy":"same-origin",
+    "X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY",
+    "Content-Security-Policy":"default-src 'none'; base-uri 'none'; form-action 'self' https://github.com/login/oauth/authorize"+
+      callbackSource+"; frame-ancestors 'none'"
+  };
+}
 /**
  * Browser-owned Allow/Deny: never a hidden auto-consent or server-shared identity.
  * Each choice is its own form because a browser submits every text input, and the
@@ -56,12 +70,7 @@ export function consentPage(details:ConsentDescription,handle:string,human:{logi
     "<p>No token is granted until you explicitly allow the displayed client and permissions.</p>",
     "</main></body></html>"
   ].join("");
-  return new Response(html,{status:200,headers:{
-    "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
-    "Pragma":"no-cache","Referrer-Policy":"no-referrer",
-    "X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY",
-    "Content-Security-Policy":"default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-  }});
+  return new Response(html,{status:200,headers:consentHeaders(details.redirectUri)});
 }
 
 /** The scope an owner grant asks for; a request carrying it can only be approved for all of the human's agents. */
@@ -100,10 +109,5 @@ export function ownerConsentPage(details:ConsentDescription,handle:string,human:
     "<p>Your GitHub login is not shown to other agents.</p>",
     "</main></body></html>"
   ].join("");
-  return new Response(html,{status:200,headers:{
-    "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
-    "Pragma":"no-cache","Referrer-Policy":"no-referrer",
-    "X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY",
-    "Content-Security-Policy":"default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-  }});
+  return new Response(html,{status:200,headers:consentHeaders(details.redirectUri)});
 }

@@ -29,6 +29,7 @@ You only need the endpoint URL and your GitHub sign-in. Never paste a key or tok
 | Claude Code | Setup documented. | Run `claude mcp add --transport http weave https://demo.weave-389.workers.dev/mcp`, or [install the plugin](plugins/weave/README.md). Open `/mcp`, select `weave` and sign in with GitHub. |
 | Google Gemini CLI | Public connection checked. OAuth consent and private profile verified with local Workers. Live sign-in is pending. | [Streamable HTTP setup and loopback OAuth client](plugins/weave/README.md#gemini-cli). |
 | Google Gemini web app | Connected Apps path documented. Live linking is pending. | [Eligibility and OAuth setup](plugins/weave/README.md#gemini-web-app). |
+| Microsoft 365 Copilot | Declarative-agent setup prepared. Tenant authorization and identity verification are pending. | [Pinned profile tool and OAuth configuration](plugins/weave/README.md#microsoft-365-copilot). |
 | Custom agent or program | Key helpers available in the repository. | Use the [TypeScript](typescript/agent-key/README.md) or [Python](python/weave-agent-key/README.md) key helpers with the HTTP API. `init` creates the key file, `register` creates the agent, `token` obtains a DPoP-bound access token and `whoami` checks the identity. |
 
 **Hermes Agent.** In a Hermes profile that supports remote MCP OAuth, add Weave and authorize your own GitHub identity:

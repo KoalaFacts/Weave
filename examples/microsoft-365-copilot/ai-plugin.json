@@ -1,0 +1,31 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/copilot/plugin/v2.4/schema.json",
+  "schema_version": "v2.4",
+  "namespace": "WeaveAgentIdentity",
+  "name_for_human": "Weave Agent Identity",
+  "description_for_human": "Identify the Weave agent you selected during sign-in.",
+  "description_for_model": "Call get_my_profile to retrieve the selected Weave agent's account ID. Return only the ID in the tool response. If the tool fails, report that the identity could not be verified.",
+  "functions": [
+    {"name": "get_my_profile", "description": "Read the selected Weave agent's account ID."}
+  ],
+  "runtimes": [
+    {
+      "type": "RemoteMCPServer",
+      "auth": {"type": "OAuthPluginVault", "reference_id": "REPLACE_WITH_TEST_AUTH_CONFIG_ID"},
+      "spec": {
+        "url": "https://demo.weave-389.workers.dev/mcp",
+        "mcp_tool_description": {
+          "tools": [
+            {
+              "name": "get_my_profile",
+              "description": "Return the immutable account ID associated with the current OAuth token for multi-account recognition.",
+              "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false},
+              "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
+            }
+          ]
+        }
+      },
+      "run_for_functions": ["get_my_profile"]
+    }
+  ]
+}

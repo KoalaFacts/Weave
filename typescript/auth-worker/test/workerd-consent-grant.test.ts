@@ -245,12 +245,12 @@ async function authorizeAgent(mf:Miniflare,githubId:number,agent:string,agentNam
   return {token,session,accountId:await profileId(mf,token)};
 }
 let rpcId=100;
-async function mcpCall(mf:Miniflare,token:string,name:string,args:Record<string,unknown>={}){
+async function mcpCall(mf:Miniflare,token:string|null,name:string,args:Record<string,unknown>={}){
   const mailbox=await mf.getWorker("weave-mailbox-regression");
   return mailbox.fetch(resource,{
     method:"POST",headers:{"Content-Type":"application/json",
       Accept:"application/json, text/event-stream",
-      "MCP-Protocol-Version":"2025-11-25",Authorization:"Bearer "+token},
+      "MCP-Protocol-Version":"2025-11-25",...token===null?{}:{Authorization:"Bearer "+token}},
     body:JSON.stringify({jsonrpc:"2.0",id:rpcId++,method:"tools/call",params:{name,arguments:args}})
   });
 }
@@ -353,6 +353,55 @@ test("consent_GeminiCliPublicMetadata_PinsLoopbackAndGrantsPrivateProfile",{time
   const [accountId]=await agentsOf(mf,await humanIdOf(mf,7410));
   assert.ok(accountId);
   assert.equal(await profileId(mf,token),accountId,"the private tool returns the agent created by this owner's consent");
+});
+
+test("consent_Microsoft365CopilotCallback_ConfidentialClientReadsSelectedProfile",{timeout:60_000},async()=>{
+  const callback="https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect";
+  const readScope="weave:addresses.read";
+  // Provision a confidential client through the SDK in local workerd only.
+  const limiter=(namespace:string)=>({type:"rate-limit",namespace,simple:{limit:10,period:60}});
+  const instance=await start({REGISTRATION_LIMITER:limiter("copilot-test-ip"),REGISTRATION_GLOBAL_LIMITER:limiter("copilot-test-global")});
+  try{
+    const {mf}=instance;
+    const registration=await mf.dispatchFetch(issuer+"/register",{method:"POST",
+      headers:{"Content-Type":"application/json","CF-Connecting-IP":"203.0.113.10"},
+      body:JSON.stringify({client_name:"Microsoft 365 Copilot acceptance",redirect_uris:[callback]})});
+    assert.equal(registration.status,201);
+    const {client_id,client_secret}=await registration.json() as {client_id?:string;client_secret?:string};
+    assert.ok(client_id&&client_secret);
+
+    const substituted=authorization(callback+"/other",client_id,readScope);
+    const refused=await mf.dispatchFetch(substituted.url.href,{redirect:"manual"});
+    assert.equal(refused.status,400);
+    assert.equal(refused.headers.get("location"),null);
+    assert.equal((await mcpCall(mf,null,"get_my_profile")).status,401);
+
+    const auth=authorization(callback,client_id,readScope);
+    // Static Copilot setup supplies the resource on the configured authorization URL.
+    // The token request can inherit the resource already bound to this grant.
+    auth.url.searchParams.delete("resource");
+    assert.equal((await mf.dispatchFetch(auth.url.href,{redirect:"manual"})).status,400);
+    auth.url.searchParams.set("resource",resource);
+    const session=await signIn(mf,auth,7411);
+    const consent=await openConsent(mf,auth,session);
+    const approved=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Copilot acceptance"});
+    assert.equal(approved.headers.get("referrer-policy"),"no-referrer");
+    const form=new URLSearchParams({grant_type:"authorization_code",code:codeFrom(approved,auth),
+      redirect_uri:callback,code_verifier:auth.verifier,client_id});
+    const redeem=()=>mf.dispatchFetch(issuer+"/oauth/token",{method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},body:form.toString()});
+    const missingSecret=await redeem();
+    assert.equal((await missingSecret.json() as {error?:string}).error,"invalid_client");
+    form.set("client_secret",client_secret);
+    const issued=await redeem();
+    assert.equal(issued.status,200);
+    const grant=await issued.json() as {access_token:string;scope:string;resource:string};
+    assert.equal(grant.scope,readScope);
+    assert.equal(grant.resource,resource);
+    const [accountId]=await agentsOf(mf,await humanIdOf(mf,7411));
+    assert.ok(accountId);
+    assert.equal(await profileId(mf,grant.access_token),accountId);
+  }finally{await stop(instance);}
 });
 
 test("consent_SecondClientPicksExistingAgent_SameAccountId",{timeout:60_000},async()=>{
