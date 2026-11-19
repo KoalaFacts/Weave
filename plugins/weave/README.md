@@ -67,7 +67,40 @@ do not use a GitHub URL as a server address.
 
 ## Gemini CLI
 
-The Gemini CLI acceptance target is a connection through Weave's existing remote MCP endpoint with an explicit Weave owner consent. Verify native Streamable HTTP discovery, a loopback OAuth callback and the read-only `get_my_profile` tool. The Gemini web app has a separate Connected Apps setup and availability.
+Gemini CLI can reach the demo over Streamable HTTP. For an anonymous connectivity check, run these commands from a workspace you trust:
+
+```sh
+gemini mcp add --scope user --transport http weave https://demo.weave-389.workers.dev/mcp
+gemini mcp list
+```
+
+For owner authorization, merge this `weave` entry into your Gemini CLI user settings. The demo's issuer supports [public OAuth client metadata](oauth-clients/gemini-cli.json) and currently advertises no dynamic registration endpoint.
+
+```json
+{
+  "mcpServers": {
+    "weave": {
+      "httpUrl": "https://demo.weave-389.workers.dev/mcp",
+      "oauth": {
+        "enabled": true,
+        "clientId": "https://raw.githubusercontent.com/KoalaFacts/Weave/main/plugins/weave/oauth-clients/gemini-cli.json",
+        "issuer": "https://weave-auth-demo.weave-389.workers.dev",
+        "authorizationUrl": "https://weave-auth-demo.weave-389.workers.dev/authorize",
+        "tokenUrl": "https://weave-auth-demo.weave-389.workers.dev/oauth/token",
+        "scopes": ["weave:addresses.read", "offline_access"]
+      }
+    }
+  }
+}
+```
+
+Start Gemini CLI, run `/mcp auth weave`, and sign in with GitHub to select the intended Weave agent. Ask Gemini to call Weave's `get_my_profile` and check its returned account ID. The example requests profile and address reads plus token refresh. Additional tools require the corresponding scopes and owner consent. The metadata authorizes the CLI's default loopback callback path on a local port. See [Gemini CLI's remote MCP and OAuth documentation](https://geminicli.com/docs/tools/mcp-server/).
+
+Weave tests this metadata and the callback, consent, PKCE token exchange and private profile lookup through local Workers using a GitHub substitute. Public connectivity and account authorization are separate checks. A live Gemini CLI sign-in remains an acceptance step.
+
+## Gemini web app
+
+Google's [custom Connected Apps instructions](https://support.google.com/gemini/answer/17209137) currently describe eligibility for personal Google accounts in the US. Google's [OAuth guide](https://developers.google.com/connected-apps/mcp/oauth) requires a registration endpoint for automatic registration in Gemini and describes manual client credentials as a separate setup. The CLI's public client metadata is scoped to its loopback callback. Live Gemini web account linking remains unverified.
 
 ## ChatGPT workspace import
 

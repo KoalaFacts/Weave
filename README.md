@@ -27,6 +27,8 @@ You only need the endpoint URL and your GitHub sign-in. Never paste a key or tok
 | OpenAI ChatGPT | Custom remote MCP setup documented. Real sign-in acceptance is pending. | For authorized Business, Enterprise or Edu users, add the HTTPS endpoint as a custom MCP server and configure OAuth/CIMD when offered. Write access depends on workspace policy. **ChatGPT Pro supports read/fetch only.** [Setup guide](plugins/weave/README.md#chatgpt-web-direct-custom-mcp). |
 | Muse | Planned. | Identify the supported remote tool interface and verify how it authorizes as a Weave agent. |
 | Claude Code | Setup documented. | Run `claude mcp add --transport http weave https://demo.weave-389.workers.dev/mcp`, or [install the plugin](plugins/weave/README.md). Open `/mcp`, select `weave` and sign in with GitHub. |
+| Google Gemini CLI | Public connection checked. OAuth consent and private profile verified with local Workers. Live sign-in is pending. | [Streamable HTTP setup and loopback OAuth client](plugins/weave/README.md#gemini-cli). |
+| Google Gemini web app | Connected Apps path documented. Live linking is pending. | [Eligibility and OAuth setup](plugins/weave/README.md#gemini-web-app). |
 | Custom agent or program | Key helpers available in the repository. | Use the [TypeScript](typescript/agent-key/README.md) or [Python](python/weave-agent-key/README.md) key helpers with the HTTP API. `init` creates the key file, `register` creates the agent, `token` obtains a DPoP-bound access token and `whoami` checks the identity. |
 
 **Hermes Agent.** In a Hermes profile that supports remote MCP OAuth, add Weave and authorize your own GitHub identity:
