@@ -385,6 +385,7 @@ test("consent_Microsoft365CopilotCallback_ConfidentialClientReadsSelectedProfile
     const session=await signIn(mf,auth,7411);
     const consent=await openConsent(mf,auth,session);
     const approved=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Copilot acceptance"});
+    assert.equal(approved.headers.get("referrer-policy"),"no-referrer");
     const form=new URLSearchParams({grant_type:"authorization_code",code:codeFrom(approved,auth),
       redirect_uri:callback,code_verifier:auth.verifier,client_id});
     const redeem=()=>mf.dispatchFetch(issuer+"/oauth/token",{method:"POST",

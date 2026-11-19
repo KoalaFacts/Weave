@@ -11,6 +11,7 @@ const consentRequest=(body:string)=>new Request("https://auth.example/authorize"
 const details={
   clientName:"<script>alert(1)</script>",
   clientDomain:'evil.example"><img src=x>',
+  redirectUri:"http://127.0.0.1:32560/oauth/callback",
   redirectHost:"127.0.0.1",redirectIsLoopback:true,
   scope:['weave:messages.send"><svg onload=x>']
 } as Parameters<typeof consentPage>[0];
@@ -114,8 +115,9 @@ test("consentPage_UntrustedClient_EscapesMetadataAndKeepsHeaders",async()=>{
   assert.match(html,/name="decision" value="approve"/);
   assert.match(html,/name="decision" value="deny"/);
   assert.match(response.headers.get("content-security-policy")??"",/frame-ancestors 'none'/);
-  assert.match(response.headers.get("content-security-policy")??"",/form-action 'self'/);
-  assert.equal(response.headers.get("referrer-policy"),"no-referrer");
+  assert.match(response.headers.get("content-security-policy")??"",
+    /form-action 'self' https:\/\/github\.com\/login\/oauth\/authorize http:\/\/127\.0\.0\.1:32560;/);
+  assert.equal(response.headers.get("referrer-policy"),"same-origin");
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   const unverified=await consentPage({...details,clientDomain:undefined},createChallenge(),{login:"alice"},agentPage([]),"x").text();
   assert.match(unverified,/Self-registered client; its name is not independently verified/);
@@ -204,7 +206,10 @@ test("ownerConsentPage_SaysWhatTheAppMayAndMayNotDo_ApprovesOnlyAll",async()=>{
   const html=await response.text();
   assert.equal(response.status,200);
   assert.equal(response.headers.get("cache-control"),"no-store");
+  assert.equal(response.headers.get("referrer-policy"),"same-origin");
   assert.match(response.headers.get("content-security-policy")!,/frame-ancestors 'none'/);
+  assert.match(response.headers.get("content-security-policy")??"",
+    /form-action 'self' https:\/\/github\.com\/login\/oauth\/authorize http:\/\/127\.0\.0\.1:32560;/);
   assert.ok(!html.includes("<script>")&&!html.includes("<img")&&!html.includes("<b>alice"),"client metadata and login are escaped");
   assert.match(html,/manage all of your Weave agents/);
   assert.match(html,/now or later/);
