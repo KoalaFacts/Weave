@@ -55,6 +55,7 @@ Owners connect accounts from `/account`. The following status is for governed ou
 | Platform | Outbound support | Status |
 | --- | --- | --- |
 | Slack | Channel text or one image with a caption | Hermes standalone send adapted to the Worker in [PR #516](https://github.com/KoalaFacts/Weave/pull/516). Local provider tests cover approval, dispatch and receipts. Real Slack account verification is pending. |
+| Microsoft Teams | Text in an existing commercial Teams conversation | [Hermes standalone send adapted to the Worker](docs/implementation/2026-11-05-publishing-router.md#teams-conversation-text). Local Worker verification covers connection, approval and dispatch. Real Teams account verification is pending. |
 | Discord | Channel messages | Existing Weave adapter. [Connection and limits](docs/implementation/2026-11-05-publishing-router.md#connecting). |
 | Telegram | Channel posts | Existing Weave adapter. [Connection and limits](docs/implementation/2026-11-05-publishing-router.md#connecting). |
 | Bluesky | Feed posts | Existing Weave adapter. |

@@ -90,9 +90,33 @@ function fakeSlack(request:Request):Response|null{
     return Response.json({ok:true,channel:{id:slackChannel,name:"publish-test",is_channel:true,is_member:true}});
   return null;
 }
+const teamsConnection={
+  tenantId:"11111111-1111-4111-8111-111111111111",
+  clientId:"22222222-2222-4222-8222-222222222222",
+  clientSecret:"teams-owner-form-fixture",
+  serviceUrl:"https://smba.trafficmanager.net/teams/",
+  conversationId:"19:owner-form@thread.tacv2"
+};
+const teamsToken="teams-test-access-token";
+async function fakeTeams(request:Request):Promise<Response|null>{
+  const {tenantId,clientId,clientSecret,serviceUrl,conversationId}=teamsConnection;
+  if(request.method==="POST"&&request.url==="https://login.microsoftonline.com/"+tenantId+"/oauth2/v2.0/token"){
+    const form=new URLSearchParams(await request.text());
+    if(form.get("client_id")!==clientId||form.get("client_secret")!==clientSecret
+       ||form.get("grant_type")!=="client_credentials"||form.get("scope")!=="https://api.botframework.com/.default")
+      return new Response(null,{status:401});
+    return Response.json({access_token:teamsToken});
+  }
+  if(request.method==="GET"&&request.url===serviceUrl+"v3/conversations/"+encodeURIComponent(conversationId)+"/pagedmembers?pageSize=1")
+    return request.headers.get("authorization")==="Bearer "+teamsToken
+      ?Response.json({members:[{id:"connected-member"}]}):new Response(null,{status:401});
+  return null;
+}
 async function mailboxOutbound(request:Request):Promise<Response>{
   const slack=fakeSlack(request);
   if(slack)return slack;
+  const teams=await fakeTeams(request);
+  if(teams)return teams;
   const linkedin=fakeLinkedIn(request);
   if(linkedin)return linkedin;
   const google=await fakeGoogle(request);
@@ -873,6 +897,25 @@ test("connectSlack_OwnerSubmitsBotToken_StoresOnlyVerifiedChannelCredential",{ti
   const page=await (await account(await sessionCookie(human))).text();
   assert.ok(page.includes("slack as Slack test workspace / #publish-test ("+slackChannel+")"));
   assert.ok(!page.includes(slackBotToken),"the token is never rendered");
+});
+
+test("connectTeams_OwnerSubmitsSingleTenantBot_StoresOnlyTheVerifiedConversation",{timeout:90_000},async()=>{
+  const human=await seedHuman(),agent=await ownedAgent(human,"teams publisher");
+  const token=connectToken(await (await account(await sessionCookie(human))).text(),"Microsoft Teams");
+  const refused=await postConnect(human,token,{...teamsConnection,conversationId:"19:unverified@thread.tacv2"});
+  assert.equal(refused.headers.get("location"),"/account?result=provider-refused");
+  assert.equal(await (await db()).prepare("SELECT count(*) n FROM external_credentials WHERE account_id=?").bind(agent.accountId).first<number>("n"),0);
+  const fresh=connectToken(await (await account(await sessionCookie(human))).text(),"Microsoft Teams");
+  const connected=await postConnect(human,fresh,teamsConnection);
+  assert.equal(connected.headers.get("location"),"/account?result=account-connected");
+  const {tenantId,clientId,serviceUrl,conversationId,clientSecret}=teamsConnection;
+  const target=[tenantId,clientId,conversationId,serviceUrl].join("|");
+  const ref="teams:"+createHash("sha256").update(target).digest("base64url");
+  const rows=(await (await db()).prepare("SELECT credential_ref,target_account,secret IS NOT NULL sealed FROM external_credentials WHERE account_id=?").bind(agent.accountId).all()).results;
+  assert.deepEqual(rows,[{credential_ref:ref,target_account:target,sealed:1}]);
+  const page=await (await account(await sessionCookie(human))).text();
+  assert.ok(page.includes("teams as Teams "+conversationId+" / Bot "+clientId+" / Tenant "+tenantId));
+  assert.ok(!page.includes(clientSecret)&&!page.includes(teamsToken),"neither secret nor Bot Framework token is rendered");
 });
 
 test("connectPostiz_OwnerSubmitsKey_ChannelsStoredSealedAndListed",{timeout:90_000},async()=>{
