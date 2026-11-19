@@ -102,6 +102,24 @@ Weave tests this metadata and the callback, consent, PKCE token exchange and pri
 
 Google's [custom Connected Apps instructions](https://support.google.com/gemini/answer/17209137) currently describe eligibility for personal Google accounts in the US. Google's [OAuth guide](https://developers.google.com/connected-apps/mcp/oauth) requires a registration endpoint for automatic registration in Gemini and describes manual client credentials as a separate setup. The CLI's public client metadata is scoped to its loopback callback. Live Gemini web account linking remains unverified.
 
+## Microsoft 365 Copilot
+
+Use a declarative agent in an authorized Microsoft 365 test tenant with custom app upload and Copilot access enabled. Scaffold the agent using Microsoft's [declarative-agent MCP walkthrough](https://learn.microsoft.com/en-us/plugins/build-mcp-plugins) and use this repository's [MCP action manifest](../../examples/microsoft-365-copilot/ai-plugin.json) as its action. The manifest pins `get_my_profile` and uses the tenant's Microsoft Enterprise token store.
+
+Use a confidential client provisioned for testing with an approved Weave OAuth issuer. Register Microsoft's exact callback `https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect`. The public Weave demo currently advertises no dynamic registration endpoint. The endpoint values for that issuer are shown here. Live confidential-client provisioning and tenant sign-in are pending.
+
+| OAuth configuration field | Value |
+| --- | --- |
+| Base URL | `https://demo.weave-389.workers.dev/mcp` |
+| Authorization endpoint | `https://weave-auth-demo.weave-389.workers.dev/authorize?resource=https%3A%2F%2Fdemo.weave-389.workers.dev%2Fmcp` |
+| Token and refresh endpoint | `https://weave-auth-demo.weave-389.workers.dev/oauth/token` |
+| Scope | `weave:addresses.read` |
+| PKCE | S256 |
+
+In Microsoft Developer Portal, create the OAuth configuration using the test client's credentials, then put only its configuration ID in `reference_id` in your local package. Follow [Microsoft's OAuth setup](https://learn.microsoft.com/en-us/plugins/plugin-authentication-oauth) and sideload for the test user. In Microsoft 365 Copilot, open the agent and ask it to call `get_my_profile`. Sign in to Weave, select the test agent, and compare the returned `id` with that agent's ID. The authorization request must contain the Weave MCP resource exactly once. Confirm Microsoft preserves it in the real sign-in flow.
+
+Local Workers exercise the fixed callback, confidential code redemption and selected account ID with a GitHub substitute. Live Microsoft 365 Copilot authorization and tool invocation still require tenant verification.
+
 ## ChatGPT workspace import
 
 This route requires a workspace with GitHub marketplace import enabled and the
