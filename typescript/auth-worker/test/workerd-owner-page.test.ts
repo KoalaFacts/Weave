@@ -107,7 +107,7 @@ async function fakeTeams(request:Request):Promise<Response|null>{
       return new Response(null,{status:401});
     return Response.json({access_token:teamsToken});
   }
-  if(request.method==="GET"&&request.url===serviceUrl+"v3/conversations/"+encodeURIComponent(conversationId)+"/pagedmembers?pageSize=1")
+  if(request.method==="GET"&&request.url===serviceUrl+"v3/conversations/"+encodeURIComponent(conversationId)+"/pagedmembers?pageSize=50")
     return request.headers.get("authorization")==="Bearer "+teamsToken
       ?Response.json({members:[{id:"connected-member"}]}):new Response(null,{status:401});
   return null;

@@ -97,7 +97,8 @@ async function verify(fields: Readonly<Record<string, string>>) {
     if (!target || !secretPattern.test(secret)) return null;
     const token = await botToken(target, secret);
     if (!token) return null;
-    const response = await fetch(conversationUrl(target) + '/pagedmembers?pageSize=1', {
+    // Teams accepts a minimum page size of 50 for this roster endpoint.
+    const response = await fetch(conversationUrl(target) + '/pagedmembers?pageSize=50', {
         redirect: 'manual', signal: AbortSignal.timeout(timeoutMs), headers: {authorization: 'Bearer ' + token}
     });
     if (response.status !== 200) { drop(response); return null; }

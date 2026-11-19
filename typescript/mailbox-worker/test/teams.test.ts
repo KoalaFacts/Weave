@@ -19,7 +19,7 @@ const display = `Teams ${conversationId} / Bot ${clientId} / Tenant ${tenantId}`
 const credentialRef = 'teams:' + createHash('sha256').update(target).digest('base64url');
 const tokenUrl = 'https://login.microsoftonline.com/' + tenantId + '/oauth2/v2.0/token';
 const conversationUrl = serviceUrl + 'v3/conversations/' + encodeURIComponent(conversationId);
-const membersUrl = conversationUrl + '/pagedmembers?pageSize=1';
+const membersUrl = conversationUrl + '/pagedmembers?pageSize=50';
 const activityUrl = conversationUrl + '/activities';
 
 type Call = {method: string; url: string; authorization: string | null; body: unknown};
