@@ -65,6 +65,10 @@ the registration above.
 The public demo homepage/registry and public `/mcp` are different routes;
 do not use a GitHub URL as a server address.
 
+## Gemini CLI
+
+The Gemini CLI acceptance target is a connection through Weave's existing remote MCP endpoint with an explicit Weave owner consent. Verify native Streamable HTTP discovery, a loopback OAuth callback and the read-only `get_my_profile` tool. The Gemini web app has a separate Connected Apps setup and availability.
+
 ## ChatGPT workspace import
 
 This route requires a workspace with GitHub marketplace import enabled and the
