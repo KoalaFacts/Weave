@@ -1,5 +1,5 @@
 {
-  "client_id": "https://raw.githubusercontent.com/KoalaFacts/Weave/main/plugins/weave/oauth-clients/gemini-cli.json",
+  "client_id": "https://raw.githubusercontent.com/KoalaFacts/Weave/main/typescript/auth-worker/oauth-clients/gemini-cli.json",
   "client_name": "Gemini CLI via Weave",
   "client_uri": "https://github.com/KoalaFacts/Weave",
   "redirect_uris": ["http://localhost/oauth/callback"],

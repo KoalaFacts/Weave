@@ -15,8 +15,8 @@ const issuer="https://auth.weave.example";
 const resource="https://demo.weave-389.workers.dev/mcp";
 // Exercise the deployed demo's public CIMD contract, not a seeded KV client.
 const clientId=demoOAuthClientId;
-const geminiMetadata=readFileSync(new URL("../../../plugins/weave/oauth-clients/gemini-cli.json",import.meta.url),"utf8");
-const geminiClientId="https://raw.githubusercontent.com/KoalaFacts/Weave/main/plugins/weave/oauth-clients/gemini-cli.json";
+const geminiMetadata=readFileSync(new URL("../oauth-clients/gemini-cli.json",import.meta.url),"utf8");
+const geminiClientId="https://raw.githubusercontent.com/KoalaFacts/Weave/main/typescript/auth-worker/oauth-clients/gemini-cli.json";
 const redirectUri="http://127.0.0.1:53621/callback";
 const redirectUriB="http://127.0.0.1:53622/callback";
 const scope="weave:addresses.read weave:addresses.write weave:contacts.read weave:contacts.write weave:messages.read weave:messages.send weave:messages.ack";

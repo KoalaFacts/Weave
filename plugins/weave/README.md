@@ -74,7 +74,7 @@ gemini mcp add --scope user --transport http weave https://demo.weave-389.worker
 gemini mcp list
 ```
 
-For owner authorization, merge this `weave` entry into your Gemini CLI user settings. The demo's issuer supports [public OAuth client metadata](oauth-clients/gemini-cli.json) and currently advertises no dynamic registration endpoint.
+For owner authorization, merge this `weave` entry into your Gemini CLI user settings. The demo's issuer supports [public OAuth client metadata](../../typescript/auth-worker/oauth-clients/gemini-cli.json) and currently advertises no dynamic registration endpoint.
 
 ```json
 {
@@ -83,7 +83,7 @@ For owner authorization, merge this `weave` entry into your Gemini CLI user sett
       "httpUrl": "https://demo.weave-389.workers.dev/mcp",
       "oauth": {
         "enabled": true,
-        "clientId": "https://raw.githubusercontent.com/KoalaFacts/Weave/main/plugins/weave/oauth-clients/gemini-cli.json",
+        "clientId": "https://raw.githubusercontent.com/KoalaFacts/Weave/main/typescript/auth-worker/oauth-clients/gemini-cli.json",
         "issuer": "https://weave-auth-demo.weave-389.workers.dev",
         "authorizationUrl": "https://weave-auth-demo.weave-389.workers.dev/authorize",
         "tokenUrl": "https://weave-auth-demo.weave-389.workers.dev/oauth/token",
