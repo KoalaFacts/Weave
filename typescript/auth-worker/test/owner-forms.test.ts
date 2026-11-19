@@ -167,7 +167,7 @@ test("readConnectForm_LongValues_UpTo2048CharactersEachAccepted",async()=>{
   // LinkedIn asks apps to plan for tokens of at least 1000 characters; each value may be 2048, even when every character is escaped.
   const humanId=randomUUID(),agentId=randomUUID(),session=sessionFor(humanId);
   const token=await ownerActionToken(key,humanId,{kind:"connect-account",agentId,provider:"linkedin"},now);
-  const long="/".repeat(2048),fields=Object.fromEntries(["a","b","c","d"].map(n=>[n,long]));
+  const long="/".repeat(2048),fields=Object.fromEntries(["a","b","c","d","e"].map(n=>[n,long]));
   assert.deepEqual(await readConnectForm(key,form(["action",token],...Object.entries(fields)),session,now+1000),{agentId,provider:"linkedin",fields});
   assert.equal(await readConnectForm(key,form(["action",token],["accessToken","a".repeat(2049)]),session,now+1000),null,"over 2048 characters");
 });
@@ -181,7 +181,7 @@ test("readConnectForm_TokenThenFields_ReturnsProviderAndValues",async()=>{
   for(const [name,fields] of [
     ["no fields",[["action",token]]],["token not first",[["handle","x"],["action",token]]],["empty value",[["action",token],["handle",""]]],
     ["duplicate field",[["action",token],["handle","a"],["handle","b"]]],["bad name",[["action",token],["user-name","x"]]],
-    ["too many fields",[["action",token],...["a","b","c","d","e"].map(n=>[n,"x"])]],["another form's token",[["action",other],["apiKey","x"]]],
+    ["too many fields",[["action",token],...["a","b","c","d","e","f"].map(n=>[n,"x"])]],["another form's token",[["action",other],["apiKey","x"]]],
   ] as [string,[string,string][]][])
     assert.equal(await readConnectForm(key,form(...fields),session,now+1000),null,name);
   assert.equal(await readConnectForm(key,form(["action",token],["handle","x"]),sessionFor(randomUUID()),now+1000),null,"another human");
