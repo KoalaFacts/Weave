@@ -662,6 +662,12 @@ In the owner account page, use **Connect Slack** with a bot token and channel ID
 
 The adapter sends up to 4,000 characters and one image up to 10 MiB. Text sent with an image becomes its caption in Slack's file-completion call. Slack message timestamps and shared file IDs are recorded as receipts. A failed upload before sharing leaves the channel untouched. An unconfirmed channel send or image share is recorded as `unknown` and cannot be dispatched again. The [Worker regression tests](../../typescript/mailbox-worker/test/slack.test.ts) use a local Slack substitute.
 
+## Teams conversation text
+
+The Teams adapter acceptance target is one text post to an existing commercial Microsoft Teams conversation. It uses the [pinned Hermes standalone sender](https://github.com/NousResearch/hermes-agent/blob/4ae451d4126327c871fd084e60c045dec0c85911/plugins/platforms/teams/adapter.py#L2231) as the basis for the Bot Framework token exchange and message activity. The owner connects an installed single-tenant bot and one conversation. Weave verifies access to the exact conversation with a read-only request before offering it as a destination.
+
+The acceptance check exercises the owner connection and approval flow across the Workers with a Teams REST substitute. A pending plan makes zero activity requests, an approved plan makes one request and records the activity ID, and an ambiguous response stays unknown on repeated execution. A live acceptance run requires a dedicated Teams bot and conversation. Inbound messaging, thread replies, media and government clouds are outside this text pilot.
+
 ## Reusing Hermes messaging adapters
 
 Use the [existing `PublishingAdapter` contract](../../typescript/mailbox-worker/src/publishing.ts) for each outgoing channel. Its connector verifies the signed-in owner's credential and a stable target. Its rules describe the payload that can be approved, and its publish function returns a confirmed receipt or a definite refusal. An uncertain outcome is recorded by Weave and never replayed. Preserve each imported module's revision, source path and license alongside the port.
