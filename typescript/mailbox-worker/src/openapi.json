@@ -6286,8 +6286,8 @@
                 "properties": {
                   "max": {
                     "type": "integer",
-                    "minimum": 1,
-                    "description": "The most media files a post may carry."
+                    "minimum": 0,
+                    "description": "The most media files a post may carry; 0 means a text-only account that takes no media, and types is then {}."
                   },
                   "types": {
                     "type": "object",
