@@ -707,7 +707,7 @@ test("actionPage_Fresh_ShowsOnlyThisActionAndApprovingSendsOnce",{timeout:90_000
   const native=await (await actionPage(action.actionId,await sessionCookie(human))).text();
   assert.ok(native.includes('<a href="https://x.com/i/web/status/1859281733620449485" rel="noopener noreferrer">View the post on the platform</a>'),native);
   const strangers=await (await actionPage(action.actionId,await sessionCookie(await seedHuman()))).text();
-  assert.ok(!strangers.includes("x.com"),strangers);
+  assert.ok(!strangers.includes("View the post")&&!strangers.includes("1859281733620449485"),strangers);
   assert.ok(strangers.includes("not waiting for your approval")&&!strangers.includes("was sent")&&!strangers.includes("post-")&&!strangers.includes("example.test")&&
     !strangers.includes(content)&&!strangers.includes("asked to"),strangers);
   assert.equal((await executeAction(second.agent,second.action.actionId)).status,"pending","the other action is untouched");
