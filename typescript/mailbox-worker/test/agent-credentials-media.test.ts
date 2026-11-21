@@ -83,12 +83,15 @@ test('listMyCredentials_EveryProviderShape_MatchesPublishedAgentCredentialSchema
     const {agent, grantId} = await owned(h);
     for (const [ref, provider, target] of [['postiz:cm4tiktok', 'postiz', 'tiktok/cm4tiktok'], ['postiz:cm4x', 'postiz', 'x/cm4x'],
         ['youtube', 'youtube', 'UC' + 'a'.repeat(22)], ['x', 'x', '12345'], ['bluesky', 'bluesky', 'did:plc:abc'], ['telegram', 'telegram', '-100123'],
-        ['discord', 'discord', '123456789012345678'], ['linkedin', 'linkedin', 'urn:li:person:abc']] as const)
+        ['discord', 'discord', '123456789012345678'], ['linkedin', 'linkedin', 'urn:li:person:abc'], ['slack', 'slack', 'T0123ABC:C0456DEF'],
+        ['teams', 'teams', ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', '19:contract@thread.v2', 'https://smba.trafficmanager.net/teams/'].join('|')]] as const)
         await credential(h, agent.accountId, ref, provider, target);
     const operation = spec.paths['/v1/external-credentials'].get;
     const page = operation.responses['200'].content['application/json'].schema;
     const listed = await h.ok('/v1/external-credentials', agent) as {items: Record<string, unknown>[]};
-    assert.equal(listed.items.length, 8);
+    assert.equal(listed.items.length, 10);
+    const teamsItem = listed.items.find(item => item.provider === 'teams');
+    assert.deepEqual(teamsItem?.mediaRules, {max: 0, types: {}, maxTotalBytes: null, maxAlt: 0}, 'positive control: a text-only account lists max 0');
     assert.ok(listed.items.some(item => item.textRules !== null && item.mediaRules !== null && item.settingRules !== null), 'positive control: a fully described account is checked');
     assert.ok(listed.items.some(item => item.content === null), 'positive control: an unusable provider is checked');
     assert.equal(mismatch(spec, page, listed, 'listing'), null);

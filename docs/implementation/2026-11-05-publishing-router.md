@@ -79,7 +79,11 @@ maxTotalBytes, maxAlt}` (Envoylet request `credential-media-rules`) carries the 
 limits from the same rules: the file count, each accepted type with its largest file
 in bytes, the total-bytes cap or null, and `maxAlt` (0: the platform takes no alt;
 null: only the post format's 2000-character limit). It is null exactly when
-`textRules` is. The router still decides at proposal.
+`textRules` is. The router still decides at proposal. A text-only adapter (Teams)
+lists `max: 0` with `types: {}`; since 2026-11-21 OpenAPI `AgentCredential` and the
+`list_my_credentials` output schema allow that `0` (they declared a minimum of 1, so a
+client validating the listing against them refused any Teams account), and the schema
+tests list Slack and Teams beside the other providers.
 
 An adapter's text limit may depend on the account (Envoylet request
 `postiz-channel-text-rules`, 2026-11-08): a Postiz channel takes the smaller of

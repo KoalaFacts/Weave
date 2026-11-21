@@ -127,9 +127,14 @@ test('real D1 results of every private tool conform to their published output sc
         // A publishing credential, so non-null textRules and mediaRules (X: maxAlt 1000) are checked against the schema too.
         await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
             VALUES(?,'x-main','x','rev-1','1234','@contract',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(a.accountId,at,at).run();
+        // A text-only publishing credential (Teams: mediaRules max 0) is checked against the schema as well.
+        await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
+            VALUES(?,'teams-main','teams','rev-1',?,'Contract channel',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(a.accountId,
+            ['00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','19:contract@thread.v2','https://smba.trafficmanager.net/teams/'].join('|'),at,at).run();
         const credentials=(await run(a.accountId,'list_my_credentials')).items;
-        assert.deepEqual(credentials.map((item:{credentialRef:string})=>item.credentialRef),['linkedin-main','x-main']);
-        assert.equal(credentials[1].mediaRules.maxAlt,1000);
+        assert.deepEqual(credentials.map((item:{credentialRef:string})=>item.credentialRef),['linkedin-main','teams-main','x-main']);
+        assert.equal(credentials[1].mediaRules.max,0,'positive control: the text-only listing reaches the schema check');
+        assert.equal(credentials[2].mediaRules.maxAlt,1000);
         const upload=await run(a.accountId,'create_media_upload',{contentType:'image/png',bytes:4});
         assert.equal((await h.mf.dispatchFetch(upload.uploadUrl,{method:'PUT',headers:{'Content-Type':'image/png','Content-Length':'4'},body:'png!'})).status,200);
         assert.equal((await run(a.accountId,'get_my_media',{mediaId:upload.mediaId})).bytes,4);
