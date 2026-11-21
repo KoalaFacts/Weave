@@ -54,6 +54,8 @@ export type ExternalProvider = {
      * lists is absent from the result. Throws when the provider cannot be asked now.
      */
     publicationStates?(secret: string, items: {receipt: string; trackFrom: number}[]): Promise<Map<string, PublicationState>>;
+    /** The platform's own https address of the effect a completed receipt names, when the receipt alone determines it; otherwise null. */
+    postUrl?(receipt: string): string | null;
 };
 
 const maxReceipt = 256, maxReason = 256, timeoutMs = 15_000;

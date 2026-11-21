@@ -301,3 +301,8 @@ test('proposeExternalAction_YoutubeDeployMissingGoogleClientOrSealingKey_Provide
         } finally { await h.close(); }
     }
 });
+
+test('youtubeUpload_postUrl_VideoIdOnlyBecomesTheWatchAddress', () => {
+    assert.equal(youtubeUpload.postUrl?.('dQw4w9WgXcQ'), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    for (const receipt of ['dQw4w9WgXc', 'dQw4w9WgXcQQ', 'dQw4w9WgX&Q', '']) assert.equal(youtubeUpload.postUrl?.(receipt), null, receipt);
+});

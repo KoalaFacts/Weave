@@ -132,6 +132,7 @@ export const youtubeUpload: ExternalProvider & {available(env: Env): boolean} = 
         if (!media.contentType.startsWith('video/')) return 'mediaId must name a video, not an image';
         return null;
     },
+    postUrl: receipt => /^[A-Za-z0-9_-]{11}$/.test(receipt) ? 'https://www.youtube.com/watch?v=' + receipt : null,
     async execute(env, call) {
         const plan = videoPlan(call.content);
         if (typeof plan === 'string' || call.secret === null) return {status: 'rejected', reason: 'plan-unreadable'};
