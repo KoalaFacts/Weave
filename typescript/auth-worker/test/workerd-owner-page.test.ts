@@ -701,7 +701,13 @@ test("actionPage_Fresh_ShowsOnlyThisActionAndApprovingSendsOnce",{timeout:90_000
     SELECT action_id,account_id,'published','https://example.test/p/1',NULL,created_at,1,NULL,created_at,created_at FROM external_actions WHERE action_id=?`).bind(action.actionId).run();
   const published=await (await actionPage(action.actionId,await sessionCookie(human))).text();
   assert.ok(published.includes('The platform published it. <a href="https://example.test/p/1" rel="noopener noreferrer">View it on the platform</a>'),published);
+  assert.ok(!published.includes("View the post"),"the test provider's receipt names no address of its own");
+  // A native adapter's receipt that names the post's own address becomes a link, read from the mailbox's stored row.
+  await (await db()).prepare("UPDATE external_actions SET provider='x',receipt='1859281733620449485' WHERE action_id=?").bind(action.actionId).run();
+  const native=await (await actionPage(action.actionId,await sessionCookie(human))).text();
+  assert.ok(native.includes('<a href="https://x.com/i/web/status/1859281733620449485" rel="noopener noreferrer">View the post on the platform</a>'),native);
   const strangers=await (await actionPage(action.actionId,await sessionCookie(await seedHuman()))).text();
+  assert.ok(!strangers.includes("x.com"),strangers);
   assert.ok(strangers.includes("not waiting for your approval")&&!strangers.includes("was sent")&&!strangers.includes("post-")&&!strangers.includes("example.test")&&
     !strangers.includes(content)&&!strangers.includes("asked to"),strangers);
   assert.equal((await executeAction(second.agent,second.action.actionId)).status,"pending","the other action is untouched");

@@ -294,8 +294,17 @@ test("actionPage_SentWithReceiptAndPublication_ReferenceStateAndHttpsLinkOnly",a
   }
   const failed=await page({status:"completed",failure:null,receipt:"posted:1",publication:{state:"failed",url:null,error:"quota <exceeded>"}});
   assert.ok(failed.includes("The platform reported that publishing failed: quota &#60;exceeded&#62;. Weave will not send it again."),failed);
+  // A post whose receipt names its own address links to it, https only and escaped.
+  const linked=await page({status:"completed",failure:null,receipt:"1",publication:null,postUrl:"https://x.test/i/web/status/1?a=\"<b>"});
+  assert.ok(linked.includes('<p><a href="https://x.test/i/web/status/1?a=&#34;&#60;b&#62;" rel="noopener noreferrer">View the post on the platform</a></p>'),linked);
+  for(const postUrl of ["javascript:alert(1)","http://x.test/p","//x.test/p","https://",null,undefined]){
+    const body=await page({status:"completed",failure:null,receipt:"1",publication:null,postUrl});
+    assert.ok(!body.includes("View the post"),String(postUrl)+": "+body);
+  }
   // Only a sent action shows these details, whatever the mailbox sends with another status; an older mailbox omits them.
   for(const status of ["failed","unknown","approved"]){
+    const withLink=await page({status,failure:null,receipt:"1",publication:null,postUrl:"https://x.test/p"});
+    assert.ok(!withLink.includes("View the post"),status+": "+withLink);
     const body=await page({status,failure:null,receipt:"posted:1",publication:{state:"published",url:"https://x.test/p",error:null}});
     assert.ok(!body.includes("posted:1")&&!body.includes("published it"),status+": "+body);
   }

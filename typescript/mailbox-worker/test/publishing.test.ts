@@ -237,3 +237,29 @@ test('publishingAdapters_PublishAtAccepted_OnlyPostizAndOnlyWhereDescribed', asy
         else assert.equal(verdict, null, adapter.name);
     }
 });
+
+// A sent post's own address is derived only from a receipt in exactly the shape each adapter confirms; anything else is no link.
+test('postUrl_ReceiptInTheConfirmedShape_PlatformAddressElseNull', () => {
+    const adapter = (name: string) => publishingAdapters.find(item => item.name === name)!;
+    const did = 'did:plc:' + 'a'.repeat(24);
+    const cases: [string, string, string | null][] = [
+        ['x', '1859281733620449485', 'https://x.com/i/web/status/1859281733620449485'],
+        ['x', '12345678901234567890', null], ['x', '123/../evil', null], ['x', '', null],
+        ['bluesky', `at://${did}/app.bsky.feed.post/3lbxyz2abc`, `https://bsky.app/profile/${did}/post/3lbxyz2abc`],
+        ['bluesky', 'at://did:web:example.com/app.bsky.feed.post/3lb', 'https://bsky.app/profile/did:web:example.com/post/3lb'],
+        ['bluesky', `at://${did}/app.bsky.feed.like/3lb`, null], ['bluesky', `at://did:evil:x/app.bsky.feed.post/3lb`, null],
+        ['bluesky', `at://${did}/app.bsky.feed.post/..`, null], ['bluesky', `at://${did}/app.bsky.feed.post/a/b`, null],
+        ['bluesky', `at://${did}/app.bsky.feed.post/${'a'.repeat(256)}`, null],
+        ['linkedin', 'urn:li:share:7012345678901234567', 'https://www.linkedin.com/feed/update/urn:li:share:7012345678901234567/'],
+        ['linkedin', 'urn:li:ugcPost:123', 'https://www.linkedin.com/feed/update/urn:li:ugcPost:123/'],
+        ['linkedin', 'urn:li:person:123', null], ['linkedin', 'urn:li:share:12a', null]
+    ];
+    for (const [name, receipt, url] of cases) assert.equal(adapter(name).postUrl?.(receipt) ?? null, url, name + ' ' + receipt);
+    // A provider's own address is passed through to the governed provider unchanged.
+    assert.equal(publishingProvider(adapter('x')).postUrl?.('1'), 'https://x.com/i/web/status/1');
+    // A message's address needs more than its receipt (a workspace domain, a channel's visibility), so these give no link.
+    for (const name of ['telegram', 'discord', 'slack', 'teams', 'postiz']) {
+        assert.equal(adapter(name).postUrl, undefined, name);
+        assert.equal(publishingProvider(adapter(name)).postUrl, undefined, name);
+    }
+});

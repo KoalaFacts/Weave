@@ -109,6 +109,11 @@ export const bluesky: PublishingAdapter = {
         help: 'Create an app password in Bluesky under Settings, Privacy and security, App passwords. Never enter your account password.',
         verify: async ({handle, appPassword}) => typeof handle === 'string' && typeof appPassword === 'string' ? verify(handle, appPassword) : null
     },
+    postUrl: receipt => {
+        const match = /^at:\/\/(did:[^/]+)\/app\.bsky\.feed\.post\/([^/]+)$/.exec(receipt);
+        return match && didPattern.test(match[1]) && recordKey.test(match[2]) && receipt.length <= 256
+            ? 'https://bsky.app/profile/' + match[1] + '/post/' + match[2] : null;
+    },
     async publish({env, accountId, targetAccount, secret, post}) {
         // Every step before createRecord publishes nothing, so each failure there is a clean refusal.
         const session = await createSession(targetAccount, secret);

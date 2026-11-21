@@ -228,9 +228,10 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
 export type SettledPublicationView={state:string;url:string|null;error:string|null};
 /**
  * What became of an action of the human's own agent that no longer waits for a decision: its status and stored failure code, and
- * once sent the platform's receipt and tracked publication. A mailbox that predates them omits them, which reads as none.
+ * once sent the platform's receipt, the post's own address when the receipt names one, and tracked publication. A mailbox that
+ * predates them omits them, which reads as none.
  */
-export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null;about?:SettledPlanView|null;sendBy?:string|null};
+export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null;about?:SettledPlanView|null;sendBy?:string|null;postUrl?:string|null};
 /** What the settled action was: the agent, operation, the account the plan bound (its name while the credential still points there) and the content. */
 export type SettledPlanView={agentId:string;agentDisplayName:string|null;provider:string;operation:string;targetAccount:string;targetDisplay:string|null;content:string};
 /**
@@ -303,6 +304,8 @@ const publishedLink=(url:string|null|undefined)=>typeof url==="string"&&url.star
 function sentDetails(settled:SettledActionView):string{
   const parts:string[]=[];
   if(typeof settled.receipt==="string"&&settled.receipt)parts.push("<p>The platform's reference for it: <code>"+esc(settled.receipt)+"</code></p>");
+  const postUrl=publishedLink(settled.postUrl);
+  if(postUrl)parts.push('<p><a href="'+esc(postUrl)+'" rel="noopener noreferrer">View the post on the platform</a></p>');
   const publication=settled.publication;
   if(publication?.state==="queued")parts.push("<p>The platform has not reported it published yet. Nothing is sent again.</p>");
   else if(publication?.state==="published"){

@@ -96,6 +96,7 @@ export const linkedin: PublishingAdapter = {
         help: 'In the LinkedIn developer portal, add "Sign In with LinkedIn using OpenID Connect" and "Share on LinkedIn" to your app, then generate a member access token with the openid, profile and w_member_social scopes and paste it here. LinkedIn tokens expire after about 60 days; connect again with a new one.',
         verify
     },
+    postUrl: receipt => postPattern.test(receipt) ? 'https://www.linkedin.com/feed/update/' + receipt + '/' : null,
     async publish({env, accountId, targetAccount, secret, post}) {
         const accessToken = token(secret);
         if (!accessToken) return {status: 'rejected', reason: 'credential-refused'};
