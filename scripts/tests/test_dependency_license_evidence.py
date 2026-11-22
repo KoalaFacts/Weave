@@ -5,7 +5,6 @@ import io
 import json
 from pathlib import Path
 import tempfile
-import textwrap
 import unittest
 from unittest.mock import patch
 
