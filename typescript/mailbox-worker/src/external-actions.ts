@@ -95,7 +95,7 @@ export function effectiveStatus(stored: string, expiresAt: string, now: bigint):
  * Telegram channel or supergroup message); null for any other status, receipt shape or provider, or while this deployment lacks the
  * provider. The recorded receipt fixes the address otherwise.
  */
-function postUrlOf(env: Env, row: Pick<Row, 'provider' | 'receipt'>, status: ActionStatus | 'expired'): string | null {
+export function postUrlOf(env: Env, row: Pick<Row, 'provider' | 'receipt'>, status: ActionStatus | 'expired'): string | null {
     return status === 'completed' && row.receipt ? findProvider(env, row.provider)?.postUrl?.(row.receipt) ?? null : null;
 }
 

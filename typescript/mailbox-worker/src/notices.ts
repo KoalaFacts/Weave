@@ -1,8 +1,8 @@
 import { bindingColumns, bindingRow, bindingView, type BindingStatus, type StoredBinding } from './binding-requests.ts';
 import { keyRequestColumns, keyRequestRow, keyRequestView, type KeyRequestStatus, type StoredKeyRequest } from './key-requests.ts';
-import { effectiveStatus, type ActionStatus } from './external-actions.ts';
+import { effectiveStatus, postUrlOf, type ActionStatus } from './external-actions.ts';
 import { apiInstant, exactInt64 } from './time.ts';
-import type { Transaction } from './database.ts';
+import type { Env, Transaction } from './database.ts';
 
 export const noticeWindowTicks = 864000000000n; // 24 h
 export const maxNotices = 50;
@@ -14,7 +14,7 @@ export type Notice =
     | {kind: 'binding-request'; requestId: string; human: string; status: BindingStatus; createdAt: string; expiresAt: string; decidedAt: string | null}
     | {kind: 'external-action'; actionId: string; status: ActionStatus | 'expired'; credentialRef: string; provider: string; targetAccount: string;
         credentialRevision: string; operation: string; createdAt: string; expiresAt: string; decidedAt: string | null; completedAt: string | null; failure: string | null;
-        receipt: string | null};
+        receipt: string | null; postUrl: string | null};
 
 type StoredAction = {action_id: string; status: string; credential_ref: string; provider: string; target_account: string;
     credential_revision: string; operation: string; created_at: string; expires_at: string;
@@ -32,9 +32,10 @@ type StoredKey = {kid: string; label: string | null; created_at: string; revoked
  * pending or approved action past its expiry reads as expired, at its expiry time. It names the action's own provider, target account
  * and credential revision (fixed when it was proposed), never the credential's current ones, so a reconnect does not rename an older
  * action. Its content is never included; its failure code and receipt are, exactly as the action read returns them, so a failed or
- * unknown notice says why and a completed one names the platform's post without another read.
+ * unknown notice says why and a completed one names the platform's post without another read. Its `postUrl` is the same platform address the action read
+ * returns (`postUrlOf`), computed from the receipt at read time.
  */
-export async function accountNotices(tx: Transaction, accountId: string, now: bigint): Promise<Notice[]> {
+export async function accountNotices(env: Env, tx: Transaction, accountId: string, now: bigint): Promise<Notice[]> {
     const since = (now - noticeWindowTicks).toString();
     const entries: {at: bigint; notice: Notice}[] = [];
 
@@ -84,11 +85,13 @@ export async function accountNotices(tx: Transaction, accountId: string, now: bi
         FROM external_actions WHERE account_id=?1 AND (updated_at>CAST(?2 AS INTEGER) OR (${live} AND expires_at>CAST(?2 AS INTEGER)))
         ORDER BY CASE WHEN ${live} THEN expires_at ELSE updated_at END DESC LIMIT ?4`).bind(accountId, since, now.toString(), maxNotices).all<StoredAction>();
     for (const row of actions.results) {
+        const status = effectiveStatus(row.status, row.expires_at, now);
         entries.push({at: exactInt64(row.at), notice: {kind: 'external-action', actionId: row.action_id,
-            status: effectiveStatus(row.status, row.expires_at, now), credentialRef: row.credential_ref, provider: row.provider,
+            status, credentialRef: row.credential_ref, provider: row.provider,
             targetAccount: row.target_account, credentialRevision: row.credential_revision, operation: row.operation,
             createdAt: apiInstant(exactInt64(row.created_at)), expiresAt: apiInstant(exactInt64(row.expires_at)),
-            decidedAt: optionalInstant(row.decided_at), completedAt: optionalInstant(row.completed_at), failure: row.failure, receipt: row.receipt}});
+            decidedAt: optionalInstant(row.decided_at), completedAt: optionalInstant(row.completed_at), failure: row.failure, receipt: row.receipt,
+            postUrl: postUrlOf(env, row, status)}});
     }
     return entries.sort((a, b) => a.at > b.at ? -1 : a.at < b.at ? 1 : 0).slice(0, maxNotices).map(entry => entry.notice);
 }

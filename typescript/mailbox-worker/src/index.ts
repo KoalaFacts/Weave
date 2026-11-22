@@ -181,7 +181,7 @@ export default {
             if (method === 'GET' && url.pathname === '/v1/inbox/events') return await stream(env,owner,request,context);
             if (method === 'GET' && url.pathname === '/v1/inbox') return json(await atomic(env.db,async tx => {
                 const page = await read(tx,url,owner);
-                return {...page,notices:await accountNotices(tx,owner,tx.store.now)};
+                return {...page,notices:await accountNotices(env,tx,owner,tx.store.now)};
             }));
             if (method === 'GET') return json(await atomic(env.db,tx => read(tx,url,owner)));
             const input = await body(request);
