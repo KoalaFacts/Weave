@@ -92,8 +92,8 @@ export function effectiveStatus(stored: string, expiresAt: string, now: bigint):
 
 /**
  * The platform's own https address of a sent post when its receipt alone determines it (native X, Bluesky, LinkedIn, YouTube, and a
- * Telegram channel or supergroup message); null for any other status, receipt shape or provider. A receipt never changes once recorded,
- * so neither does this address.
+ * Telegram channel or supergroup message); null for any other status, receipt shape or provider, or while this deployment lacks the
+ * provider. The recorded receipt fixes the address otherwise.
  */
 function postUrlOf(env: Env, row: Pick<Row, 'provider' | 'receipt'>, status: ActionStatus | 'expired'): string | null {
     return status === 'completed' && row.receipt ? findProvider(env, row.provider)?.postUrl?.(row.receipt) ?? null : null;
