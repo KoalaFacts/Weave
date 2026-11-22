@@ -144,11 +144,13 @@ test('real D1 results of every private tool conform to their published output sc
         finally{globalThis.fetch=fetchBefore;}
         const action=await run(a.accountId,'propose_external_action',{credentialRef:'linkedin-main',operation:'publish_text',content:'contract-post'});
         await run(a.accountId,'get_external_action',{actionId:action.actionId});
+        assert.equal((await run(a.accountId,'list_my_external_actions')).actions.length,1);
         const humanId=(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(a.accountId).first<string>('human_id'))!;
         const overview=await ownerOverview(env,humanId) as Extract<Awaited<ReturnType<typeof ownerOverview>>,{frozen:false}>;
         assert.deepEqual(await ownerAction(env,{humanId,authAt:Date.now(),kind:'confirm-action',requestId:action.actionId,
             planDigest:overview.externalActions[0].planDigest} as OwnerAction),{ok:true});
         assert.equal((await run(a.accountId,'execute_external_action',{actionId:action.actionId})).status,'completed');
+        assert.equal((await run(a.accountId,'list_my_external_actions',{waiting:false})).actions[0].postUrl,null,'a completed test-http action has no post address');
         // Agent management runs for the human behind an owner grant.
         ownerGrant=crypto.randomUUID();
         assert.deepEqual(await recordOwnerGrant(env,{grantId:ownerGrant,humanId,clientId:'https://office.example/client.json'}),{ok:true});

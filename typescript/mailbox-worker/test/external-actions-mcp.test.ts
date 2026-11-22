@@ -116,3 +116,60 @@ test('externalActionTools_ProposeWithIdempotencyKey_OnePlanSharedWithTheHttpHead
     assert.equal((await call(env, agent.accountId, grantId, 'propose_external_action', {...args, idempotencyKey: 'not valid'})).status, 400);
     assert.equal(await h.db.prepare('SELECT count(*) n FROM external_actions').first<number>('n'), 1);
 }));
+
+test('listMyExternalActions_WaitingAndPast_SameEntriesAsTheByIdReadAndPagedWithBefore', () => scenario(async ({h, env}) => {
+    const {agent, humanId, grantId} = await ownedWithCredential(h);
+    const propose = async (content: string) => (await call(env, agent.accountId, grantId, 'propose_external_action', {credentialRef: 'linkedin-main', operation: 'publish_text', content})).body.actionId as string;
+    const first = await propose('First.'), second = await propose('Second.'), third = await propose('Third.');
+    const read = async (actionId: string) => (await call(env, agent.accountId, grantId, 'get_external_action', {actionId})).body;
+    const list = async (args: Record<string, unknown>) => {
+        const response = await call(env, agent.accountId, grantId, 'list_my_external_actions', args);
+        assert.equal(response.status, 200, JSON.stringify(response.body));
+        return response.body.actions as Record<string, unknown>[];
+    };
+    // Waiting plans, oldest first, by default and with waiting true.
+    assert.deepEqual(await list({}), [await read(first), await read(second), await read(third)]);
+    assert.deepEqual(await list({waiting: true}), await list({}));
+    assert.deepEqual(await list({waiting: false}), []);
+
+    // The first is approved and sent; the second expires. Both stop waiting.
+    const overview = await ownerOverview(env, humanId) as Extract<Awaited<ReturnType<typeof ownerOverview>>, {frozen: false}>;
+    const plan = overview.externalActions.find(item => item.actionId === first)!;
+    assert.deepEqual(await ownerAction(env, {humanId, authAt: Date.now(), kind: 'confirm-action', requestId: first, planDigest: plan.planDigest} as OwnerAction), {ok: true});
+    assert.equal((await call(env, agent.accountId, grantId, 'execute_external_action', {actionId: first})).body.status, 'completed');
+    await h.db.prepare('UPDATE external_actions SET expires_at=created_at+1 WHERE action_id=?').bind(second).run();
+
+    assert.deepEqual(await list({}), [await read(third)]);
+    const past = await list({waiting: false});
+    assert.deepEqual(past, [await read(second), await read(first)], 'newest proposal first, each as the by-ID read');
+    assert.equal(past[1].status, 'completed');
+    // before pages to the next older entries; the oldest ends the list.
+    assert.deepEqual(await list({waiting: false, before: second}), [await read(first)]);
+    assert.deepEqual(await list({waiting: false, before: first}), []);
+    // A waiting plan of this agent is a valid cursor, as on HTTP.
+    assert.deepEqual(await list({waiting: false, before: third}), past);
+
+    // The same pages as the HTTP list.
+    const viaHttp = await h.fetchAs(agent, `http://localhost/v1/external-actions?waiting=false&before=${second}`);
+    assert.deepEqual((await viaHttp.json() as {actions: unknown[]}).actions, [await read(first)]);
+}));
+
+test('listMyExternalActions_InvalidArgumentsOrAnotherAgentsCursor_Refused', () => scenario(async ({h, env}) => {
+    const {agent, grantId} = await ownedWithCredential(h);
+    const other = await ownedWithCredential(h);
+    const foreign = (await call(env, other.agent.accountId, other.grantId, 'propose_external_action', {credentialRef: 'linkedin-main', operation: 'publish_text', content: 'Theirs.'})).body.actionId as string;
+    for (const [args, field] of [[{waiting: 'false'}, 'waiting'], [{waiting: null}, 'waiting'], [{before: foreign}, 'before'], [{waiting: true, before: foreign}, 'before'],
+        [{waiting: false, before: 'not-a-uuid'}, 'before'], [{waiting: false, before: foreign.toUpperCase()}, 'before'], [{waiting: false, limit: 5}, 'limit']] as const) {
+        const response = await call(env, agent.accountId, grantId, 'list_my_external_actions', args);
+        assert.equal(response.status, 400, JSON.stringify(args));
+        assert.equal(response.body.field, field, JSON.stringify(response.body));
+    }
+    // Another agent's action, or an unknown one, is unavailable as a cursor, like the by-ID read.
+    for (const before of [foreign, crypto.randomUUID()]) {
+        const response = await call(env, agent.accountId, grantId, 'list_my_external_actions', {waiting: false, before});
+        assert.equal(response.status, 404, JSON.stringify(response.body));
+        assert.equal(response.body.code, 'unavailable');
+    }
+    assert.equal(privateScope('list_my_external_actions'), 'weave:actions.read');
+    assert.equal(privateMcpTools.find(tool => tool.name === 'list_my_external_actions')!.annotations.readOnlyHint, true);
+}));

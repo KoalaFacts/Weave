@@ -19,7 +19,7 @@ import { grantCaller, liveGrant } from './client-grants.ts';
 import { executeOwnerMcp } from './owner-tools.ts';
 import { ownerMcpTools } from './private-mcp-tools.ts';
 import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
-import { executeExternalAction, getExternalAction, proposalKey, proposeExternalAction } from './external-actions.ts';
+import { executeExternalAction, getExternalAction, listPastExternalActions, listWaitingExternalActions, proposalKey, proposeExternalAction } from './external-actions.ts';
 import { listAgentCredentials } from './external-credentials.ts';
 import { createMediaUpload, getMedia, importMedia } from './external-media.ts';
 import type { PrivateAccess } from './remote-mcp.ts';
@@ -241,6 +241,16 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             parameters(args,['credentialRef','operation','content','idempotencyKey'],['credentialRef','operation','content']);
             const {idempotencyKey,...proposal}=args;
             return json(await proposeExternalAction(env,caller,proposal,proposalKey(idempotencyKey,'idempotencyKey')));
+        }
+        if(name==='list_my_external_actions'){
+            parameters(args,['waiting','before']);
+            if(args.waiting!==undefined&&typeof args.waiting!=='boolean')invalidField('waiting','must be true or false');
+            const waiting=args.waiting!==false;
+            if(args.before!==undefined){
+                if(waiting)invalidField('before','only with waiting false');
+                checkUuid(args.before,'before');
+            }
+            return json(waiting?await listWaitingExternalActions(env,caller):await listPastExternalActions(env,caller,(args.before as string|undefined)??null));
         }
         if(name==='get_external_action'||name==='execute_external_action'){
             parameters(args,['actionId'],['actionId']);
