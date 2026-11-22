@@ -211,6 +211,11 @@ because notices carry no `publication` and `publicationUrl` was declined. One re
 - Mutation checks, each caught: dropping the agent filter, oldest first, `>=` at the expiry tick, dropping the
   publication, treating `approved` as no longer waiting, a limit of 21, dropping the in-transaction caller check,
   accepting any `waiting` value, accepting a repeated `waiting`.
+- Cost: the agent's index `external_actions_account (account_id, status, created_at)` finds its rows, but the
+  newest-first order across statuses needs a sort of every retained action of that agent per call. An index on
+  `(account_id, created_at)` would bound it; that is a schema change, left for an owner decision if it matters.
+
+## Limits
 
 - No list endpoint (`GET /v1/external-actions?status=pending`); the key is the reconciliation path.
   (2026-11-17: `GET /v1/external-actions` now lists waiting plans; see "Listing waiting plans" above.)
