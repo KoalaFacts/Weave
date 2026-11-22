@@ -32,7 +32,9 @@ export type ExternalActionView = {actionId: string; provider: string; operation:
     /** What the provider later reported about a completed effect it finishes after dispatch; null when not tracked. */
     publication: PublicationView | null;
     /** The page where the owner decides this pending action; null once it is decided or expired, or without a first-party authorization server. */
-    approvalUrl: string | null};
+    approvalUrl: string | null;
+    /** The platform's own https address of a completed post when its receipt alone determines it (see `postUrlOf`); else null. */
+    postUrl: string | null};
 /** What the owner page shows for a pending action; `planDigest` is what the owner confirms. */
 export type OwnerExternalAction = {actionId: string; agentId: string; agentDisplayName: string | null; provider: string; operation: string; content: string;
     credentialRef: string; credentialRevision: string; targetAccount: string; targetDisplay: string; planDigest: string; createdAt: string; expiresAt: string;
@@ -88,6 +90,15 @@ export function effectiveStatus(stored: string, expiresAt: string, now: bigint):
     return live && exactInt64(expiresAt) <= now ? 'expired' : stored as ActionStatus;
 }
 
+/**
+ * The platform's own https address of a sent post when its receipt alone determines it (native X, Bluesky, LinkedIn, YouTube, and a
+ * Telegram channel or supergroup message); null for any other status, receipt shape or provider. A receipt never changes once recorded,
+ * so neither does this address.
+ */
+function postUrlOf(env: Env, row: Pick<Row, 'provider' | 'receipt'>, status: ActionStatus | 'expired'): string | null {
+    return status === 'completed' && row.receipt ? findProvider(env, row.provider)?.postUrl?.(row.receipt) ?? null : null;
+}
+
 function view(env: Env, row: Row, now: bigint, publication: PublicationView | null = null): ExternalActionView {
     const status = effectiveStatus(row.status, row.expires_at, now);
     const origin = status === 'pending' ? approvalOrigin(env) : null;
@@ -95,7 +106,7 @@ function view(env: Env, row: Row, now: bigint, publication: PublicationView | nu
         credentialRevision: row.credential_revision, targetAccount: row.target_account, status,
         createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!, decidedAt: apiTime(row.decided_at),
         dispatchedAt: apiTime(row.dispatched_at), completedAt: apiTime(row.completed_at), receipt: row.receipt, failure: row.failure, publication,
-        approvalUrl: origin && origin + '/account/actions/' + row.action_id};
+        approvalUrl: origin && origin + '/account/actions/' + row.action_id, postUrl: postUrlOf(env, row, status)};
 }
 
 const readRow = (tx: Transaction, actionId: string) =>
@@ -437,8 +448,7 @@ export function mediaIdsOf(content: string): string[] {
  * What became of an action of the human's own agent that is no longer waiting for a decision: its status, stored failure code,
  * and for a sent action the platform's receipt and, when the effect is tracked after sending, the publication's state. `sendBy` is
  * the plan's expiry while it is approved and unsent (the time by which the agent must send it, after which it is never sent), else null.
- * `postUrl` is the platform's own https address of a sent post when its receipt alone determines it (native X, Bluesky, LinkedIn,
- * YouTube, and a Telegram channel or supergroup message), else null.
+ * `postUrl` is the platform's own https address of a sent post when its receipt alone determines it (`postUrlOf`), else null.
  */
 export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; receipt: string | null;
     publication: PublicationView | null; about: OwnerSettledPlan; sendBy: string | null; postUrl: string | null};
@@ -482,7 +492,7 @@ export async function ownerPendingAction(env: Env, humanId: string, actionId: st
             targetAccount: row.target_account, targetDisplay: names?.target_account === row.target_account ? names.target_display : null, content: row.content};
         return {frozen: false as const, action: null, settled: {status, failure: row.failure, receipt: sent ? row.receipt : null,
             publication: sent ? await readPublication(tx, actionId) : null, about, sendBy: status === 'approved' ? apiTime(row.expires_at) : null,
-            postUrl: sent && row.receipt ? findProvider(env, row.provider)?.postUrl?.(row.receipt) ?? null : null}};
+            postUrl: postUrlOf(env, row, status)}};
     });
 }
 

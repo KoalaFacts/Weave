@@ -94,6 +94,11 @@ remains possible later for chat channels.
   included (2026-11-22, #525); a basic group's message has no link. `settled` gains `postUrl`, null unless the status is `completed`; the page links it
   only as an absolute `https://` URL, escaped, and an auth Worker reading a mailbox without it adds nothing. Reading sends
   nothing; no schema or agent API change.
+- **The same link for the agent (2026-11-22).** `ExternalActionView` (`GET /v1/external-actions/{actionId}`, both
+  `GET /v1/external-actions` lists, execute and the MCP action tools) gains `postUrl`, computed by the same function as
+  the owner page's: the adapter's address for a `completed` action's receipt, else null. An app such as Envoylet links a
+  sent native post without copying each platform's address rules. It is read-time only: no schema change, and the
+  address never changes once set, because the receipt does not. Notices do not carry it.
 - **Recent actions on `/account` (2026-11-18).** The owner page lists, under "Recent actions", the actions of the agents
   the human owns now that stopped waiting in the last 7 days, newest change first, at most 20: decided, being sent, sent,
   not sent (with the stored failure code) or unknown by their last change, and a plan left pending past its expiry, by
@@ -186,6 +191,9 @@ Mutation checks: each of these fails a test:
   channel bound dropped, message ID 0 or leading zero allowed, end anchor dropped, the raw `100…` ID linked, `postUrl`
   removed) each fail `postUrl_ReceiptInTheConfirmedShape_PlatformAddressElseNull`; widening the ID to 9–13 digits is
   equivalent (the lower bound still refuses a basic group).
+  The agent's `postUrl` (2026-11-22): returning null from the view, or dropping the `completed` check from the shared
+  function, each fails `externalActionView_SentNativePost_PostUrlOnTheAgentReadsOnlyWhenCompleted` (by-ID read and the
+  past-actions list; the second mutant also fails the owner test); the MCP output-schema test checks real results carry it.
 
 - withdrawing an approval (2026-11-18): refusing it for an approved action (the old pending-only check), withdrawing an
   approval past its expiry, offering the withdrawal on the page for any other settled status, or dropping the page's

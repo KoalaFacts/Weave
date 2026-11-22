@@ -5934,7 +5934,8 @@
           "receipt",
           "failure",
           "publication",
-          "approvalUrl"
+          "approvalUrl",
+          "postUrl"
         ],
         "properties": {
           "actionId": {
@@ -6116,6 +6117,15 @@
               "null"
             ],
             "format": "uri"
+          },
+          "postUrl": {
+            "description": "When status is completed and the platform's receipt alone names the post: its own https address on the platform (native X, Bluesky, LinkedIn and YouTube, and a Telegram channel or supergroup message, which only its members can open). Null for every other status, provider or receipt shape; for a Postiz post read publication.url instead. It never changes once set, because the receipt does not.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
           }
         }
       },
