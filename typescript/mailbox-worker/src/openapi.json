@@ -444,7 +444,7 @@
       "get": {
         "operationId": "listWaitingExternalActions",
         "summary": "List this agent's waiting or past external actions",
-        "description": "Without waiting=false: every pending or approved action of this agent that has not expired, oldest first: at most 20, the waiting-plan limit, so there is no cursor. Use it to find a plan whose propose answer or action ID was lost while it can still be approved or executed. With waiting=false: this agent's 20 newest actions that no longer wait (rejected, dispatching, completed, failed, unknown or expired), newest proposal first, with their tracked publication; older ones are read by ID while retained. Use it to show what became of recent posts in one read. Each entry is the view GET /v1/external-actions/{actionId} returns. Nothing is sent to any provider.",
+        "description": "Without waiting=false: every pending or approved action of this agent that has not expired, oldest first: at most 20, the waiting-plan limit, so there is no cursor. Use it to find a plan whose propose answer or action ID was lost while it can still be approved or executed. With waiting=false: this agent's 20 newest actions that no longer wait (rejected, dispatching, completed, failed, unknown or expired), newest proposal first, with their tracked publication; add before=<the last entry's actionId> for the next 20 older ones (an empty list means there are no more). Use it to show what became of recent posts in one read. Each entry is the view GET /v1/external-actions/{actionId} returns. Nothing is sent to any provider.",
         "parameters": [
           {
             "name": "waiting",
@@ -458,6 +458,17 @@
                 "false"
               ],
               "default": "true"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "description": "Only with waiting=false: an action ID of this agent, normally the last entry of the previous page; lists the actions after it in the same order. Malformed, repeated or given without waiting=false is 400 invalid with field before; another agent's or an unknown action is 404 unavailable.",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
             }
           }
         ],
@@ -498,6 +509,9 @@
           },
           "401": {
             "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
           },
           "503": {
             "$ref": "#/components/responses/503"

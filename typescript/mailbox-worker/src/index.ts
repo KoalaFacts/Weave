@@ -18,7 +18,7 @@ import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
 import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
-import { executeExternalAction, getExternalAction, keyCaller, listPastExternalActions, listWaitingExternalActions, ownerActionMedia, ownerPendingAction, proposalKey, proposeExternalAction, waitingParameter, type OwnerActionPageView, type OwnerExternalAction } from './external-actions.ts';
+import { beforeParameter, executeExternalAction, getExternalAction, keyCaller, listPastExternalActions, listWaitingExternalActions, ownerActionMedia, ownerPendingAction, proposalKey, proposeExternalAction, waitingParameter, type OwnerActionPageView, type OwnerExternalAction } from './external-actions.ts';
 import { sweepPublications } from './external-publications.ts';
 import { getMedia, importMedia, receiveSignedUpload, sweepMedia, serveSignedMedia, uploadMedia } from './external-media.ts';
 import { connectAccount, connectExternalCredential, listAgentCredentials, type ConnectAccountInput, type ConnectAccountResult, type ConnectCredentialInput, type ConnectCredentialResult } from './external-credentials.ts';
@@ -154,7 +154,7 @@ export default {
                 fail(404,'unavailable');
             }
             if (url.pathname === '/v1/external-actions' || url.pathname.startsWith('/v1/external-actions/')) {
-                if (method === 'GET' && url.pathname === '/v1/external-actions') return json(waitingParameter(url.searchParams) ? await listWaitingExternalActions(env,keyCaller(account)) : await listPastExternalActions(env,keyCaller(account)));
+                if (method === 'GET' && url.pathname === '/v1/external-actions') { const waiting = waitingParameter(url.searchParams), before = beforeParameter(url.searchParams,waiting); return json(waiting ? await listWaitingExternalActions(env,keyCaller(account)) : await listPastExternalActions(env,keyCaller(account),before)); }
                 if (method === 'POST' && url.pathname === '/v1/external-actions') return json(await proposeExternalAction(env,keyCaller(account),await body(request),proposalKey(request.headers.get('Idempotency-Key'),'Idempotency-Key')));
                 const action = /^\/v1\/external-actions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/execute)?$/.exec(url.pathname);
                 if (method === 'GET' && action && !action[2]) return json(await getExternalAction(env,keyCaller(account),action[1]));

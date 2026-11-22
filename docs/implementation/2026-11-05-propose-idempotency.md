@@ -176,7 +176,8 @@ in the inbox notices, whose 50 slots other changes can fill.
 - `GET /v1/external-actions` returns `{actions: [...]}`: every `pending` or `approved` action of the calling agent
   whose expiry is still ahead, oldest first by creation (then action ID), each exactly as
   `GET /v1/external-actions/{actionId}` returns it (a waiting plan has no `publication`). The 20-waiting-plans limit
-  bounds it, so there is no cursor; query parameters are ignored. Completed, failed, unknown, rejected and expired
+  bounds it, so there is no cursor; query parameters are ignored (2026-11-22: `waiting` and `before` are checked, see
+  below). Completed, failed, unknown, rejected and expired
   actions are read by ID. One indexed read (`external_actions_account`); no schema change; nothing is sent.
 - HTTP only; the MCP tools are unchanged (`get_external_action` reads by ID).
 - Verification: `listWaitingExternalActions_PendingAndApprovedOfThisAgentOnly_OldestFirstUntilSettledOrExpired`
@@ -198,8 +199,10 @@ because notices carry no `publication` and `publicationUrl` was declined. One re
   tick, shown as `expired`), newest first by creation (then action ID), each exactly as the by-ID read returns it,
   tracked `publication` included (one `LEFT JOIN`, no per-row read). No cursor: older actions are read by ID while
   retained. A `dispatching` action whose outcome could not be recorded is listed, so an agent can still find it.
+  (Later the same day: `before` pages past the newest 20; see "Paging past actions" below.)
 - `waiting` absent or `true` keeps the waiting-plan list above unchanged; any other value, or the parameter twice, is
-  `400 invalid` with `field: waiting`. Other query parameters are still ignored. No schema change; nothing is sent.
+  `400 invalid` with `field: waiting`. Other query parameters are still ignored (later: `before`, see "Paging past
+  actions" below). No schema change; nothing is sent.
 - HTTP only; the MCP tools are unchanged.
 - Verification (`test/external-actions.test.ts`, through the worker's HTTP entry):
   `listPastExternalActions_SettledAndExpiredOfThisAgentOnly_NewestFirstWithPublication` (empty list; completed,
@@ -214,6 +217,28 @@ because notices carry no `publication` and `publicationUrl` was declined. One re
 - Cost: the agent's index `external_actions_account (account_id, status, created_at)` finds its rows, but the
   newest-first order across statuses needs a sort of every retained action of that agent per call. An index on
   `(account_id, created_at)` would bound it; that is a schema change, left for an owner decision if it matters.
+
+## Paging past actions (2026-11-22)
+
+The past-actions list stopped at the 20 newest, so an app could not show older history without already knowing each ID.
+
+- `GET /v1/external-actions?waiting=false&before=<actionId>` returns the next 20 older actions that no longer wait, in the
+  same order (creation time, then action ID, both descending), strictly after the named action. The caller passes the
+  last entry's `actionId`; an empty list means there is nothing older. The cursor is a stored row, so ties on creation
+  time are broken by action ID and no action is skipped or repeated across pages.
+- `before` must be one lower-case action ID of this agent (any status, waiting plans included). Malformed or repeated
+  is `400 invalid` with `field: before`, `must be one action ID`; with the waiting-plan list (`waiting` absent or
+  `true`) it is `400 invalid`, `only with waiting=false`. Another agent's or an unknown action is `404 unavailable`,
+  as the by-ID read answers, and the ownership check runs in the same transaction as the read.
+- Response shape unchanged (`{actions: [...]}`, at most 20). No schema change; HTTP only, the MCP tools are unchanged.
+- Verification (`test/external-actions.test.ts`, through the worker's HTTP entry):
+  `listPastExternalActions_BeforeLastEntry_NextOlderPageThenEmpty` (25 actions with tied creation ticks on the page
+  boundary and inside a page: the second page is exactly the older 5, the page after the oldest is empty, and every
+  cursor starts right after its action), `listPastExternalActions_BeforeAnotherAgentsOrUnknownAction_Unavailable`,
+  `listExternalActions_BeforeMalformedRepeatedOrOnWaitingList_InvalidField`.
+- Mutation checks, each caught: dropping the tie clause, `<=` on the tied action ID, `<=` on the creation time, reading
+  the cursor without the ownership check, accepting `before` on the waiting list, accepting a repeated `before`.
+- Cost: as the newest page, plus one by-ID read of the cursor row.
 
 ## Limits
 
