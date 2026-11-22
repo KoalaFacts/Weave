@@ -80,6 +80,13 @@ export const telegram: PublishingAdapter = {
         help: 'Create a bot with @BotFather, add it to your channel or group as an administrator allowed to post, then enter its token and the chat.',
         verify: async ({botToken, chat}) => typeof botToken === 'string' && typeof chat === 'string' ? verify(botToken, chat) : null
     },
+    // Only a channel or supergroup message has a link, which its members (the owner, as the bot's chat) can open. Its Bot API chat ID is
+    // -(1000000000000 + channel ID) (core.telegram.org/api/bots/ids); a basic group's (-1 … -999999999999) has none.
+    postUrl: receipt => {
+        const match = /^-([0-9]{13})\/([1-9][0-9]{0,14})$/.exec(receipt);
+        const channel = match ? Number(match[1]) - 1_000_000_000_000 : 0;
+        return match && channel >= 1 && channel <= 997_852_516_352 ? 'https://t.me/c/' + channel + '/' + match[2] : null;
+    },
     async publish({env, accountId, targetAccount: chatId, secret: token, post}) {
         // Each file is read in full before anything is sent, so a missing file refuses with nothing posted.
         const files: {kind: 'photo' | 'video'; blob: Blob}[] = [];

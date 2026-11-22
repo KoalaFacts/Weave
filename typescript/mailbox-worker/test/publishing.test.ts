@@ -252,13 +252,19 @@ test('postUrl_ReceiptInTheConfirmedShape_PlatformAddressElseNull', () => {
         ['bluesky', `at://${did}/app.bsky.feed.post/${'a'.repeat(256)}`, null],
         ['linkedin', 'urn:li:share:7012345678901234567', 'https://www.linkedin.com/feed/update/urn:li:share:7012345678901234567/'],
         ['linkedin', 'urn:li:ugcPost:123', 'https://www.linkedin.com/feed/update/urn:li:ugcPost:123/'],
-        ['linkedin', 'urn:li:person:123', null], ['linkedin', 'urn:li:share:12a', null]
+        ['linkedin', 'urn:li:person:123', null], ['linkedin', 'urn:li:share:12a', null],
+        ['telegram', '-1001234567890/42', 'https://t.me/c/1234567890/42'],
+        ['telegram', '-1000000000001/1', 'https://t.me/c/1/1'], ['telegram', '-1997852516352/7', 'https://t.me/c/997852516352/7'],
+        ['telegram', '-1000000000000/1', null], ['telegram', '-1997852516353/1', null], ['telegram', '-123456789/5', null],
+        ['telegram', '-999999999999/5', null], ['telegram', '1001234567890/42', null], ['telegram', '-1001234567890/0', null],
+        ['telegram', '-1001234567890/042', null], ['telegram', '-1001234567890/1234567890123456', null],
+        ['telegram', '-1001234567890/42/x', null], ['telegram', '@channel/42', null], ['telegram', '', null]
     ];
     for (const [name, receipt, url] of cases) assert.equal(adapter(name).postUrl?.(receipt) ?? null, url, name + ' ' + receipt);
     // A provider's own address is passed through to the governed provider unchanged.
     assert.equal(publishingProvider(adapter('x')).postUrl?.('1'), 'https://x.com/i/web/status/1');
-    // A message's address needs more than its receipt (a workspace domain, a channel's visibility), so these give no link.
-    for (const name of ['telegram', 'discord', 'slack', 'teams', 'postiz']) {
+    // A message's address needs more than its receipt (a workspace domain, a guild), so these give no link.
+    for (const name of ['discord', 'slack', 'teams', 'postiz']) {
         assert.equal(adapter(name).postUrl, undefined, name);
         assert.equal(publishingProvider(adapter(name)).postUrl, undefined, name);
     }

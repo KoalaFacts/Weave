@@ -1201,8 +1201,12 @@ test('ownerPendingAction_SentNativePost_PostUrlFromTheReceiptOnlyWhenSent', () =
     }
     await h.db.prepare("UPDATE external_actions SET status='completed',receipt='not-an-id' WHERE action_id=?").bind(actionId).run();
     assert.equal(await read(), null, 'a receipt in another shape gives no link');
-    await h.db.prepare("UPDATE external_actions SET receipt='1859281733620449485',provider='telegram' WHERE action_id=?").bind(actionId).run();
-    assert.equal(await read(), null, 'a provider whose receipt does not name a public address gives none');
+    await h.db.prepare("UPDATE external_actions SET receipt='-1001234567890/42',provider='telegram' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await read(), 'https://t.me/c/1234567890/42', 'a Telegram channel or supergroup message links for its members');
+    await h.db.prepare("UPDATE external_actions SET receipt='-123456789/42' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await read(), null, 'a basic group message has no link');
+    await h.db.prepare("UPDATE external_actions SET receipt='1859281733620449485',provider='discord' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await read(), null, 'a provider whose receipt does not name an address gives none');
 }));
 
 // The page for one action names what the settled action was: its agent, operation, the account the plan bound and the content.

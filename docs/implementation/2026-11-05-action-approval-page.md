@@ -88,8 +88,10 @@ remains possible later for chat channels.
   (`https://x.com/i/web/status/<id>`), Bluesky (`https://bsky.app/profile/<did>/post/<rkey>` from the post's AT-URI),
   LinkedIn (`https://www.linkedin.com/feed/update/<urn>/`) and YouTube (`https://www.youtube.com/watch?v=<id>`). Each
   adapter derives it from a receipt in exactly the shape it confirms when sending (`postUrl` on the adapter); any other
-  shape, and Telegram, Discord, Slack, Teams and Postiz (whose addresses need more than the receipt, or which Weave
-  tracks separately), give no link. `settled` gains `postUrl`, null unless the status is `completed`; the page links it
+  shape, and Discord, Slack, Teams and Postiz (whose addresses need more than the receipt, or which Weave tracks
+  separately), give no link. A Telegram channel or supergroup message (Bot API chat ID `-100…`, receipt
+  `<chatId>/<messageId>`) links to `https://t.me/c/<channel>/<messageId>`, which opens for the chat's members, the owner
+  included (2026-11-22, #525); a basic group's message has no link. `settled` gains `postUrl`, null unless the status is `completed`; the page links it
   only as an absolute `https://` URL, escaped, and an auth Worker reading a mailbox without it adds nothing. Reading sends
   nothing; no schema or agent API change.
 - **Recent actions on `/account` (2026-11-18).** The owner page lists, under "Recent actions", the actions of the agents
@@ -180,7 +182,10 @@ Mutation checks: each of these fails a test:
   test (`postUrl_ReceiptInTheConfirmedShape_PlatformAddressElseNull`, `youtubeUpload_postUrl_VideoIdOnlyBecomesTheWatchAddress`,
   `ownerPendingAction_SentNativePost_PostUrlFromTheReceiptOnlyWhenSent`,
   `actionPage_SentWithReceiptAndPublication_ReferenceStateAndHttpsLinkOnly` and the workerd test, which reads a native X
-  receipt from the mailbox's stored row and shows its link to the owner only).
+  receipt from the mailbox's stored row and shows its link to the owner only). Telegram (#525): mutants (lower or upper
+  channel bound dropped, message ID 0 or leading zero allowed, end anchor dropped, the raw `100…` ID linked, `postUrl`
+  removed) each fail `postUrl_ReceiptInTheConfirmedShape_PlatformAddressElseNull`; widening the ID to 9–13 digits is
+  equivalent (the lower bound still refuses a basic group).
 
 - withdrawing an approval (2026-11-18): refusing it for an approved action (the old pending-only check), withdrawing an
   approval past its expiry, offering the withdrawal on the page for any other settled status, or dropping the page's

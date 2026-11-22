@@ -404,8 +404,8 @@ export function mediaIdsOf(content: string): string[] {
  * What became of an action of the human's own agent that is no longer waiting for a decision: its status, stored failure code,
  * and for a sent action the platform's receipt and, when the effect is tracked after sending, the publication's state. `sendBy` is
  * the plan's expiry while it is approved and unsent (the time by which the agent must send it, after which it is never sent), else null.
- * `postUrl` is the platform's own https address of a sent post when its receipt alone determines it (native X, Bluesky, LinkedIn and
- * YouTube), else null.
+ * `postUrl` is the platform's own https address of a sent post when its receipt alone determines it (native X, Bluesky, LinkedIn,
+ * YouTube, and a Telegram channel or supergroup message), else null.
  */
 export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; receipt: string | null;
     publication: PublicationView | null; about: OwnerSettledPlan; sendBy: string | null; postUrl: string | null};
