@@ -4,7 +4,7 @@ import {pathToFileURL} from 'node:url';
 // Deployment gate: only successful runs triggered by an actual main push at
 // precisely this source commit count. PR runs, skipped jobs and stale commits
 // are not substitutes for release evidence.
-export const mandatoryWorkflows=['ci.yml','worker-browser.yml','scan-security.yml','oauth-auth-worker.yml'] as const;
+export const mandatoryWorkflows=['ci-dotnet.yml','ci-mailbox-worker.yml','scan-dependencies.yml','ci-auth-worker.yml'] as const;
 
 export async function requireMainVerification(
     repo:string,sha:string,token:string,request:typeof fetch=fetch
@@ -17,7 +17,7 @@ export async function requireMainVerification(
         // OAuth is path-filtered on push. A successful manual run at this exact
         // main SHA is an explicit equivalent; other release gates remain push-only.
         const query=new URLSearchParams({branch:'main',head_sha:sha,per_page:'20'});
-        if(workflow!=='oauth-auth-worker.yml')query.set('event','push');
+        if(workflow!=='ci-auth-worker.yml')query.set('event','push');
         const url='https://api.github.com/repos/'+repo+'/actions/workflows/'+workflow+'/runs?'+query;
         let response:Response;
         try{response=await request(url,{method:'GET',redirect:'error',
@@ -32,7 +32,7 @@ export async function requireMainVerification(
         if(!json||!Array.isArray(json.workflow_runs))
             throw Error('Main '+workflow+' returned malformed run history.');
         const matching=json.workflow_runs.filter(r=>r.head_sha===sha&&r.head_branch==='main'&&
-            (r.event==='push'||(workflow==='oauth-auth-worker.yml'&&r.event==='workflow_dispatch')));
+            (r.event==='push'||(workflow==='ci-auth-worker.yml'&&r.event==='workflow_dispatch')));
         const passed=matching.find(r=>r.status==='completed'&&r.conclusion==='success');
         if(!passed)throw Error('Main '+workflow+' has no successful exact-SHA main verification; no issuer deployment.');
         evidence[workflow]=typeof passed.html_url==='string'?passed.html_url:'';

@@ -74,7 +74,7 @@ the release. `completed-only` requires that plan to be empty at preflight, befor
 activation, so since #421 it refuses every release until the table exists.
 
 **The opt-in.** `WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA=true`, set from the `apply_external_action_keys_schema`
-input of a manual production dispatch of [Deploy Weave Worker](../../.github/workflows/deploy-weave-worker.yml)
+input of a manual production dispatch of [Deploy Weave Worker](../../.github/workflows/deploy-demo.yml)
 (default `false`; the owner comment on #236, `publish/demo` and repository scope can never set it). With it, the
 completed-only release (`scripts/approved-external-action-keys.ts`):
 

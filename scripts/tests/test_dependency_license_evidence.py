@@ -77,7 +77,7 @@ class LicenseEvidenceTests(unittest.TestCase):
                         'status': 'unavailable', 'failure_code': 'invalid-license-evidence'})
 
     def test_ci_runs_evidence_guard_after_the_same_pinned_policy_action(self):
-        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        workflow = (ROOT / '.github/workflows/ci-dotnet.yml').read_text()
         review = workflow.split('  dependency-review:\n', 1)[1]
         self.assertIn('id: dependency-policy', review)
         self.assertIn('a1d282b36b6f3519aa1f3fc636f609c47dddb294', review)

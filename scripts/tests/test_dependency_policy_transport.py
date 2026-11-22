@@ -26,7 +26,7 @@ LARGE_INVALID = json.dumps({'unlicensed': [], 'unresolved': [],
 
 class DependencyPolicyTransportTests(unittest.TestCase):
     def transport_script(self):
-        review = (ROOT / '.github/workflows/ci.yml').read_text().split('  dependency-review:\n', 1)[1]
+        review = (ROOT / '.github/workflows/ci-dotnet.yml').read_text().split('  dependency-review:\n', 1)[1]
         match = re.search(r'      - name: Materialize dependency policy outputs\n(.*?)(?=\n      - name:|\Z)',
                           review, re.DOTALL)
         self.assertIsNotNone(match, 'Large action outputs need a script-file transport step, not environment entries.')

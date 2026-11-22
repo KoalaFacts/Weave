@@ -51,7 +51,7 @@ def resolve_source(repository, run_id, requested_version='', get=gh_get):
     require(run.get('status') == 'completed' and run.get('conclusion') == 'success',
             'Release run did not complete successfully.')
     require(run.get('head_branch') == 'main' and run.get('event') == 'workflow_dispatch'
-            and run.get('path') == '.github/workflows/release.yml', 'Untrusted release workflow or branch.')
+            and run.get('path') == '.github/workflows/release-dotnet.yml', 'Untrusted release workflow or branch.')
     require(isinstance(run.get('head_repository'), dict)
             and run['head_repository'].get('full_name') == repository, 'Release came from another repository.')
     sha = run.get('head_sha')

@@ -1,4 +1,4 @@
-name: CI
+name: CI / .NET and repo checks
 
 on:
   push:
@@ -253,7 +253,7 @@ jobs:
         working-directory: typescript/agent-key
         run: npm test
       # The run against the real Worker is typescript/mailbox-worker/test/agent-key-helper.test.ts, part of the
-      # Worker suite (worker-browser.yml and the deploy verification), so it is not repeated here.
+      # Worker suite (ci-mailbox-worker.yml and the deploy verification), so it is not repeated here.
       - name: Check the packaged command builds
         working-directory: typescript/agent-key
         run: npm run build && node dist/cli.js init "$RUNNER_TEMP/agent-key-smoke.jwk"

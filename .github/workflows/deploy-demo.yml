@@ -1,4 +1,4 @@
-name: Deploy Weave Worker
+name: Deploy / demo Workers
 on:
   # An explicit release signal, not automatic deployment on ordinary main pushes.
   push:
@@ -123,18 +123,18 @@ jobs:
       # Full product CI includes the .NET tests and mandatory 90% owner coverage gate.
       # Worker/OAuth suites alone cannot authorize a production release while this CI is pending or red.
       - name: Require passed full CI and coverage on main for this commit
-        run: node typescript/mailbox-worker/scripts/require-ci-success.ts ci.yml
+        run: node typescript/mailbox-worker/scripts/require-ci-success.ts ci-dotnet.yml
         env:
           GITHUB_TOKEN: ${{ github.token }}
       # The Worker verification workflow already ran typecheck, the full Worker suite, audit and browser checks on
       # this commit on main; the release requires that exact run to have passed instead of repeating it here.
       - name: Require passed Worker verification on main for this commit
-        run: node typescript/mailbox-worker/scripts/require-ci-success.ts worker-browser.yml
+        run: node typescript/mailbox-worker/scripts/require-ci-success.ts ci-mailbox-worker.yml
         env:
           GITHUB_TOKEN: ${{ github.token }}
       # The production release also updates the authorization Worker, whose suite is OAuth verification.
       - name: Require passed OAuth verification on main for this commit
-        run: node typescript/mailbox-worker/scripts/require-ci-success.ts oauth-auth-worker.yml
+        run: node typescript/mailbox-worker/scripts/require-ci-success.ts ci-auth-worker.yml
         env:
           GITHUB_TOKEN: ${{ github.token }}
   deploy-repository:

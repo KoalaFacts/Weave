@@ -1,4 +1,4 @@
-name: Worker verification
+name: CI / mailbox-worker
 
 on:
   pull_request:

@@ -183,7 +183,7 @@ restart/replay.
 
 ### Protected GitHub Actions one-time OAuth release selector (not executed)
 
-The **Deploy Weave Worker** workflow exposes `enable_first_party_oauth`
+The **Deploy / demo Workers** workflow (`deploy-demo.yml`) exposes `enable_first_party_oauth`
 (default **false**) only through manual dispatch on protected `main`,
 with `configuration_scope=production`, `database_mode=completed-only`
 and a separately approved `production` environment. The Node24

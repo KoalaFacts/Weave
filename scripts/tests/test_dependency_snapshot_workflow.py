@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class SnapshotWorkflowTests(unittest.TestCase):
     def workflow(self):
-        return (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+        return (ROOT / '.github/workflows/ci-dotnet.yml').read_text(encoding='utf-8')
 
     def test_snapshot_producer_exists_and_precedes_review(self):
         text = self.workflow()
