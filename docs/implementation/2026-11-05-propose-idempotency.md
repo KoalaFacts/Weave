@@ -176,7 +176,8 @@ in the inbox notices, whose 50 slots other changes can fill.
 - `GET /v1/external-actions` returns `{actions: [...]}`: every `pending` or `approved` action of the calling agent
   whose expiry is still ahead, oldest first by creation (then action ID), each exactly as
   `GET /v1/external-actions/{actionId}` returns it (a waiting plan has no `publication`). The 20-waiting-plans limit
-  bounds it, so there is no cursor; query parameters are ignored. Completed, failed, unknown, rejected and expired
+  bounds it, so there is no cursor; query parameters are ignored (2026-11-22: `waiting` and `before` are checked, see
+  below). Completed, failed, unknown, rejected and expired
   actions are read by ID. One indexed read (`external_actions_account`); no schema change; nothing is sent.
 - HTTP only; the MCP tools are unchanged (`get_external_action` reads by ID).
 - Verification: `listWaitingExternalActions_PendingAndApprovedOfThisAgentOnly_OldestFirstUntilSettledOrExpired`
@@ -200,7 +201,8 @@ because notices carry no `publication` and `publicationUrl` was declined. One re
   retained. A `dispatching` action whose outcome could not be recorded is listed, so an agent can still find it.
   (Later the same day: `before` pages past the newest 20; see "Paging past actions" below.)
 - `waiting` absent or `true` keeps the waiting-plan list above unchanged; any other value, or the parameter twice, is
-  `400 invalid` with `field: waiting`. Other query parameters are still ignored. No schema change; nothing is sent.
+  `400 invalid` with `field: waiting`. Other query parameters are still ignored (later: `before`, see "Paging past
+  actions" below). No schema change; nothing is sent.
 - HTTP only; the MCP tools are unchanged.
 - Verification (`test/external-actions.test.ts`, through the worker's HTTP entry):
   `listPastExternalActions_SettledAndExpiredOfThisAgentOnly_NewestFirstWithPublication` (empty list; completed,

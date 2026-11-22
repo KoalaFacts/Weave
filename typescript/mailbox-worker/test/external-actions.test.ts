@@ -1140,7 +1140,7 @@ test('listPastExternalActions_BeforeLastEntry_NextOlderPageThenEmpty', () => sce
 }));
 
 test('listPastExternalActions_BeforeAnotherAgentsOrUnknownAction_Unavailable', () => scenario(async ({h}) => {
-    const {agent} = await ownedAgent(h);
+    const {agent, humanId} = await ownedAgent(h);
     const other = await ownedAgent(h);
     const stranger = (await (await propose(h, other.agent, 'Not yours')).json() as {actionId: string}).actionId;
     for (const before of [stranger, '00000000-0000-4000-8000-000000000000']) {
@@ -1148,8 +1148,13 @@ test('listPastExternalActions_BeforeAnotherAgentsOrUnknownAction_Unavailable', (
         assert.equal(response.status, 404, before);
         assert.equal((await response.json() as {code: string}).code, 'unavailable', 'another agent\'s action is indistinguishable from a missing one');
     }
+    const settled = (await (await propose(h, agent, 'Mine, rejected')).json() as {actionId: string}).actionId;
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: settled}), {ok: true});
     const own = (await (await propose(h, agent, 'Mine, still waiting')).json() as {actionId: string}).actionId;
-    assert.equal((await h.request('/v1/external-actions?waiting=false&before=' + own, agent)).status, 200, 'a waiting plan of this agent is a valid cursor');
+    await h.db.prepare('UPDATE external_actions SET created_at=created_at+1 WHERE action_id=?').bind(own).run();
+    const response = await h.request('/v1/external-actions?waiting=false&before=' + own, agent);
+    assert.equal(response.status, 200, 'a waiting plan of this agent is a valid cursor');
+    assert.deepEqual((await response.json() as {actions: {actionId: string}[]}).actions.map(a => a.actionId), [settled], 'and the list after it holds the older settled action');
 }));
 
 test('listExternalActions_BeforeMalformedRepeatedOrOnWaitingList_InvalidField', () => scenario(async ({h}) => {
