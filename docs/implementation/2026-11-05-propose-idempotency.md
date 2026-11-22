@@ -188,7 +188,29 @@ in the inbox notices, whose 50 slots other changes can fill.
   key check is not caught: request authentication already refuses a revoked key, so the check is defence in depth, as
   for the by-ID read.
 
-## Limits
+## Listing past actions (2026-11-22)
+
+Envoylet showed what became of its recent posts by reading each action by ID (at most 10 Postiz actions a refresh),
+because notices carry no `publication` and `publicationUrl` was declined. One read now covers them.
+
+- `GET /v1/external-actions?waiting=false` returns `{actions: [...]}`: the calling agent's 20 newest actions that no
+  longer wait (`rejected`, `dispatching`, `completed`, `failed`, `unknown`, or `pending`/`approved` from their expiry
+  tick, shown as `expired`), newest first by creation (then action ID), each exactly as the by-ID read returns it,
+  tracked `publication` included (one `LEFT JOIN`, no per-row read). No cursor: older actions are read by ID while
+  retained. A `dispatching` action whose outcome could not be recorded is listed, so an agent can still find it.
+- `waiting` absent or `true` keeps the waiting-plan list above unchanged; any other value, or the parameter twice, is
+  `400 invalid` with `field: waiting`. Other query parameters are still ignored. No schema change; nothing is sent.
+- HTTP only; the MCP tools are unchanged.
+- Verification (`test/external-actions.test.ts`, through the worker's HTTP entry):
+  `listPastExternalActions_SettledAndExpiredOfThisAgentOnly_NewestFirstWithPublication` (empty list; completed,
+  rejected, expired and stuck-dispatching listed newest first; pending and approved-before-expiry absent; another
+  agent's rejected action absent; each entry equal to the by-ID read; publication present only where tracked; the
+  default list unchanged; nothing sent), `listPastExternalActions_MoreThanTheLimit_OnlyTheNewest`,
+  `listPastExternalActions_PlanAtItsExactExpiryTick_ListedAsExpired` (also: a failing caller check rejects the read),
+  `listExternalActions_WaitingParameterNotTrueOrFalse_InvalidField`, `listPastExternalActions_RevokedKey_Unauthenticated`.
+- Mutation checks, each caught: dropping the agent filter, oldest first, `>=` at the expiry tick, dropping the
+  publication, treating `approved` as no longer waiting, a limit of 21, dropping the in-transaction caller check,
+  accepting any `waiting` value, accepting a repeated `waiting`.
 
 - No list endpoint (`GET /v1/external-actions?status=pending`); the key is the reconciliation path.
   (2026-11-17: `GET /v1/external-actions` now lists waiting plans; see "Listing waiting plans" above.)

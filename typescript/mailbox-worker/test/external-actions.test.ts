@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
-import { actionLifetimeTicks, approvalOrigin, recentActionWindowTicks, recentActionsShownToOwner, executeExternalAction, listWaitingExternalActions, ownerPendingAction, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
+import { actionLifetimeTicks, approvalOrigin, recentActionWindowTicks, recentActionsShownToOwner, executeExternalAction, listPastExternalActions, listWaitingExternalActions, pastActionsListed, ownerPendingAction, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
 import { apiTime } from '../src/time.ts';
 import { createOwnedAgent } from '../src/humans.ts';
 import type { Problem } from '../src/wire.ts';
@@ -1042,6 +1042,104 @@ test('listWaitingExternalActions_PlanAtItsExactExpiryTick_NoLongerListed', () =>
     const listedAt = async (at: bigint) => (await listWaitingExternalActions(environment(h), caller, () => at)).actions.map(a => a.actionId + ':' + a.status);
     assert.deepEqual(await listedAt(expiry - 1n), [action.actionId + ':pending'], 'listed until the tick before its expiry');
     assert.deepEqual(await listedAt(expiry), [], 'not listed from its expiry tick, never as expired');
+}));
+
+const past = async (h: Harness, as: AgentCredential) => {
+    const response = await h.request('/v1/external-actions?waiting=false', as);
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+    return await response.json() as {actions: (Listed['actions'][number] & {publication: {state: string; url: string | null} | null})[]};
+};
+
+// An app shows what became of its recent posts in one read instead of one by-ID read per action (KoalaFacts/Weave#365).
+test('listPastExternalActions_SettledAndExpiredOfThisAgentOnly_NewestFirstWithPublication', () => scenario(async ({h, provider}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    assert.deepEqual(await past(h, agent), {actions: []}, 'an agent with no actions gets an empty list');
+
+    const ids: string[] = [];
+    for (const content of ['Sent', 'Rejected', 'Expired', 'Waiting', 'Approved', 'Lost']) ids.push((await (await propose(h, agent, content)).json() as {actionId: string}).actionId);
+    // Creation ticks one apart in proposal order, written explicitly so the order checked is the stored time, not insertion.
+    const base = BigInt(ticks()) - 1_000_000n;
+    for (const [i, id] of ids.entries()) await h.db.prepare('UPDATE external_actions SET created_at=CAST(? AS INTEGER) WHERE action_id=?').bind((base + BigInt(i)).toString(), id).run();
+    const other = await ownedAgent(h);
+    const stranger = (await (await propose(h, other.agent, 'Not yours')).json() as {actionId: string}).actionId;
+    assert.deepEqual(await decide(h, other.humanId, {kind: 'reject-action', requestId: stranger}), {ok: true});
+
+    const confirm = async (id: string) => {
+        const shown = (await pendingFor(h, humanId)).find(action => action.actionId === id)!;
+        assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: id, planDigest: shown.planDigest}), {ok: true});
+    };
+    await confirm(ids[0]);
+    assert.equal((await execute(h, agent, ids[0])).status, 'completed');
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: ids[1]}), {ok: true});
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind(ticks(), ids[2]).run();
+    await confirm(ids[4]);
+    // An execute whose outcome could not be recorded stays dispatching; the agent must still find it.
+    await confirm(ids[5]);
+    await h.db.prepare("UPDATE external_actions SET status='dispatching',dispatched_at=decided_at WHERE action_id=?").bind(ids[5]).run();
+    await h.db.prepare(`INSERT INTO external_publications(action_id,account_id,state,url,error,due_at,checks,next_check_at,updated_at,checked_at)
+        SELECT action_id,account_id,'published','https://example.test/p/1',NULL,created_at,1,NULL,created_at,created_at FROM external_actions WHERE action_id=?`).bind(ids[0]).run();
+
+    const listed = await past(h, agent);
+    assert.deepEqual(listed.actions.map(a => a.content + ':' + a.status), ['Lost:dispatching', 'Expired:expired', 'Rejected:rejected', 'Sent:completed'],
+        'newest proposal first, only this agent\'s, and no plan that still waits (pending or approved before expiry)');
+    for (const id of [ids[0], ids[1], ids[2], ids[5]]) {
+        assert.deepEqual(listed.actions.find(a => a.actionId === id), await h.ok(`/v1/external-actions/${id}`, agent), 'each entry is the same view as reading the action by its ID');
+    }
+    const sent = listed.actions.find(a => a.actionId === ids[0])!;
+    assert.deepEqual([sent.publication?.state, sent.publication?.url], ['published', 'https://example.test/p/1'], 'the tracked publication is included');
+    assert.ok(listed.actions.filter(a => a.actionId !== ids[0]).every(a => a.publication === null), 'an action with no tracked publication has none');
+    assert.deepEqual((await waiting(h, agent)).actions.map(a => a.content), ['Waiting', 'Approved'], 'the default list is unchanged');
+    assert.equal(provider.calls.length, 1, 'listing sends nothing');
+}));
+
+test('listPastExternalActions_MoreThanTheLimit_OnlyTheNewest', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const base = BigInt(ticks()) - 1_000_000n;
+    const ids: string[] = [];
+    for (let i = 0; i <= pastActionsListed; i++) {
+        const id = (await (await propose(h, agent, 'Post ' + i)).json() as {actionId: string}).actionId;
+        assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: id}), {ok: true});
+        await h.db.prepare('UPDATE external_actions SET created_at=CAST(? AS INTEGER) WHERE action_id=?').bind((base + BigInt(i)).toString(), id).run();
+        ids.push(id);
+    }
+    const listed = (await past(h, agent)).actions.map(a => a.actionId);
+    assert.equal(listed.length, pastActionsListed);
+    assert.deepEqual(listed, ids.slice(1).reverse(), 'the oldest falls off');
+}));
+
+test('listPastExternalActions_PlanAtItsExactExpiryTick_ListedAsExpired', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    const expiry = await storedExpiry(h, action.actionId);
+    const caller: ActionCaller = {accountId: agent.accountId, check: async () => {}};
+    const listedAt = async (at: bigint) => (await listPastExternalActions(environment(h), caller, () => at)).actions.map(a => a.actionId + ':' + a.status);
+    assert.deepEqual(await listedAt(expiry - 1n), [], 'still waiting the tick before its expiry');
+    assert.deepEqual(await listedAt(expiry), [action.actionId + ':expired'], 'listed as expired from its expiry tick');
+
+    const refused: ActionCaller = {accountId: agent.accountId, check: async () => { throw new Error('authority gone'); }};
+    await assert.rejects(listPastExternalActions(environment(h), refused, () => expiry), /authority gone/, 'the caller\'s authority is checked inside the read');
+}));
+
+test('listExternalActions_WaitingParameterNotTrueOrFalse_InvalidField', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    for (const query of ['waiting=', 'waiting=no', 'waiting=FALSE', 'waiting=false&waiting=false', 'waiting=true&waiting=false']) {
+        const response = await h.request('/v1/external-actions?' + query, agent);
+        assert.equal(response.status, 400, query);
+        const problem = await response.json() as {code: string; field: string; reason: string};
+        assert.deepEqual([problem.code, problem.field, problem.reason], ['invalid', 'waiting', 'must be true or false'], query);
+    }
+    assert.equal((await h.request('/v1/external-actions?waiting=true', agent)).status, 200);
+}));
+
+test('listPastExternalActions_RevokedKey_Unauthenticated', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: action.actionId}), {ok: true});
+    await h.db.prepare('UPDATE agent_keys SET revoked_at=CAST(? AS INTEGER) WHERE kid=?').bind(ticks(), agent.kid).run();
+    const response = await h.request('/v1/external-actions?waiting=false', agent);
+    assert.equal(response.status, 401);
+    assert.equal((await response.json() as {code: string}).code, 'unauthenticated');
 }));
 
 // The owner's pending actions are every agent's, named, whichever page of agents the overview shows.

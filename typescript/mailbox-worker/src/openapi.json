@@ -443,8 +443,24 @@
     "/v1/external-actions": {
       "get": {
         "operationId": "listWaitingExternalActions",
-        "summary": "List this agent's waiting external actions",
-        "description": "Every pending or approved action of this agent that has not expired, oldest first: at most 20, the waiting-plan limit, so there is no cursor. Use it to find a plan whose propose answer or action ID was lost while it can still be approved or executed. Settled and expired actions are not listed; read one by its ID. Nothing is sent to any provider.",
+        "summary": "List this agent's waiting or past external actions",
+        "description": "Without waiting=false: every pending or approved action of this agent that has not expired, oldest first: at most 20, the waiting-plan limit, so there is no cursor. Use it to find a plan whose propose answer or action ID was lost while it can still be approved or executed. With waiting=false: this agent's 20 newest actions that no longer wait (rejected, dispatching, completed, failed, unknown or expired), newest proposal first, with their tracked publication; older ones are read by ID while retained. Use it to show what became of recent posts in one read. Each entry is the view GET /v1/external-actions/{actionId} returns. Nothing is sent to any provider.",
+        "parameters": [
+          {
+            "name": "waiting",
+            "in": "query",
+            "required": false,
+            "description": "true (the default) lists the waiting plans; false lists the newest actions that no longer wait. Any other value, or the parameter given twice, is 400 invalid with field waiting.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "true"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success.",
@@ -476,6 +492,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
           },
           "401": {
             "$ref": "#/components/responses/401"

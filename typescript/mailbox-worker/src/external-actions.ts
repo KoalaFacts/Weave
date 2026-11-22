@@ -210,6 +210,39 @@ export async function listWaitingExternalActions(env: Env, caller: ActionCaller,
     }, clock);
 }
 
+/** The `waiting` query parameter of `GET /v1/external-actions`: absent or `true` lists waiting plans, `false` the rest. */
+export function waitingParameter(params: URLSearchParams): boolean {
+    const values = params.getAll('waiting');
+    if (values.length === 0) return true;
+    if (values.length > 1 || (values[0] !== 'true' && values[0] !== 'false')) invalidField('waiting', 'must be true or false');
+    return values[0] === 'true';
+}
+
+/** At most this many actions in one `GET /v1/external-actions?waiting=false` answer. */
+export const pastActionsListed = 20;
+
+/**
+ * GET /v1/external-actions?waiting=false: this agent's newest actions that no longer wait (rejected, dispatching,
+ * completed, failed, unknown, or pending/approved past expiry), newest proposal first, each as the by-ID read returns it,
+ * tracked publication included. An app shows what became of recent posts in one read instead of one read per action ID.
+ */
+export async function listPastExternalActions(env: Env, caller: ActionCaller, clock: () => bigint = nowUtc): Promise<{actions: ExternalActionView[]}> {
+    return atomic(env.db, async tx => {
+        const at = tx.store.now;
+        await caller.check(tx);
+        // The publication columns are renamed in a subquery, so the shared column list stays unambiguous.
+        const rows = (await tx.db.prepare(`SELECT ${columns},p_state,p_url,p_error,p_checked_at
+            FROM external_actions LEFT JOIN (SELECT action_id p_action_id,state p_state,url p_url,error p_error,CAST(checked_at AS TEXT) p_checked_at
+                FROM external_publications) ON p_action_id=action_id
+            WHERE account_id=? AND NOT (status IN ('pending','approved') AND expires_at>CAST(? AS INTEGER))
+            ORDER BY created_at DESC,action_id DESC LIMIT ?`)
+            .bind(caller.accountId, at.toString(), pastActionsListed)
+            .all<Row & {p_state: PublicationView['state'] | null; p_url: string | null; p_error: string | null; p_checked_at: string | null}>()).results;
+        return {actions: rows.map(row => view(env, row, at, row.p_state === null ? null
+            : {state: row.p_state, url: row.p_url, error: row.p_error, checkedAt: apiTime(row.p_checked_at)}))};
+    }, clock);
+}
+
 /** A claimed dispatch carries the opened credential secret, which is never stored or returned. */
 type Claim = {row: Row; dispatch: true; secret: string | null} | {row: Row; dispatch: false; publication?: PublicationView | null};
 
