@@ -106,12 +106,16 @@ const recentText:Readonly<Record<string,string>>=Object.freeze({
   unknown:"sent, but whether the platform accepted it is unknown; it will not be sent again"
 });
 
+/** The owner page listing the recent actions after the action `before` names; null is the first page. */
+export const recentPagePath=(before:string|null)=>before===null?"/account":"/account?recent="+encodeURIComponent(before);
 /**
  * The owner's agents' actions that stopped waiting in the last 7 days, newest first, each linking to its own page, which says
- * the rest (the platform's reference, the publication). A mailbox that predates the list omits it, which reads as none.
+ * the rest (the platform's reference, the publication). A mailbox that predates the list omits it, which reads as none. A later
+ * page (`before` set) with none left says so and links back to the newest.
  */
-function recentSection(actions:readonly OwnerRecentAction[]|undefined):string{
-  if(!actions||actions.length===0)return "<p>None of your agents' actions was decided, sent or expired in the last 7 days.</p>";
+function recentSection(actions:readonly OwnerRecentAction[]|undefined,before:string|null):string{
+  if(!actions||actions.length===0)return before===null?"<p>None of your agents' actions was decided, sent or expired in the last 7 days.</p>":
+    "<p>No older actions from the last 7 days.</p><p><a href=\""+esc(recentPagePath(null))+"\">Newest actions</a></p>";
   return "<ul>"+actions.map(action=>{
     const outcome=Object.hasOwn(recentText,action.status)?recentText[action.status]!:"status not shown here";
     const failure=action.status==="failed"&&action.failure?" (<code>"+esc(action.failure)+"</code>)":"";
@@ -199,10 +203,22 @@ function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:Read
 }
 
 /**
- * The owner's page, showing the page of agents after `after`. `tokens` maps each form to its signed action token; a form without
- * a token is not rendered.
+ * Links between pages of recent actions: back to the newest when this is a later page, and on to the older ones when the mailbox
+ * left some out. A mailbox that predates the list or its flag omits it, which reads as nothing left out.
  */
-export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:ReadonlyMap<string,string>,result:string|null,now:number,after:string|null=null):Response{
+function recentPaging(actions:readonly OwnerRecentAction[]|undefined,more:boolean|undefined,before:string|null):string{
+  const last=actions?.at(-1);
+  const paging=[before===null||last===undefined?"":'<a href="'+esc(recentPagePath(null))+'">Newest actions</a>',
+    more!==true||last===undefined?"":'<a href="'+esc(recentPagePath(last.actionId))+'">Older actions</a>'].filter(Boolean).join(" · ");
+  return paging===""?"":"<p>"+paging+"</p>";
+}
+
+/**
+ * The owner's page, showing the page of agents after `after` and the recent actions after `recentBefore`. `tokens` maps each
+ * form to its signed action token; a form without a token is not rendered.
+ */
+export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:ReadonlyMap<string,string>,result:string|null,now:number,after:string|null=null,
+  recentBefore:string|null=null):Response{
   const shown=result!==null&&Object.hasOwn(ownerResultText,result)?ownerResultText[result]:null;
   const head=(shown===null?"":"<p role=\"status\">"+esc(shown)+"</p>")+"<h1>Your Weave agents</h1><p>Signed in as @"+esc(human.login)+"</p>";
   if(overview.frozen)return shell("Your Weave agents",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
@@ -215,9 +231,7 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
     // A mailbox that predates these flags omits them, which reads as nothing left out.
     overview.moreExternalActions===true?"<p>Only the "+overview.externalActions.length+" oldest actions waiting for approval are shown. "+
       "Approve or reject some to see the rest here; each one's own page, where the app that proposed it links you, also works.</p>":"",
-    "<h2>Recent actions</h2>",recentSection(overview.recentActions),
-    overview.moreRecentActions===true?"<p>Only the "+overview.recentActions.length+" most recent are listed; older ones from the last 7 days are not shown here. "+
-      "Each one's own page, where the app that proposed it links you, still says what became of it.</p>":"",
+    "<h2>Recent actions</h2>",recentSection(overview.recentActions,recentBefore),recentPaging(overview.recentActions,overview.moreRecentActions,recentBefore),
     "<h2>Apps that manage all your agents</h2>",
     "<p>Each can create, list and rename your agents and act as any of them, including agents you add later. Approving actions stays with you.</p>",
     ownerGrantsSection(overview.ownerGrants,tokens),
