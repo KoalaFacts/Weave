@@ -170,6 +170,10 @@ test('listMyExternalActions_InvalidArgumentsOrAnotherAgentsCursor_Refused', () =
         assert.equal(response.status, 404, JSON.stringify(response.body));
         assert.equal(response.body.code, 'unavailable');
     }
+    // A revoked grant is refused inside the read's own transaction, for both lists.
+    await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now()) * 10000n).toString(), other.grantId).run();
+    for (const args of [{}, {waiting: false}, {waiting: false, before: foreign}])
+        assert.equal((await call(env, other.agent.accountId, other.grantId, 'list_my_external_actions', args)).status, 401, JSON.stringify(args));
     assert.equal(privateScope('list_my_external_actions'), 'weave:actions.read');
     assert.equal(privateMcpTools.find(tool => tool.name === 'list_my_external_actions')!.annotations.readOnlyHint, true);
 }));
