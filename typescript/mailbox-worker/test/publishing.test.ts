@@ -4,7 +4,8 @@ import { start } from './harness.ts';
 import { describePost, parsePost, publishingProvider, type PublishCall, type PublishingAdapter } from '../src/publishing.ts';
 import { postiz } from '../src/postiz-provider.ts';
 import { telegram } from '../src/telegram-provider.ts';
-import type { Env } from '../src/database.ts';
+import { atomic, type Env } from '../src/database.ts';
+import { bluesky } from '../src/bluesky-provider.ts';
 import { publishingAdapters } from '../src/external-providers.ts';
 
 const file = (overrides: Record<string, unknown> = {}) => ({mediaId: crypto.randomUUID(), bytes: 10, sha256: 'a'.repeat(64), ...overrides});
@@ -286,4 +287,30 @@ test('postUrl_ReceiptInTheConfirmedShape_PlatformAddressElseNull', () => {
         assert.equal(adapter(name).postUrl, undefined, name);
         assert.equal(publishingProvider(adapter(name)).postUrl, undefined, name);
     }
+});
+
+test('checkContent_StoredFileOfAnotherTypeOrTooLarge_RefusedWithTheExactReasonAppsMatch', async () => {
+    // Apps match these reasons literally to point the person at the file to remove (Envoylet, #365), so they are pinned whole.
+    const h = await start();
+    try {
+        const agent = await h.register(), at = (BigInt(Date.now()) * 10000n).toString();
+        const stored = async (type: string, bytes: number) => {
+            const media = file({bytes});
+            await h.db.prepare(`INSERT INTO external_media(media_id,account_id,content_type,bytes,sha256,created_at) VALUES(?,?,?,?,?,CAST(? AS INTEGER))`)
+                .bind(media.mediaId, agent.accountId, type, bytes, media.sha256, at).run();
+            return media;
+        };
+        const checkStored = (adapter: PublishingAdapter, post: unknown) => atomic(h.db, tx => publishingProvider(adapter).checkContent!(tx,
+            {accountId: agent.accountId, operation: 'publish_post', content: JSON.stringify(post), targetAccount: 'did:plc:x'}));
+        const adapter = demo([]), png = await stored('image/png', 80), gif = await stored('image/gif', 50), large = await stored('image/png', 101), limit = await stored('image/png', 100);
+        assert.equal(await checkStored(adapter, {text: 'x', media: [png]}), null, 'positive control: an accepted type within its limit');
+        assert.equal(await checkStored(adapter, {text: 'x', media: [limit]}), null, 'a file of exactly the limit is accepted');
+        assert.equal(await checkStored(adapter, {text: 'x', media: [png, gif]}), 'media must be image/png');
+        assert.equal(await checkStored(adapter, {text: 'x', media: [large]}), 'image/png files must be at most 100 bytes here');
+        assert.equal(await checkStored(adapter, {text: 'x', media: [{...png, bytes: 81}]}), 'media must name your uploaded files with their exact bytes and sha256');
+        // A real adapter lists every accepted type, in its rules' order.
+        const video = await stored('video/mp4', 50), photo = await stored('image/jpeg', 1_000_001);
+        assert.equal(await checkStored(bluesky, {text: 'x', media: [video]}), 'media must be image/jpeg, image/png, image/webp');
+        assert.equal(await checkStored(bluesky, {text: 'x', media: [photo]}), 'image/jpeg files must be at most 1000000 bytes here');
+    } finally { await h.close(); }
 });
