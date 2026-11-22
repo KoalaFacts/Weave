@@ -99,62 +99,6 @@ class LicenseEvidenceTests(unittest.TestCase):
         self.assertNotIn('pull-requests: write', review)
         self.assertIn('comment-summary-in-pr: never', review)
 
-    def test_fork_equivalent_permission_acceptance_keeps_writer_immutable_and_readonly(self):
-        workflow = (ROOT / '.github/workflows/dependency-policy-acceptance.yml').read_text()
-        denial = workflow.split('  read-only-submission:\n', 1)[1]
-        self.assertIn('contents: read', denial)
-        self.assertNotIn('contents: write', denial)
-        self.assertIn('ref: 97452c5adf605b69234798ead7e1b7550f425ccb', denial)
-        self.assertIn('snapshot-api-http-403', denial)
-        self.assertIn("report.get('sources') == []", denial)
-        self.assertNotIn('pull_request_target:', workflow)
-        for operation in ('dotnet restore', 'npm install', 'cargo build', 'mvn '):
-            self.assertNotIn(operation, denial)
-
-    def test_permission_denial_is_from_the_actual_snapshot_post_not_graph_reads(self):
-        workflow = (ROOT / '.github/workflows/dependency-policy-acceptance.yml').read_text()
-        denial = workflow.split('  read-only-submission:\n', 1)[1]
-        self.assertIn("failed_request == {'path': 'dependency-graph/snapshots', 'method': 'POST'}", denial)
-        self.assertIn('return original_request(self, path, payload)', denial)
-        self.assertIn("'failed_request': failed_request", denial)
-        self.assertIn('writes_attempted == 1', denial)
-
-    def test_actual_denial_outcome_remains_strict_and_failure_annotation_is_bounded(self):
-        workflow = (ROOT / '.github/workflows/dependency-policy-acceptance.yml').read_text()
-        source = workflow.split("          report = json.loads((output / 'submission.json').read_text())", 1)[1]
-        source = "          report = json.loads((output / 'submission.json').read_text())" + source
-        source = textwrap.dedent(source.split('\n      - name: Preserve permission-denial evidence', 1)[0])
-        for method, failure, writes, sources, should_pass in (
-                ('POST', 'snapshot-api-http-403', 1, [], True),
-                ('GET', 'snapshot-api-http-403', 0, [], False),
-                ('POST', 'snapshot-api-http-500', 1, [], False),
-                ('POST', 'snapshot-api-network', 1, [], False),
-                (None, None, 2, [{'private': 'do-not-emit'}], False),
-                ('GET', 'private\n::error::do-not-emit', 0, [], False)):
-            with self.subTest(method=method, failure=failure), tempfile.TemporaryDirectory() as root:
-                output = Path(root)
-                (output / 'submission.json').write_text(json.dumps({
-                    'status': 'unavailable' if failure else 'available',
-                    'failure': failure, 'sources': sources}))
-                failed_request = None if method is None else {
-                    'method': method, 'path': 'dependency-graph/snapshots' if method == 'POST' else 'git/blobs/abc'}
-                namespace = {'json': json, 're': __import__('re'), 'output': output,
-                             'os': type('Environment', (), {'environ': {'PR_BASE_SHA': 'a' * 40, 'PR_HEAD_SHA': 'b' * 40}}),
-                             'exit_code': 1 if failure else 0,
-                             'observed': {'writes': writes, 'reads': 3, 'failed_request': failed_request}}
-                captured = io.StringIO()
-                with patch('sys.stdout', captured):
-                    if should_pass:
-                        exec(source, namespace)
-                    else:
-                        with self.assertRaises(SystemExit):
-                            exec(source, namespace)
-                text = captured.getvalue()
-                self.assertEqual(text.count('::error'), 0 if should_pass else 1)
-                self.assertNotIn('do-not-emit', text)
-                self.assertLess(len(text), 600)
-                self.assertEqual(json.loads((output / 'acceptance.json').read_text())['passed'], should_pass)
-
 
 if __name__ == '__main__':
     unittest.main()

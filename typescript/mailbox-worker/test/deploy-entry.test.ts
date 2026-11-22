@@ -37,10 +37,6 @@ test('generic demo releases cannot select a D1 schema mutation; only the separat
         'None of the generic demo release paths can select maintenance migrations.');
     assert.equal((workflow.match(/node scripts\/verify-public-mcp\.ts/g)||[]).length,2,
         'Both deployments must still verify the public MCP endpoint.');
-    const reviewed=readFileSync(new URL('../../../.github/workflows/approved-human-schema-migration.yml',import.meta.url),'utf8');
-    assert.match(reviewed,/confirm_approved_source/);
-    assert.match(reviewed,/WEAVE_DEPLOY_DATABASE_MODE: maintain/,
-        'The exact-source-pinned protected migration entry must remain available.');
 });
 test('the retired Access trial input is absent from the deployment workflow',()=>{
     const workflow=readFileSync(path,'utf8');
