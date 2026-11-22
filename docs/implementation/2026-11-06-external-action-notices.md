@@ -30,7 +30,7 @@ lost.
   - An action's time is its last write, or its expiry when a live plan lapsed with nothing written.
   - It is reported when that time falls in the last 24 hours.
   - It is merged into the existing notices, newest first, at most 50 in all.
-- **No content.** The planned content and the receipt are not in the notice. The app reads
+- **No content.** The planned content is not in the notice (nor, in the first version, the receipt: see below). The app reads
   `GET /v1/external-actions/{actionId}` for those, with the same credential. This keeps the inbox page bounded and adds
   no data the agent could not already read.
 - **Failure code (added 2026-11-06, deliberately changing the first version).** Each notice also carries `failure`,
@@ -40,6 +40,18 @@ lost.
   app needed one extra read per failed action to say why. The code is bounded (at most 275 characters: a 256-character
   adapter reason after the `provider-rejected: ` prefix; text after that prefix can come from the provider and is
   untrusted data) and already readable by the same credential, so the page stays bounded and no new data is exposed.
+- **Receipt (added 2026-11-22, Envoylet request `notice-receipt`, deliberately changing the first version).** Each notice
+  also carries `receipt`, the same value `GET /v1/external-actions/{actionId}` returns: the provider's ID for the sent
+  post, set only when the action is `completed`, otherwise `null` (at most 256 characters, from the provider, untrusted).
+  Envoylet's "Recent posts in Weave" builds a post link from `provider` and `receipt`, as the owner page does since
+  #522; without it, that list needed one action read per sent post. It is already readable by the same credential, so
+  no new data is exposed and the page stays bounded. A Postiz post's tracked `publication.url` is still not in the
+  notice: it lives in another table and changes after the action completes, which produces no notice; read the action.
+  Verification: `inbox_ApprovedAndExecuted_OneNoticeWithLatestStatus` (completed notice equals the read's receipt,
+  approved notice `null`), `inbox_EveryActionStatus_NoticeMatchesPublishedNoticeSchema` (every status against the
+  OpenAPI `Notice`; only `completed` has a receipt; an over-long receipt is refused by the checker) and the exact
+  pending shape. Mutations, each killed and reverted: notice receipt always `null` (2 tests fail); OpenAPI `receipt`
+  made non-nullable (1 test fails).
 - **Own actions only.** Only rows with the caller's `account_id` are read. Another agent's actions never appear.
 - **Lost proposals.** A proposal whose HTTP response was lost (the case behind Envoylet's `propose-idempotency`
   request) shows up as a `pending` notice with its `actionId`. The app can then show the owner the plan, or let it

@@ -63,7 +63,7 @@ test('inbox_ProposedAction_PendingNoticeWithoutContent', () => scenario(async ({
     const action = await propose(h, agent);
     const notices = await actionNotices(h, agent);
     assert.deepEqual(notices, [{kind: 'external-action', actionId: action.actionId, status: 'pending', credentialRef: 'linkedin-main',
-        provider: 'test-http', targetAccount: 'urn:li:person:alpha', credentialRevision: 'rev-1', operation: 'publish_text', createdAt: action.createdAt, expiresAt: action.expiresAt, decidedAt: null, completedAt: null, failure: null}]);
+        provider: 'test-http', targetAccount: 'urn:li:person:alpha', credentialRevision: 'rev-1', operation: 'publish_text', createdAt: action.createdAt, expiresAt: action.expiresAt, decidedAt: null, completedAt: null, failure: null, receipt: null}]);
     assert.equal(JSON.stringify(notices).includes('Episode 12'), false, 'notices never carry the planned content');
 }));
 
@@ -87,9 +87,9 @@ test('inbox_EveryActionStatus_NoticeMatchesPublishedNoticeSchema', () => scenari
     await run(() => Response.json({reason: 'duplicate content'}, {status: 422}));
     await run(() => new Response('{}', {status: 502}));
     const page = await h.ok('/v1/inbox', agent) as {notices: Notice[]};
-    const statuses = page.notices.filter(notice => notice.kind === 'external-action').map(notice => `${notice.status}:${notice.failure}`);
-    assert.deepEqual(new Set(statuses), new Set(['pending:null', 'approved:null', 'rejected:null', 'expired:null', 'completed:null',
-        'failed:provider-rejected: duplicate content', 'unknown:outcome-unknown']), 'positive control: every reachable status is checked');
+    const statuses = page.notices.filter(notice => notice.kind === 'external-action').map(notice => `${notice.status}:${notice.failure}:${notice.receipt}`);
+    assert.deepEqual(new Set(statuses), new Set(['pending:null:null', 'approved:null:null', 'rejected:null:null', 'expired:null:null', 'completed:null:post-1',
+        'failed:provider-rejected: duplicate content:null', 'unknown:outcome-unknown:null']), 'positive control: every reachable status is checked');
     const pageSchema = spec.paths['/v1/inbox'].get.responses['200'].content['application/json'].schema;
     assert.equal(mismatch(spec, pageSchema, page, 'inbox'), null);
     const actionSchema = (spec.components.schemas.Notice.oneOf as Schema[]).find(option => option.properties?.kind?.const === 'external-action')!;
@@ -103,6 +103,7 @@ test('inbox_EveryActionStatus_NoticeMatchesPublishedNoticeSchema', () => scenari
     assert.match(mismatch(spec, actionSchema, {...notice, status: 'sent'}, 'item') ?? '', /item\.status is not one of/);
     assert.match(mismatch(spec, actionSchema, {...notice, createdAt: '2026-11-15 00:00:00'}, 'item') ?? '', /item\.createdAt does not match/);
     assert.match(mismatch(spec, actionSchema, {...notice, decidedAt: 1}, 'item') ?? '', /item\.decidedAt matches no anyOf option/);
+    assert.match(mismatch(spec, actionSchema, {...notice, receipt: 'x'.repeat(257)}, 'item') ?? '', /item\.receipt matches no anyOf option/);
 }));
 
 test('inbox_CredentialReconnectedAfterProposal_NoticeKeepsTheActionsAccount', () => scenario(async ({h}) => {
@@ -123,7 +124,7 @@ test('inbox_ApprovedAndExecuted_OneNoticeWithLatestStatus', () => scenario(async
     const {actionId} = await propose(h, agent);
     await approve(h, humanId, actionId);
     const approved = await actionNotices(h, agent);
-    assert.deepEqual(approved.map(n => [n.actionId, n.status]), [[actionId, 'approved']]);
+    assert.deepEqual(approved.map(n => [n.actionId, n.status, n.receipt]), [[actionId, 'approved', null]]);
     assert.equal(typeof approved[0].decidedAt, 'string');
 
     const executed = await h.ok(`/v1/external-actions/${actionId}/execute`, agent, 'POST', {}) as {status: string; completedAt: string};
@@ -131,6 +132,9 @@ test('inbox_ApprovedAndExecuted_OneNoticeWithLatestStatus', () => scenario(async
     assert.equal(provider.calls, 1);
     const completed = await actionNotices(h, agent);
     assert.deepEqual(completed.map(n => [n.actionId, n.status, n.completedAt, n.failure]), [[actionId, 'completed', executed.completedAt, null]]);
+    const read = await h.ok(`/v1/external-actions/${actionId}`, agent) as {receipt: string | null};
+    assert.equal(typeof read.receipt, 'string', 'positive control: the sent action has a receipt to report');
+    assert.deepEqual(completed.map(n => n.receipt), [read.receipt], 'the notice carries the same receipt the action read returns');
 }));
 
 test('inbox_UnknownOutcome_NoticeReportsUnknown', () => scenario(async ({h, provider}) => {
