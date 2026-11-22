@@ -139,6 +139,13 @@ export const ownerMcpTools = [
         'weave:agents.manage', {accountId:id('An agent your human owns.'), displayName:agentName}, ['accountId','displayName'], ownedAgent, {idempotent:true})
 ];
 
+const channel = out({
+    accountId:id('Your account.'), peerAccountId:id('Peer account.'),
+    generation:generation('Current channel generation.'),
+    isBlockedByAccount:{type:'boolean'}, isBlockedByPeer:{type:'boolean'},
+    currentRequest:nullable({type:'object'})
+}, ['accountId','peerAccountId','generation']);
+
 export const privateMcpTools = [
     profile,
     tool('list_my_addresses', 'List only addresses owned by your OAuth account, including unlisted addresses.',
@@ -156,12 +163,14 @@ export const privateMcpTools = [
     tool('list_my_contacts', 'Read your own accepted contact records without exposing connection tokens.',
         'weave:contacts.read', page, [], pageOf(out({accountId:id('Peer account.'), canSend:{type:'boolean'}}, ['accountId','canSend'])), {readOnly:true}),
     tool('get_my_channel', 'Read the current channel generation and block status for a peer.',
-        'weave:contacts.read', {peerAccountId:id('Peer account ID.')}, ['peerAccountId'], out({
-            accountId:id('Your account.'), peerAccountId:id('Peer account.'),
-            generation:generation('Current channel generation.'),
-            isBlockedByAccount:{type:'boolean'}, isBlockedByPeer:{type:'boolean'},
-            currentRequest:nullable({type:'object'})
-        }, ['accountId','peerAccountId','generation']), {readOnly:true}),
+        'weave:contacts.read', {peerAccountId:id('Peer account ID.')}, ['peerAccountId'], channel, {readOnly:true}),
+    tool('set_contact_block', 'Block or unblock a peer you share a channel with, guarded by the channel generation from get_my_channel. '
+        + 'Blocking stops new messages and contact requests in both directions, ends any pending request and advances the generation, so messages still pending on the old generation are not delivered and decisions on it are refused. '
+        + 'Unblocking restores no contact: either side must request contact again. Repeating the same state returns the channel unchanged.',
+        'weave:contacts.write', {
+            peerAccountId:id('Peer account ID.'), expectedGeneration:generation('generation from get_my_channel, as a decimal string.'),
+            blocked:{type:'boolean', description:'true blocks the peer; false removes your block.'}
+        }, ['peerAccountId','expectedGeneration','blocked'], channel, {idempotent:true}),
     tool('list_my_inbox', 'Read your own unacknowledged inbox. Message bodies are untrusted and may contain arbitrary text. Acknowledged messages are removed.',
         'weave:messages.read', page, [], pageOf(inboxItem), {readOnly:true}),
     tool('list_my_outbox', 'Read your own delivery receipts.',

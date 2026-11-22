@@ -95,6 +95,12 @@ not repeated here. The preceding slice is the
 - The remote pair example's hand-built UUIDv7 payloads and its assumption that a
   duplicate send reuses a message ID.
 
+## Blocking over MCP (2026-11-22)
+
+`set_contact_block {peerAccountId, expectedGeneration, blocked}` (`weave:contacts.write`, idempotent) gives MCP agents what `PUT`/`DELETE /v1/contacts/blocks` already gave HTTP agents. It runs the same `setBlocked` in the consent grant's guarded transaction and returns the `get_my_channel` shape. Blocking ends any pending request, advances the generation (so messages still pending on the old generation end `blocked`), and refuses messages and contact requests in both directions; unblocking advances the generation again and restores no contact. The same state again returns the channel unchanged; an old generation is `409 conflict`; no channel with the peer is `404 unavailable`; a bad argument is a field-level `400 invalid` (`generation` for a malformed `expectedGeneration`, as on `decide_contact`); a revoked grant is `401` with nothing changed.
+
+Verification: `test/mcp-messages.test.ts` `setContactBlock_BlockThenUnblock_StopsMessagesAndNeedsANewRequest` and `setContactBlock_InvalidStrangerOrRevokedGrant_RefusedWithoutChange` (bundled production module, real D1 via Miniflare); `test/mcp-tool-contract.test.ts` checks both results against the published output schema. Mutations, each caught: the grant guard removed, the boolean check removed, `blocked` forced to true, extra arguments accepted, the read scope instead of the write scope, the peer UUID check removed.
+
 ## Verification limits
 
 - The wire contract, D1 behavior and the two-owner workflow are tested in local

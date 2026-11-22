@@ -6,7 +6,7 @@ import { atomic, type Env, type Transaction } from './database';
 import { ownContacts } from './contact-links';
 import { ownedAddresses, mutateAddress } from './addresses';
 import { read } from './reads';
-import { requestContact, decide } from './contacts';
+import { requestContact, decide, setBlocked } from './contacts';
 import { sendWithResolvedConnection, ack, terminalize } from './messages';
 import { accountNames, fail, identity, invalidField, json, jsonText, problem, stringify, uuid } from './wire';
 import { checkUuid } from './mcp-arguments';
@@ -211,6 +211,15 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
                 const payload=messagePayload(message,tx.store.now);
                 return {result:await sendWithResolvedConnection(tx,accountId,recipientAccountId,generation,payload),resultId:payload.messageId};
             })))));
+        }
+        if(name==='set_contact_block'){
+            parameters(args,['peerAccountId','expectedGeneration','blocked'],['peerAccountId','expectedGeneration','blocked']);
+            checkUuid(args.peerAccountId,'peerAccountId');
+            const expectedGeneration=validGeneration(args.expectedGeneration);
+            if(typeof args.blocked!=='boolean')invalidField('blocked','must be true or false');
+            const blocked=args.blocked;
+            await sweep(env);
+            return json(withoutSecrets(await atomic(env.db,guarded(tx=>setBlocked(tx,accountId,{peerMailboxId:args.peerAccountId,expectedGeneration},blocked)))));
         }
         if(name==='ack_message'){
             parameters(args,['messageId','senderAccountId'],['messageId','senderAccountId']);
