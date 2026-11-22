@@ -15,9 +15,9 @@ type Provider = {calls: Call[]; respond: (call: Call) => Response | Promise<Resp
 const endpoint = 'https://provider.test/post';
 const completed = (call: Call) => Response.json({externalId: 'post-' + call.actionId});
 
-async function scenario(run: (s: {h: Harness; provider: Provider}) => Promise<void>, configured = true) {
+async function scenario(run: (s: {h: Harness; provider: Provider}) => Promise<void>, configured = true, bindings: Record<string, string> = {}) {
     const provider: Provider = {calls: [], respond: completed};
-    const h = await start({bindings: configured ? {EXTERNAL_ACTION_TEST_ENDPOINT: endpoint} : {}, outboundService: async (request: Request) => {
+    const h = await start({bindings: {...configured ? {EXTERNAL_ACTION_TEST_ENDPOINT: endpoint} : {}, ...bindings}, outboundService: async (request: Request) => {
         if (request.url !== endpoint) return new Response('unexpected', {status: 599});
         const call = await request.json() as Call;
         provider.calls.push(call);
@@ -1306,6 +1306,33 @@ test('ownerPendingAction_SentNativePost_PostUrlFromTheReceiptOnlyWhenSent', () =
     await h.db.prepare("UPDATE external_actions SET receipt='1859281733620449485',provider='discord' WHERE action_id=?").bind(actionId).run();
     assert.equal(await read(), null, 'a provider whose receipt does not name an address gives none');
 }));
+
+// The agent reads the same post address the owner page links, on the by-ID read and both lists, only once the action is completed.
+test('externalActionView_SentNativePost_PostUrlOnTheAgentReadsOnlyWhenCompleted', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const response = await propose(h, agent, 'A post that is sent.');
+    assert.equal(response.status, 200, await response.clone().text());
+    const {actionId, postUrl: proposed} = await response.json() as {actionId: string; postUrl: unknown};
+    assert.equal(proposed, null, 'a pending proposal has no post address');
+    assert.equal((await waiting(h, agent)).actions.every(a => (a as {postUrl?: unknown}).postUrl === null), true, 'waiting plans carry postUrl: null');
+    const readUrl = async () => (await h.ok(`/v1/external-actions/${actionId}`, agent) as {postUrl: unknown}).postUrl;
+    const listedUrl = async () => ((await past(h, agent)).actions.find(a => a.actionId === actionId) as {postUrl?: unknown} | undefined)?.postUrl;
+    await h.db.prepare(`UPDATE external_actions SET provider='x',status='completed',receipt='1859281733620449485',decided_at=created_at,decided_by=?,
+        dispatched_at=created_at,completed_at=created_at WHERE action_id=?`).bind(humanId, actionId).run();
+    assert.equal(await readUrl(), 'https://x.com/i/web/status/1859281733620449485');
+    assert.equal(await listedUrl(), 'https://x.com/i/web/status/1859281733620449485', 'the past-actions list carries it too');
+    for (const status of ['unknown', 'dispatching', 'failed']) {
+        await h.db.prepare('UPDATE external_actions SET status=? WHERE action_id=?').bind(status, actionId).run();
+        assert.equal(await readUrl(), null, status + ': only a completed action has a post address');
+        assert.equal(await listedUrl(), null, status + ' (list)');
+    }
+    await h.db.prepare("UPDATE external_actions SET status='completed',receipt='-1001234567890/42',provider='telegram' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await readUrl(), 'https://t.me/c/1234567890/42');
+    await h.db.prepare("UPDATE external_actions SET receipt='not-an-id',provider='x' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await readUrl(), null, 'a receipt in another shape gives none');
+    await h.db.prepare("UPDATE external_actions SET receipt='1859281733620449485',provider='discord' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await readUrl(), null, 'a provider whose receipt does not name an address gives none');
+}, true, {EXTERNAL_CREDENTIAL_KEY: 'k'.repeat(44)}));
 
 // The page for one action names what the settled action was: its agent, operation, the account the plan bound and the content.
 test('ownerPendingAction_OwnSettledAction_DescribesThePlanAndTheAccountNameOnlyWhileTheCredentialStillPointsThere', () => scenario(async ({h}) => {
