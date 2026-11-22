@@ -1108,17 +1108,76 @@ test('listPastExternalActions_MoreThanTheLimit_OnlyTheNewest', () => scenario(as
     assert.deepEqual(listed, ids.slice(1).reverse(), 'the oldest falls off');
 }));
 
+// An app reads history past the newest page by naming the last action it got (KoalaFacts/Weave#365).
+test('listPastExternalActions_BeforeLastEntry_NextOlderPageThenEmpty', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const base = BigInt(ticks()) - 1_000_000n;
+    const ids: string[] = [];
+    for (let i = 0; i < pastActionsListed + 5; i++) {
+        const id = (await (await propose(h, agent, 'Post ' + i)).json() as {actionId: string}).actionId;
+        assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: id}), {ok: true});
+        ids.push(id);
+    }
+    // Two pairs share a creation tick, so the action ID breaks the tie on the page boundary (posts 4 and 5) and inside a page.
+    const ticksOf = ids.map((_, i) => base + BigInt(i));
+    ticksOf[5] = ticksOf[4];
+    ticksOf[12] = ticksOf[11];
+    for (const [i, id] of ids.entries()) await h.db.prepare('UPDATE external_actions SET created_at=CAST(? AS INTEGER) WHERE action_id=?').bind(ticksOf[i].toString(), id).run();
+    const expected = ids.map((id, i) => ({id, tick: ticksOf[i]})).sort((a, b) => a.tick === b.tick ? (a.id < b.id ? 1 : -1) : a.tick < b.tick ? 1 : -1).map(e => e.id);
+
+    const first = (await past(h, agent)).actions.map(a => a.actionId);
+    assert.deepEqual(first, expected.slice(0, pastActionsListed));
+    const pageAfter = async (before: string) => {
+        const response = await h.request('/v1/external-actions?waiting=false&before=' + before, agent);
+        assert.equal(response.status, 200, await response.clone().text());
+        return (await response.json() as {actions: {actionId: string}[]}).actions.map(a => a.actionId);
+    };
+    assert.deepEqual(await pageAfter(first.at(-1)!), expected.slice(pastActionsListed), 'the next page holds exactly the older rest, in the same order');
+    assert.deepEqual(await pageAfter(expected.at(-1)!), [], 'after the oldest action the list is empty');
+    for (let i = 0; i < expected.length - 1; i++) {
+        assert.deepEqual((await pageAfter(expected[i]))[0], expected[i + 1], 'each page starts right after the named action, ties broken by action ID');
+    }
+}));
+
+test('listPastExternalActions_BeforeAnotherAgentsOrUnknownAction_Unavailable', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    const other = await ownedAgent(h);
+    const stranger = (await (await propose(h, other.agent, 'Not yours')).json() as {actionId: string}).actionId;
+    for (const before of [stranger, '00000000-0000-4000-8000-000000000000']) {
+        const response = await h.request('/v1/external-actions?waiting=false&before=' + before, agent);
+        assert.equal(response.status, 404, before);
+        assert.equal((await response.json() as {code: string}).code, 'unavailable', 'another agent\'s action is indistinguishable from a missing one');
+    }
+    const own = (await (await propose(h, agent, 'Mine, still waiting')).json() as {actionId: string}).actionId;
+    assert.equal((await h.request('/v1/external-actions?waiting=false&before=' + own, agent)).status, 200, 'a waiting plan of this agent is a valid cursor');
+}));
+
+test('listExternalActions_BeforeMalformedRepeatedOrOnWaitingList_InvalidField', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    const own = (await (await propose(h, agent)).json() as {actionId: string}).actionId;
+    const cases: [string, string][] = [
+        ['waiting=false&before=', 'must be one action ID'], ['waiting=false&before=not-an-id', 'must be one action ID'],
+        ['waiting=false&before=' + own.toUpperCase(), 'must be one action ID'], [`waiting=false&before=${own}&before=${own}`, 'must be one action ID'],
+        ['before=' + own, 'only with waiting=false'], [`waiting=true&before=${own}`, 'only with waiting=false']];
+    for (const [query, reason] of cases) {
+        const response = await h.request('/v1/external-actions?' + query, agent);
+        assert.equal(response.status, 400, query);
+        const problem = await response.json() as {code: string; field: string; reason: string};
+        assert.deepEqual([problem.code, problem.field, problem.reason], ['invalid', 'before', reason], query);
+    }
+}));
+
 test('listPastExternalActions_PlanAtItsExactExpiryTick_ListedAsExpired', () => scenario(async ({h}) => {
     const {agent} = await ownedAgent(h);
     const action = await (await propose(h, agent)).json() as {actionId: string};
     const expiry = await storedExpiry(h, action.actionId);
     const caller: ActionCaller = {accountId: agent.accountId, check: async () => {}};
-    const listedAt = async (at: bigint) => (await listPastExternalActions(environment(h), caller, () => at)).actions.map(a => a.actionId + ':' + a.status);
+    const listedAt = async (at: bigint) => (await listPastExternalActions(environment(h), caller, null, () => at)).actions.map(a => a.actionId + ':' + a.status);
     assert.deepEqual(await listedAt(expiry - 1n), [], 'still waiting the tick before its expiry');
     assert.deepEqual(await listedAt(expiry), [action.actionId + ':expired'], 'listed as expired from its expiry tick');
 
     const refused: ActionCaller = {accountId: agent.accountId, check: async () => { throw new Error('authority gone'); }};
-    await assert.rejects(listPastExternalActions(environment(h), refused, () => expiry), /authority gone/, 'the caller\'s authority is checked inside the read');
+    await assert.rejects(listPastExternalActions(environment(h), refused, null, () => expiry), /authority gone/, 'the caller\'s authority is checked inside the read');
 }));
 
 test('listExternalActions_WaitingParameterNotTrueOrFalse_InvalidField', () => scenario(async ({h}) => {
