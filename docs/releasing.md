@@ -82,7 +82,7 @@ must be marked as a GitHub prerelease.
 
 ## Verification and publication
 
-`Create Release` runs the locked restore, Release build, test suite and package
+`Release / .NET tool` runs the locked restore, Release build, test suite and package
 validation. Its installation smoke test installs only the newly built package
 from an isolated local feed and checks the executable version. Native platform
 jobs additionally exercise the published CLI and Host outside the source tree:
@@ -95,12 +95,12 @@ must not be described as having passed a native runtime test unless such a
 test actually ran. Check each matrix job's evidence and platform limits.
 
 After all required jobs succeed, the workflow creates the version tag and
-GitHub release. `Publish to NuGet` then validates the successful source run,
+GitHub release. `Publish / NuGet` then validates the successful source run,
 immutable package artifact and tag before publishing that artifact. It does
 not rebuild from a moving branch or select the latest release implicitly.
 
 For a failed NuGet publication, use the manual publish workflow with the exact
-successful `Create Release` run ID and version. Do not choose a new version or
+successful `Release / .NET tool` run ID and version. Do not choose a new version or
 rebuild merely to bypass a failed source validation. A GitHub release alone is
 not proof that NuGet publication completed; inspect both destinations.
 

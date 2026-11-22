@@ -34,7 +34,7 @@ def run_blocks(path):
 
 class ReleaseWorkflowTests(unittest.TestCase):
     def test_version_validation_does_not_execute_input(self):
-        workflow = ROOT / '.github/workflows/release.yml'
+        workflow = ROOT / '.github/workflows/release-dotnet.yml'
         blocks = run_blocks(workflow)
         validation = next(b for b in blocks if 'validate-version' in b or 'VERSION="${{ inputs.version }}"' in b)
         shell = shutil.which('sh' if os.name == 'nt' else 'bash')
@@ -64,7 +64,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             self.assertEqual(target.read_text(), 'version=1.2.3-preview.1\n')
 
     def test_no_expression_interpolation_in_release_shells(self):
-        for filename in ('release.yml', 'publish-nuget.yml'):
+        for filename in ('release-dotnet.yml', 'publish-nuget.yml'):
             content = (ROOT / '.github/workflows' / filename).read_text()
             for block in run_blocks(ROOT / '.github/workflows' / filename):
                 self.assertNotIn('${{', block, filename)
@@ -146,12 +146,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
                     self.assertEqual(arguments[arguments.index('--source') + 1], 'https://api.nuget.org/v3/index.json')
 
     def test_release_tag_targets_built_commit(self):
-        content = (ROOT / '.github/workflows/release.yml').read_text()
+        content = (ROOT / '.github/workflows/release-dotnet.yml').read_text()
         self.assertIn('--target "$GITHUB_SHA"', content)
         self.assertIn("github.ref == 'refs/heads/main'", content)
 
     def test_prerelease_is_not_promoted_to_latest(self):
-        block = next(b for b in run_blocks(ROOT / '.github/workflows/release.yml') if 'gh release create' in b)
+        block = next(b for b in run_blocks(ROOT / '.github/workflows/release-dotnet.yml') if 'gh release create' in b)
         shell = shutil.which('sh' if os.name == 'nt' else 'bash')
         if shell is None:
             self.skipTest('A POSIX shell is unavailable')
@@ -174,7 +174,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 self.assertIn('WEAVE_VERSION=' + version + ' sh', instructions)
 
     def test_build_and_pack_receive_the_same_version(self):
-        for name in ('release.yml', 'ci.yml'):
+        for name in ('release-dotnet.yml', 'ci-dotnet.yml'):
             blocks = run_blocks(ROOT / '.github/workflows' / name)
             build = next(b for b in blocks if b.startswith('dotnet build csharp/Weave.slnx'))
             pack = next(b for b in blocks if 'dotnet pack csharp/hosts/Weave.Cli/Weave.Cli.csproj' in b)
@@ -183,7 +183,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 self.assertIn('"-p:Version=$VERSION"', pack)
 
     def test_release_installs_node_and_gates_native_distributions(self):
-        content = (ROOT / '.github/workflows/release.yml').read_text()
+        content = (ROOT / '.github/workflows/release-dotnet.yml').read_text()
         self.assertIn("node-version: '24'", content)
         build = content.split('  create-release:', 1)[1].split('  publish-binaries:', 1)[0]
         self.assertIn('scripts/release/smoke.py', build)
@@ -203,7 +203,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
     def test_public_install_identity_is_owned_and_command_remains_weave(self):
         publish = (ROOT / '.github/workflows/publish-nuget.yml').read_text()
-        release = (ROOT / '.github/workflows/release.yml').read_text()
+        release = (ROOT / '.github/workflows/release-dotnet.yml').read_text()
         self.assertIn('https://www.nuget.org/packages/KoalaFacts.Weave.Cli/', publish)
         self.assertIn('dotnet tool install -g KoalaFacts.Weave.Cli --version', release)
         self.assertNotIn('dotnet tool install -g Weave.Cli ', release)
@@ -213,16 +213,16 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_embedded_symbols_do_not_request_an_empty_symbol_package(self):
         props = ET.parse(ROOT / 'csharp/Directory.Build.props')
         self.assertEqual(props.find('.//DebugType').text, 'embedded')
-        for name in ('release.yml', 'ci.yml'):
+        for name in ('release-dotnet.yml', 'ci-dotnet.yml'):
             content = (ROOT / '.github/workflows' / name).read_text()
             self.assertNotIn('IncludeSymbols=true', content)
             self.assertNotIn('SymbolPackageFormat=snupkg', content)
             self.assertIn('IncludeSymbols=false', content)
-        release = (ROOT / '.github/workflows/release.yml').read_text()
+        release = (ROOT / '.github/workflows/release-dotnet.yml').read_text()
         self.assertNotIn('artifacts/*.snupkg', release)
 
     def test_ci_packages_real_tool_without_publish_credentials(self):
-        content = (ROOT / '.github/workflows/ci.yml').read_text()
+        content = (ROOT / '.github/workflows/ci-dotnet.yml').read_text()
         build = content.split('  build-and-test:', 1)[1].split('  exact-base-coverage-diagnostic:', 1)[0]
         for required in ('dotnet pack csharp/hosts/Weave.Cli/Weave.Cli.csproj', 'IncludeSymbols=false',
                          'scripts/release/guard.py validate-packages', '0.1.0-ci-validation'):
@@ -238,14 +238,14 @@ class ReleaseWorkflowTests(unittest.TestCase):
                          '--include-transitive', '--vulnerable', '--no-restore', '--format json',
                          '--output-version 1', 'scripts/check_dependency_audit.py', 'set -euo pipefail'):
             self.assertIn(required, content)
-        for filename in ('ci.yml', 'scan-security.yml'):
+        for filename in ('ci-dotnet.yml', 'scan-dependencies.yml'):
             self.assertIn('uses: ./.github/actions/strict-nuget-audit',
                           (ROOT / '.github/workflows' / filename).read_text())
         for forbidden in ('--force-evaluate', 'continue-on-error', '|| true', 'NuGetAudit=false'):
             self.assertNotIn(forbidden, content)
 
     def test_ci_reports_checks_without_requesting_pr_comment_writes(self):
-        content = (ROOT / '.github/workflows/ci.yml').read_text()
+        content = (ROOT / '.github/workflows/ci-dotnet.yml').read_text()
         build = content.split('  build-and-test:', 1)[1].split('  code-quality:', 1)[0]
         reporter = build.split('      - name: Publish test results', 1)[1].split('      - name:', 1)[0]
         self.assertIn("comment_mode: 'off'", reporter)

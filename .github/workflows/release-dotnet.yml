@@ -1,5 +1,5 @@
-name: Create Release
-run-name: Create Release v${{ inputs.version || 'unspecified' }}
+name: Release / .NET tool
+run-name: Release .NET tool v${{ inputs.version || 'unspecified' }}
 
 on:
   workflow_dispatch:

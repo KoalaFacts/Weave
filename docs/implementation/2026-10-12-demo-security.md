@@ -1,6 +1,6 @@
 # Demo registry, MCP and cleanup security verification
 
-This record describes application checks on the Worker demo, not a formal compliance certification, penetration test or assertion that the public deployment is secure. It extends the [Worker implementation record](2026-10-12-worker-d1-demo.md). The .NET Chromium startup failures below describe the earlier local environment. Current Worker UI evidence comes from the separate [Worker verification workflow](../../.github/workflows/worker-browser.yml), whose protected-browser result and screenshots must be checked for the reviewed commit. Remote-deployment permissions remain a separate gate.
+This record describes application checks on the Worker demo, not a formal compliance certification, penetration test or assertion that the public deployment is secure. It extends the [Worker implementation record](2026-10-12-worker-d1-demo.md). The .NET Chromium startup failures below describe the earlier local environment. Current Worker UI evidence comes from the separate [Worker verification workflow](../../.github/workflows/ci-mailbox-worker.yml), whose protected-browser result and screenshots must be checked for the reviewed commit. Remote-deployment permissions remain a separate gate.
 
 ## Delivered boundaries
 

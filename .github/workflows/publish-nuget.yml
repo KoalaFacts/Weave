@@ -1,18 +1,18 @@
-name: Publish to NuGet
+name: Publish / NuGet
 
 on:
   workflow_run:
-    workflows: [Create Release]
+    workflows: ["Release / .NET tool"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Exact version to republish from a successful Create Release run'
+        description: 'Exact version to republish from a successful "Release / .NET tool" run'
         required: true
         type: string
       release_run_id:
-        description: 'Successful main-branch Create Release workflow run ID (not the latest release)'
+        description: 'Successful main-branch "Release / .NET tool" workflow run ID (not the latest release)'
         required: true
         type: string
 

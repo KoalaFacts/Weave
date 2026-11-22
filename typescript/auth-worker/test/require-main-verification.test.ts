@@ -11,7 +11,7 @@ test('accepts only successful exact-main-push verification across all release wo
         assert.equal(init?.method,'GET');
         assert.equal(init?.redirect,'error');
         assert.equal((init?.headers as Record<string,string>).Authorization,'Bearer '+token);
-        if(!String(input).includes('/oauth-auth-worker.yml/'))assert.match(String(input),/event=push/);
+        if(!String(input).includes('/ci-auth-worker.yml/'))assert.match(String(input),/event=push/);
         else assert.doesNotMatch(String(input),/event=/);
         return Response.json({workflow_runs:[
             {head_sha:sha,head_branch:'main',event:'pull_request',status:'completed',conclusion:'success'},
@@ -46,7 +46,7 @@ test('accepts exact-main workflow_dispatch only for path-filtered OAuth verifica
     const seen:string[]=[];
     const evidence=await requireMainVerification(repo,sha,token,async(input,init)=>{
         const url=String(input);seen.push(url);
-        if(url.includes('/oauth-auth-worker.yml/')){
+        if(url.includes('/ci-auth-worker.yml/')){
             assert.doesNotMatch(url,/event=push/);
             return Response.json({workflow_runs:[{head_sha:sha,head_branch:'main',event:'workflow_dispatch',
                 status:'completed',conclusion:'success',html_url:'https://github.com/KoalaFacts/Weave/actions/runs/456'}]});
@@ -55,7 +55,7 @@ test('accepts exact-main workflow_dispatch only for path-filtered OAuth verifica
         return Response.json({workflow_runs:[{head_sha:sha,head_branch:'main',event:'push',status:'completed',conclusion:'success'}]});
     });
     assert.equal(seen.length,4);
-    assert.match(evidence['oauth-auth-worker.yml'],/456/);
+    assert.match(evidence['ci-auth-worker.yml'],/456/);
 });
 
 test('never accepts manually dispatched CI, Worker or Security results instead of main push',async()=>{

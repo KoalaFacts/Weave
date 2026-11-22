@@ -78,7 +78,7 @@ class CoverageInventoryTests(unittest.TestCase):
         self.assertEqual(['Weave.Silo.Tests'], manifest['csharp/hosts/Weave.Dashboard/Weave.Dashboard.csproj']['owners'])
 
     def test_ci_restores_pinned_tool_runs_executable_regressions_and_keeps_reports(self):
-        workflow = (ROOT / '.github/workflows/ci.yml').read_text().split('  code-quality:')[0]
+        workflow = (ROOT / '.github/workflows/ci-dotnet.yml').read_text().split('  code-quality:')[0]
         ordered = ['- name: Test\n', '- name: Restore coverage tool and analyzer\n',
                    '- name: Coverage analyzer regressions\n', '- name: Collect and enforce tested-owner coverage\n']
         for step in ordered:
