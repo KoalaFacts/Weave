@@ -230,7 +230,8 @@ The past-actions list stopped at the 20 newest, so an app could not show older h
   is `400 invalid` with `field: before`, `must be one action ID`; with the waiting-plan list (`waiting` absent or
   `true`) it is `400 invalid`, `only with waiting=false`. Another agent's or an unknown action is `404 unavailable`,
   as the by-ID read answers, and the ownership check runs in the same transaction as the read.
-- Response shape unchanged (`{actions: [...]}`, at most 20). No schema change; HTTP only, the MCP tools are unchanged.
+- Response shape unchanged (`{actions: [...]}`, at most 20). No schema change; HTTP only (later the same day: MCP
+  `list_my_external_actions`, see "Listing over MCP" below).
 - Verification (`test/external-actions.test.ts`, through the worker's HTTP entry):
   `listPastExternalActions_BeforeLastEntry_NextOlderPageThenEmpty` (25 actions with tied creation ticks on the page
   boundary and inside a page: the second page is exactly the older 5, the page after the oldest is empty, and every
@@ -239,6 +240,28 @@ The past-actions list stopped at the 20 newest, so an app could not show older h
 - Mutation checks, each caught: dropping the tie clause, `<=` on the tied action ID, `<=` on the creation time, reading
   the cursor without the ownership check, accepting `before` on the waiting list, accepting a repeated `before`.
 - Cost: as the newest page, plus one by-ID read of the cursor row.
+
+## Listing over MCP (2026-11-22)
+
+Both lists were HTTP only, so an agent connected over MCP that lost a propose answer, or wanted to show recent posts,
+had no way to find its actions without their IDs.
+
+- MCP `list_my_external_actions` (`weave:actions.read`, read-only) calls the same functions as the HTTP list.
+  `waiting` omitted or `true` returns the waiting plans; `false` the past actions, newest first, with `publication`;
+  `before` (an action ID, only with `waiting` `false`) pages to the next older 20. The output is `{actions: [...]}`,
+  each entry declared with the `get_external_action` output schema.
+- Argument errors are field-level `400 invalid`: `waiting` not a boolean (`must be true or false`); `before` with the
+  waiting list (`only with waiting false`) or not a lower-case UUID (`must be a lowercase UUID`); any other argument
+  (`is not a parameter of this tool`). Another agent's or an unknown cursor is `404 unavailable`, as on HTTP.
+- No schema change; nothing is sent; the HTTP routes are unchanged.
+- Verification (`test/external-actions-mcp.test.ts`, the bundled production module against real D1 via Miniflare):
+  `listMyExternalActions_WaitingAndPast_SameEntriesAsTheByIdReadAndPagedWithBefore` (three plans listed oldest first,
+  each equal to `get_external_action`; after one is executed and one expires, the waiting list keeps one, the past list
+  is newest first, `before` gives the older page then `[]`, a waiting plan is a valid cursor, and the HTTP list gives the
+  same page) and `listMyExternalActions_InvalidArgumentsOrAnotherAgentsCursor_Refused`. `test/mcp-tool-contract.test.ts`
+  checks both forms of real results against the published output schema.
+- Mutation checks, each caught: `before` ignored; `before` accepted on the waiting list; a non-boolean `waiting`
+  accepted; `before` not checked as a UUID; unknown arguments accepted; past actions as the default.
 
 ## Limits
 

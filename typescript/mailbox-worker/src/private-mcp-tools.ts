@@ -226,6 +226,12 @@ export const privateMcpTools = [
     tool('get_external_action', 'Read one of your external actions: whether your owner approved it and, after execution, its receipt or failure. '
         + 'For a queued or scheduled post, publication says whether the platform has published it (with its URL) or refused it; Weave checks this itself every few minutes, so read it later rather than proposing again.',
         'weave:actions.read', {actionId:id('actionId from propose_external_action.')}, ['actionId'], externalAction, {readOnly:true}),
+    tool('list_my_external_actions', 'Find your external actions without their IDs, for example after a lost propose answer. By default (waiting omitted or true) it lists your plans still waiting, pending or approved and not expired, oldest first (at most 20, the waiting-plan limit). '
+        + 'With waiting false it lists your 20 newest actions that no longer wait (rejected, dispatching, completed, failed, unknown or expired), newest first, with publication; pass the last entry\'s actionId as before for the next older page, and an empty list means nothing older. '
+        + 'Each entry is what get_external_action returns.',
+        'weave:actions.read', {waiting:{type:'boolean', description:'true or omitted: plans still waiting for approval or execution. false: actions that no longer wait.'},
+            before:id('Only with waiting false: the actionId of the last entry of the previous page; one of your actions.')}, [],
+        out({actions:{type:'array', items:externalAction}}, ['actions']), {readOnly:true}),
     tool('execute_external_action', 'Send an approved action once. Weave re-checks the plan (owner, credential revision, account) and refuses with nothing sent if it changed. '
         + 'Repeating returns the recorded result and never sends again; if the status is unknown, check the provider instead of proposing it again.',
         'weave:actions.write', {actionId:id('actionId of an approved action.')}, ['actionId'], externalAction, {idempotent:true, openWorld:true}),
