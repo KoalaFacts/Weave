@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
-import {withTestGrant,start,payload,type AgentCredential} from './harness.ts';
+import {withTestGrant,testGrant,start,payload,type AgentCredential} from './harness.ts';
 import type {Env} from '../src/database.ts';
 import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
 // Evaluate the bundled production modules, as the other private MCP tests do.
@@ -9,7 +9,7 @@ const bundle=async(entry:string)=>{
     const built=await build({entryPoints:[entry],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
     return import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64'));
 };
-const {executePrivateMcp:executeWithGrant}=await bundle('src/remote-private.ts') as typeof import('../src/remote-private.ts');
+const {executePrivateMcp:executeWithGrant,privateScope}=await bundle('src/remote-private.ts') as typeof import('../src/remote-private.ts');
 const executePrivateMcp=withTestGrant(executeWithGrant);
 const {sweep}=await bundle('src/cleanup.ts') as typeof import('../src/cleanup.ts');
 
@@ -423,5 +423,80 @@ test('remoteMcpInbox_PeerGenerationAndLargeInteger_NotRewrittenInStructuredConte
         assert.equal(data.big,9007199254740992);
         assert.match(result.content[0].text,/"generation":7,"big":9007199254740993/);
         assert.equal(typeof item.envelope.contactGeneration,'string','server generations stay exact decimal strings');
+    }finally{await h.close();}
+});
+
+test('setContactBlock_BlockThenUnblock_StopsMessagesAndNeedsANewRequest',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),{a,b}=await pair(h,env);
+        const before=await ok(env,b.accountId,'get_my_channel',{peerAccountId:a.accountId});
+        assert.equal(before.isBlockedByAccount,false);
+        const pending=await ok(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:text('sent before the block')});
+        const blocked=await ok(env,b.accountId,'set_contact_block',{peerAccountId:a.accountId,expectedGeneration:String(before.generation),blocked:true});
+        assert.equal(blocked.isBlockedByAccount,true);
+        assert.equal(blocked.isBlockedByPeer,false);
+        assert.equal(blocked.currentRequest,null);
+        assert.equal(BigInt(blocked.generation),BigInt(before.generation)+1n);
+        assert.equal(Object.hasOwn(blocked,'connectionToken'),false);
+        const seen=await ok(env,a.accountId,'get_my_channel',{peerAccountId:b.accountId});
+        assert.equal(seen.isBlockedByPeer,true);
+        // The same state again is unchanged; the old generation conflicts.
+        assert.deepEqual(await ok(env,b.accountId,'set_contact_block',{peerAccountId:a.accountId,expectedGeneration:String(blocked.generation),blocked:true}),blocked);
+        assert.equal((await call(env,b.accountId,'set_contact_block',{peerAccountId:a.accountId,expectedGeneration:String(before.generation),blocked:false})).status,409);
+        // Neither side can send, and the message pending on the old generation is not delivered.
+        for(const [from,to] of [[a,b],[b,a]]){
+            const refused=await call(env,from.accountId,'send_message',{recipientAccountId:to.accountId,message:text('after')});
+            assert.equal(refused.status,409);
+            assert.equal(refused.body.code,'not-connected');
+        }
+        const inbox=await ok(env,b.accountId,'list_my_inbox',{});
+        assert.equal(inbox.items.some((item:{message?:{messageId:string}})=>item.message?.messageId===pending.messageId),false);
+        const receipt=(await ok(env,a.accountId,'list_my_outbox',{})).items.find((item:{messageId:string})=>item.messageId===pending.messageId);
+        assert.equal(receipt.state,'blocked');
+        // A blocked peer cannot ask again.
+        assert.equal((await call(env,a.accountId,'request_contact',{requesterAddressId:a.cardId,recipientAccountId:b.accountId,
+            recipientAddressId:b.cardId,message:text('again?')})).status,404);
+        const unblocked=await ok(env,b.accountId,'set_contact_block',{peerAccountId:a.accountId,expectedGeneration:String(blocked.generation),blocked:false});
+        assert.equal(unblocked.isBlockedByAccount,false);
+        assert.equal(BigInt(unblocked.generation),BigInt(blocked.generation)+1n);
+        // Unblocking restores no contact: sending still fails until a new request is accepted.
+        const still=await call(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:text('still no')});
+        assert.equal(still.status,409);
+        assert.equal(still.body.code,'not-connected');
+        const requested=await ok(env,a.accountId,'request_contact',{requesterAddressId:a.cardId,recipientAccountId:b.accountId,
+            recipientAddressId:b.cardId,message:text('may we talk again?')});
+        await ok(env,b.accountId,'decide_contact',{requestId:requested.request.requestId,requesterAccountId:a.accountId,
+            expectedGeneration:String(requested.generation),status:'accepted'});
+        await ok(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:text('welcome back')});
+    }finally{await h.close();}
+});
+
+test('setContactBlock_InvalidStrangerOrRevokedGrant_RefusedWithoutChange',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),{a,b}=await pair(h,env),stranger=await h.participant();
+        assert.equal(privateScope('set_contact_block'),'weave:contacts.write','blocking is a contacts write, never granted by read consent');
+        const channel=await ok(env,b.accountId,'get_my_channel',{peerAccountId:a.accountId});
+        const valid={peerAccountId:a.accountId,expectedGeneration:String(channel.generation),blocked:true};
+        for(const [args,field] of [
+            [{...valid,blocked:'true'},'blocked'],
+            [{peerAccountId:a.accountId,expectedGeneration:String(channel.generation)},'blocked'],
+            [{...valid,expectedGeneration:1},'generation'],
+            [{...valid,peerAccountId:'not-a-uuid'},'peerAccountId'],
+            [{...valid,reason:'spam'},'reason']
+        ] as [Record<string,unknown>,string][]){
+            const answer=await call(env,b.accountId,'set_contact_block',args);
+            assert.equal(answer.status,400,JSON.stringify(args));
+            assert.equal(answer.body.field,field,JSON.stringify(answer.body));
+        }
+        // No channel with the peer: unavailable, as on HTTP.
+        assert.equal((await call(env,stranger.accountId,'set_contact_block',{...valid})).status,404);
+        assert.equal((await call(env,b.accountId,'set_contact_block',{...valid,peerAccountId:stranger.accountId})).status,404);
+        // A revoked consent grant is refused inside the write's transaction.
+        const grantId=await testGrant(h.db,b.accountId);
+        await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now())*10000n).toString(),grantId).run();
+        assert.equal((await executeWithGrant(env,origin,b.accountId,'set_contact_block',valid,grantId)).status,401);
+        assert.deepEqual(await ok(env,b.accountId,'get_my_channel',{peerAccountId:a.accountId}),channel,'nothing changed');
     }finally{await h.close();}
 });
