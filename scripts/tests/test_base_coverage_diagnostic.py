@@ -15,7 +15,7 @@ BASE = 'a7983cc73e05d9d0bb6afb147ab30396b74e6fde'
 
 class BaselineWorkflowTests(unittest.TestCase):
     def test_retired_diagnostic_preserves_check_identity_and_propagates_real_gate_result(self):
-        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        workflow = (ROOT / '.github/workflows/ci-dotnet.yml').read_text()
         self.assertIn('  exact-base-coverage-diagnostic:\n', workflow)
         job = workflow.split('  exact-base-coverage-diagnostic:\n')[1].split('\n  code-quality:')[0]
         for required in ('name: Exact-base coverage (diagnostic only)', 'needs: build-and-test',

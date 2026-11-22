@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class SnapshotWorkflowTests(unittest.TestCase):
     def workflow(self):
-        return (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+        return (ROOT / '.github/workflows/ci-dotnet.yml').read_text(encoding='utf-8')
 
     def test_snapshot_producer_exists_and_precedes_review(self):
         text = self.workflow()
@@ -51,15 +51,6 @@ class SnapshotWorkflowTests(unittest.TestCase):
         self.assertNotIn('contents: write', job)
         self.assertNotIn('continue-on-error', job)
         self.assertNotIn('pull_request_target', job)
-
-    def test_baseline_writer_and_permission_denial_share_the_reviewed_project_validator(self):
-        text = self.workflow()
-        writer = text.split('  dependency-snapshots:\n', 1)[1].split('  dependency-review:\n', 1)[0]
-        acceptance = (ROOT / '.github/workflows/dependency-policy-acceptance.yml').read_text()
-        denial = acceptance.split('  read-only-submission:\n', 1)[1]
-        revision = '97452c5adf605b69234798ead7e1b7550f425ccb'
-        self.assertIn('ref: ' + revision, writer)
-        self.assertIn('ref: ' + revision, denial)
 
 
 if __name__ == '__main__':

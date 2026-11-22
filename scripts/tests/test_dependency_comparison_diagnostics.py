@@ -184,7 +184,7 @@ class DiagnosticTests(unittest.TestCase):
             self.assertEqual(opener.requests, [])
 
     def test_workflow_diagnostic_is_last_and_read_only_without_policy_override(self):
-        workflow = (SCRIPTS.parent / '.github/workflows/ci.yml').read_text()
+        workflow = (SCRIPTS.parent / '.github/workflows/ci-dotnet.yml').read_text()
         job = workflow.split('  dependency-review:\n', 1)[1]
         self.assertIn('    permissions:\n      contents: read\n', job)
         before, step = job.split('      - name: Diagnose fixed dependency comparison\n', 1)

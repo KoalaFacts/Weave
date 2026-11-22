@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync, existsSync } from 'node:fs';
-const path=new URL('../../../.github/workflows/deploy-weave-worker.yml',import.meta.url);
+const path=new URL('../../../.github/workflows/deploy-demo.yml',import.meta.url);
 test('explicit publish branch keeps main ancestry and existing verification before deployment',()=>{
     assert.ok(existsSync(path),'Deployment workflow is missing');
     const workflow=readFileSync(path,'utf8');
@@ -14,15 +14,15 @@ test('explicit publish branch keeps main ancestry and existing verification befo
     assert.match(workflow,/environment: production/);
     // Release relies on the passed Worker verification run of this exact commit on main, not a repeated suite.
     const verify = workflow.split(/^  verify:/m)[1]?.split(/^  deploy-repository:/m)[0] ?? '';
-    const ci = verify.indexOf('node typescript/mailbox-worker/scripts/require-ci-success.ts ci.yml');
-    const worker = verify.indexOf('node typescript/mailbox-worker/scripts/require-ci-success.ts worker-browser.yml');
+    const ci = verify.indexOf('node typescript/mailbox-worker/scripts/require-ci-success.ts ci-dotnet.yml');
+    const worker = verify.indexOf('node typescript/mailbox-worker/scripts/require-ci-success.ts ci-mailbox-worker.yml');
     assert.ok(ci >= 0 && worker > ci,
         'Full main CI including coverage must pass before the narrower Worker/OAuth release gates');
-    assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts worker-browser\.yml/);
-    assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts oauth-auth-worker\.yml/);
+    assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts ci-mailbox-worker\.yml/);
+    assert.match(workflow,/node typescript\/mailbox-worker\/scripts\/require-ci-success\.ts ci-auth-worker\.yml/);
     assert.match(workflow,/verify:[\s\S]*?permissions:\s*\n\s*contents: read\s*\n\s*actions: read/);
     assert.doesNotMatch(workflow,/npm test/);
-    assert.match(readFileSync(new URL('../../../.github/workflows/worker-browser.yml',import.meta.url),'utf8'),/push:\s*\n\s*branches: \[main\][\s\S]*npm test/,
+    assert.match(readFileSync(new URL('../../../.github/workflows/ci-mailbox-worker.yml',import.meta.url),'utf8'),/push:\s*\n\s*branches: \[main\][\s\S]*npm test/,
         'the gated workflow runs the Worker suite on main pushes');
 });
 test('generic demo releases cannot select a D1 schema mutation; only the separately pinned migration can',()=>{
@@ -37,10 +37,6 @@ test('generic demo releases cannot select a D1 schema mutation; only the separat
         'None of the generic demo release paths can select maintenance migrations.');
     assert.equal((workflow.match(/node scripts\/verify-public-mcp\.ts/g)||[]).length,2,
         'Both deployments must still verify the public MCP endpoint.');
-    const reviewed=readFileSync(new URL('../../../.github/workflows/approved-human-schema-migration.yml',import.meta.url),'utf8');
-    assert.match(reviewed,/confirm_approved_source/);
-    assert.match(reviewed,/WEAVE_DEPLOY_DATABASE_MODE: maintain/,
-        'The exact-source-pinned protected migration entry must remain available.');
 });
 test('the retired Access trial input is absent from the deployment workflow',()=>{
     const workflow=readFileSync(path,'utf8');

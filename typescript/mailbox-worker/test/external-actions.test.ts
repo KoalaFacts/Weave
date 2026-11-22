@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
-import { actionLifetimeTicks, approvalOrigin, recentActionWindowTicks, recentActionsShownToOwner, executeExternalAction, listWaitingExternalActions, ownerPendingAction, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
+import { actionLifetimeTicks, approvalOrigin, recentActionWindowTicks, recentActionsShownToOwner, executeExternalAction, listPastExternalActions, listWaitingExternalActions, pastActionsListed, ownerPendingAction, planDigest, proposalKey, proposeExternalAction, type ActionCaller } from '../src/external-actions.ts';
 import { apiTime } from '../src/time.ts';
 import { createOwnedAgent } from '../src/humans.ts';
 import type { Problem } from '../src/wire.ts';
@@ -15,9 +15,9 @@ type Provider = {calls: Call[]; respond: (call: Call) => Response | Promise<Resp
 const endpoint = 'https://provider.test/post';
 const completed = (call: Call) => Response.json({externalId: 'post-' + call.actionId});
 
-async function scenario(run: (s: {h: Harness; provider: Provider}) => Promise<void>, configured = true) {
+async function scenario(run: (s: {h: Harness; provider: Provider}) => Promise<void>, configured = true, bindings: Record<string, string> = {}) {
     const provider: Provider = {calls: [], respond: completed};
-    const h = await start({bindings: configured ? {EXTERNAL_ACTION_TEST_ENDPOINT: endpoint} : {}, outboundService: async (request: Request) => {
+    const h = await start({bindings: {...configured ? {EXTERNAL_ACTION_TEST_ENDPOINT: endpoint} : {}, ...bindings}, outboundService: async (request: Request) => {
         if (request.url !== endpoint) return new Response('unexpected', {status: 599});
         const call = await request.json() as Call;
         provider.calls.push(call);
@@ -1044,6 +1044,168 @@ test('listWaitingExternalActions_PlanAtItsExactExpiryTick_NoLongerListed', () =>
     assert.deepEqual(await listedAt(expiry), [], 'not listed from its expiry tick, never as expired');
 }));
 
+const past = async (h: Harness, as: AgentCredential) => {
+    const response = await h.request('/v1/external-actions?waiting=false', as);
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+    return await response.json() as {actions: (Listed['actions'][number] & {publication: {state: string; url: string | null} | null})[]};
+};
+
+// An app shows what became of its recent posts in one read instead of one by-ID read per action (KoalaFacts/Weave#365).
+test('listPastExternalActions_SettledAndExpiredOfThisAgentOnly_NewestFirstWithPublication', () => scenario(async ({h, provider}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    assert.deepEqual(await past(h, agent), {actions: []}, 'an agent with no actions gets an empty list');
+
+    const ids: string[] = [];
+    for (const content of ['Sent', 'Rejected', 'Expired', 'Waiting', 'Approved', 'Lost']) ids.push((await (await propose(h, agent, content)).json() as {actionId: string}).actionId);
+    // Creation ticks one apart in proposal order, written explicitly so the order checked is the stored time, not insertion.
+    const base = BigInt(ticks()) - 1_000_000n;
+    for (const [i, id] of ids.entries()) await h.db.prepare('UPDATE external_actions SET created_at=CAST(? AS INTEGER) WHERE action_id=?').bind((base + BigInt(i)).toString(), id).run();
+    const other = await ownedAgent(h);
+    const stranger = (await (await propose(h, other.agent, 'Not yours')).json() as {actionId: string}).actionId;
+    assert.deepEqual(await decide(h, other.humanId, {kind: 'reject-action', requestId: stranger}), {ok: true});
+
+    const confirm = async (id: string) => {
+        const shown = (await pendingFor(h, humanId)).find(action => action.actionId === id)!;
+        assert.deepEqual(await decide(h, humanId, {kind: 'confirm-action', requestId: id, planDigest: shown.planDigest}), {ok: true});
+    };
+    await confirm(ids[0]);
+    assert.equal((await execute(h, agent, ids[0])).status, 'completed');
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: ids[1]}), {ok: true});
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind(ticks(), ids[2]).run();
+    await confirm(ids[4]);
+    // An execute whose outcome could not be recorded stays dispatching; the agent must still find it.
+    await confirm(ids[5]);
+    await h.db.prepare("UPDATE external_actions SET status='dispatching',dispatched_at=decided_at WHERE action_id=?").bind(ids[5]).run();
+    await h.db.prepare(`INSERT INTO external_publications(action_id,account_id,state,url,error,due_at,checks,next_check_at,updated_at,checked_at)
+        SELECT action_id,account_id,'published','https://example.test/p/1',NULL,created_at,1,NULL,created_at,created_at FROM external_actions WHERE action_id=?`).bind(ids[0]).run();
+
+    const listed = await past(h, agent);
+    assert.deepEqual(listed.actions.map(a => a.content + ':' + a.status), ['Lost:dispatching', 'Expired:expired', 'Rejected:rejected', 'Sent:completed'],
+        'newest proposal first, only this agent\'s, and no plan that still waits (pending or approved before expiry)');
+    for (const id of [ids[0], ids[1], ids[2], ids[5]]) {
+        assert.deepEqual(listed.actions.find(a => a.actionId === id), await h.ok(`/v1/external-actions/${id}`, agent), 'each entry is the same view as reading the action by its ID');
+    }
+    const sent = listed.actions.find(a => a.actionId === ids[0])!;
+    assert.deepEqual([sent.publication?.state, sent.publication?.url], ['published', 'https://example.test/p/1'], 'the tracked publication is included');
+    assert.ok(listed.actions.filter(a => a.actionId !== ids[0]).every(a => a.publication === null), 'an action with no tracked publication has none');
+    assert.deepEqual((await waiting(h, agent)).actions.map(a => a.content), ['Waiting', 'Approved'], 'the default list is unchanged');
+    assert.equal(provider.calls.length, 1, 'listing sends nothing');
+}));
+
+test('listPastExternalActions_MoreThanTheLimit_OnlyTheNewest', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const base = BigInt(ticks()) - 1_000_000n;
+    const ids: string[] = [];
+    for (let i = 0; i <= pastActionsListed; i++) {
+        const id = (await (await propose(h, agent, 'Post ' + i)).json() as {actionId: string}).actionId;
+        assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: id}), {ok: true});
+        await h.db.prepare('UPDATE external_actions SET created_at=CAST(? AS INTEGER) WHERE action_id=?').bind((base + BigInt(i)).toString(), id).run();
+        ids.push(id);
+    }
+    const listed = (await past(h, agent)).actions.map(a => a.actionId);
+    assert.equal(listed.length, pastActionsListed);
+    assert.deepEqual(listed, ids.slice(1).reverse(), 'the oldest falls off');
+}));
+
+// An app reads history past the newest page by naming the last action it got (KoalaFacts/Weave#365).
+test('listPastExternalActions_BeforeLastEntry_NextOlderPageThenEmpty', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const base = BigInt(ticks()) - 1_000_000n;
+    const ids: string[] = [];
+    for (let i = 0; i < pastActionsListed + 5; i++) {
+        const id = (await (await propose(h, agent, 'Post ' + i)).json() as {actionId: string}).actionId;
+        assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: id}), {ok: true});
+        ids.push(id);
+    }
+    // Two pairs share a creation tick, so the action ID breaks the tie on the page boundary (posts 4 and 5) and inside a page.
+    const ticksOf = ids.map((_, i) => base + BigInt(i));
+    ticksOf[5] = ticksOf[4];
+    ticksOf[12] = ticksOf[11];
+    for (const [i, id] of ids.entries()) await h.db.prepare('UPDATE external_actions SET created_at=CAST(? AS INTEGER) WHERE action_id=?').bind(ticksOf[i].toString(), id).run();
+    const expected = ids.map((id, i) => ({id, tick: ticksOf[i]})).sort((a, b) => a.tick === b.tick ? (a.id < b.id ? 1 : -1) : a.tick < b.tick ? 1 : -1).map(e => e.id);
+
+    const first = (await past(h, agent)).actions.map(a => a.actionId);
+    assert.deepEqual(first, expected.slice(0, pastActionsListed));
+    const pageAfter = async (before: string) => {
+        const response = await h.request('/v1/external-actions?waiting=false&before=' + before, agent);
+        assert.equal(response.status, 200, await response.clone().text());
+        return (await response.json() as {actions: {actionId: string}[]}).actions.map(a => a.actionId);
+    };
+    assert.deepEqual(await pageAfter(first.at(-1)!), expected.slice(pastActionsListed), 'the next page holds exactly the older rest, in the same order');
+    assert.deepEqual(await pageAfter(expected.at(-1)!), [], 'after the oldest action the list is empty');
+    for (let i = 0; i < expected.length - 1; i++) {
+        assert.deepEqual((await pageAfter(expected[i]))[0], expected[i + 1], 'each page starts right after the named action, ties broken by action ID');
+    }
+}));
+
+test('listPastExternalActions_BeforeAnotherAgentsOrUnknownAction_Unavailable', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const other = await ownedAgent(h);
+    const stranger = (await (await propose(h, other.agent, 'Not yours')).json() as {actionId: string}).actionId;
+    for (const before of [stranger, '00000000-0000-4000-8000-000000000000']) {
+        const response = await h.request('/v1/external-actions?waiting=false&before=' + before, agent);
+        assert.equal(response.status, 404, before);
+        assert.equal((await response.json() as {code: string}).code, 'unavailable', 'another agent\'s action is indistinguishable from a missing one');
+    }
+    const settled = (await (await propose(h, agent, 'Mine, rejected')).json() as {actionId: string}).actionId;
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: settled}), {ok: true});
+    const own = (await (await propose(h, agent, 'Mine, still waiting')).json() as {actionId: string}).actionId;
+    await h.db.prepare('UPDATE external_actions SET created_at=created_at+1 WHERE action_id=?').bind(own).run();
+    const response = await h.request('/v1/external-actions?waiting=false&before=' + own, agent);
+    assert.equal(response.status, 200, 'a waiting plan of this agent is a valid cursor');
+    assert.deepEqual((await response.json() as {actions: {actionId: string}[]}).actions.map(a => a.actionId), [settled], 'and the list after it holds the older settled action');
+}));
+
+test('listExternalActions_BeforeMalformedRepeatedOrOnWaitingList_InvalidField', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    const own = (await (await propose(h, agent)).json() as {actionId: string}).actionId;
+    const cases: [string, string][] = [
+        ['waiting=false&before=', 'must be one action ID'], ['waiting=false&before=not-an-id', 'must be one action ID'],
+        ['waiting=false&before=' + own.toUpperCase(), 'must be one action ID'], [`waiting=false&before=${own}&before=${own}`, 'must be one action ID'],
+        ['before=' + own, 'only with waiting=false'], [`waiting=true&before=${own}`, 'only with waiting=false']];
+    for (const [query, reason] of cases) {
+        const response = await h.request('/v1/external-actions?' + query, agent);
+        assert.equal(response.status, 400, query);
+        const problem = await response.json() as {code: string; field: string; reason: string};
+        assert.deepEqual([problem.code, problem.field, problem.reason], ['invalid', 'before', reason], query);
+    }
+}));
+
+test('listPastExternalActions_PlanAtItsExactExpiryTick_ListedAsExpired', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    const expiry = await storedExpiry(h, action.actionId);
+    const caller: ActionCaller = {accountId: agent.accountId, check: async () => {}};
+    const listedAt = async (at: bigint) => (await listPastExternalActions(environment(h), caller, null, () => at)).actions.map(a => a.actionId + ':' + a.status);
+    assert.deepEqual(await listedAt(expiry - 1n), [], 'still waiting the tick before its expiry');
+    assert.deepEqual(await listedAt(expiry), [action.actionId + ':expired'], 'listed as expired from its expiry tick');
+
+    const refused: ActionCaller = {accountId: agent.accountId, check: async () => { throw new Error('authority gone'); }};
+    await assert.rejects(listPastExternalActions(environment(h), refused, null, () => expiry), /authority gone/, 'the caller\'s authority is checked inside the read');
+}));
+
+test('listExternalActions_WaitingParameterNotTrueOrFalse_InvalidField', () => scenario(async ({h}) => {
+    const {agent} = await ownedAgent(h);
+    for (const query of ['waiting=', 'waiting=no', 'waiting=FALSE', 'waiting=false&waiting=false', 'waiting=true&waiting=false']) {
+        const response = await h.request('/v1/external-actions?' + query, agent);
+        assert.equal(response.status, 400, query);
+        const problem = await response.json() as {code: string; field: string; reason: string};
+        assert.deepEqual([problem.code, problem.field, problem.reason], ['invalid', 'waiting', 'must be true or false'], query);
+    }
+    assert.equal((await h.request('/v1/external-actions?waiting=true', agent)).status, 200);
+}));
+
+test('listPastExternalActions_RevokedKey_Unauthenticated', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const action = await (await propose(h, agent)).json() as {actionId: string};
+    assert.deepEqual(await decide(h, humanId, {kind: 'reject-action', requestId: action.actionId}), {ok: true});
+    await h.db.prepare('UPDATE agent_keys SET revoked_at=CAST(? AS INTEGER) WHERE kid=?').bind(ticks(), agent.kid).run();
+    const response = await h.request('/v1/external-actions?waiting=false', agent);
+    assert.equal(response.status, 401);
+    assert.equal((await response.json() as {code: string}).code, 'unauthenticated');
+}));
+
 // The owner's pending actions are every agent's, named, whichever page of agents the overview shows.
 test('ownerOverview_ActionOfAgentBeyondFirstPage_ListedWithItsName', () => scenario(async ({h}) => {
     const {agent: first, humanId} = await ownedAgent(h);
@@ -1152,7 +1314,7 @@ test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnl
         await h.db.prepare(`UPDATE external_actions SET status=?,failure=?,receipt='posted:r-1',decided_at=created_at,decided_by=?,
             dispatched_at=CASE WHEN ? IN ('dispatching','completed','unknown') THEN created_at END WHERE action_id=?`).bind(status, failure, humanId, status, actionId).run();
         const receipt = status === 'completed' ? 'posted:r-1' : null, sendBy = status === 'approved' ? expiresAt : null;
-        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: {status, failure, receipt, publication: null, about, sendBy}}, status);
+        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: {status, failure, receipt, publication: null, about, sendBy, postUrl: null}}, status);
         assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: null}, 'another human learns nothing of ' + status);
     }
     // Pending or approved past its expiry reads expired, exactly from the expiry tick, as every other read does.
@@ -1160,9 +1322,9 @@ test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnl
     for (const status of ['pending', 'approved'] as const) {
         await h.db.prepare(`UPDATE external_actions SET status=?,failure=NULL,dispatched_at=NULL,decided_at=CASE WHEN ?='pending' THEN NULL ELSE created_at END,
             decided_by=CASE WHEN ?='pending' THEN NULL ELSE ? END WHERE action_id=?`).bind(status, status, status, humanId, actionId).run();
-        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId, () => expiry), {frozen: false, action: null, settled: {status: 'expired', failure: null, receipt: null, publication: null, about, sendBy: null}}, status);
+        assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId, () => expiry), {frozen: false, action: null, settled: {status: 'expired', failure: null, receipt: null, publication: null, about, sendBy: null, postUrl: null}}, status);
         const before = await ownerPendingAction(environment(h), humanId, actionId, () => expiry - 1n);
-        assert.deepEqual((before as {settled: unknown}).settled, status === 'pending' ? null : {status: 'approved', failure: null, receipt: null, publication: null, about, sendBy: expiresAt}, status + ' one tick earlier');
+        assert.deepEqual((before as {settled: unknown}).settled, status === 'pending' ? null : {status: 'approved', failure: null, receipt: null, publication: null, about, sendBy: expiresAt, postUrl: null}, status + ' one tick earlier');
     }
     // A sent action whose effect is tracked after sending carries the publication's state, only for its owner.
     await h.db.prepare("UPDATE external_actions SET status='completed',failure=NULL,dispatched_at=created_at WHERE action_id=?").bind(actionId).run();
@@ -1179,8 +1341,62 @@ test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnl
     await h.db.prepare('DELETE FROM external_publications WHERE action_id=?').bind(actionId).run();
     await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(stranger, agent.accountId).run();
     assert.deepEqual(await ownerPendingAction(environment(h), humanId, actionId), {frozen: false, action: null, settled: null});
-    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: {status: 'completed', failure: null, receipt: null, publication: null, about, sendBy: null}});
+    assert.deepEqual(await ownerPendingAction(environment(h), stranger, actionId), {frozen: false, action: null, settled: {status: 'completed', failure: null, receipt: null, publication: null, about, sendBy: null, postUrl: null}});
 }));
+
+// A sent action of a native adapter whose receipt alone names the post links to it; only when sent, and only for its owner.
+test('ownerPendingAction_SentNativePost_PostUrlFromTheReceiptOnlyWhenSent', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const response = await propose(h, agent, 'A post that is sent.');
+    assert.equal(response.status, 200, await response.clone().text());
+    const {actionId} = await response.json() as {actionId: string};
+    const keyed = environment(h, {EXTERNAL_CREDENTIAL_KEY: 'k'.repeat(44)});
+    const read = async (env = keyed, human = humanId) => (await ownerPendingAction(env, human, actionId) as {settled: {postUrl: string | null} | null}).settled?.postUrl;
+    await h.db.prepare(`UPDATE external_actions SET provider='x',status='completed',receipt='1859281733620449485',decided_at=created_at,decided_by=?,
+        dispatched_at=created_at WHERE action_id=?`).bind(humanId, actionId).run();
+    assert.equal(await read(), 'https://x.com/i/web/status/1859281733620449485');
+    const {humanId: stranger} = await ownedAgent(h);
+    assert.equal(await read(keyed, stranger), undefined, 'another human learns nothing');
+    for (const status of ['unknown', 'dispatching', 'failed']) {
+        await h.db.prepare('UPDATE external_actions SET status=? WHERE action_id=?').bind(status, actionId).run();
+        assert.equal(await read(), null, status + ': only a sent action links to a post');
+    }
+    await h.db.prepare("UPDATE external_actions SET status='completed',receipt='not-an-id' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await read(), null, 'a receipt in another shape gives no link');
+    await h.db.prepare("UPDATE external_actions SET receipt='-1001234567890/42',provider='telegram' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await read(), 'https://t.me/c/1234567890/42', 'a Telegram channel or supergroup message links for its members');
+    await h.db.prepare("UPDATE external_actions SET receipt='-123456789/42' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await read(), null, 'a basic group message has no link');
+    await h.db.prepare("UPDATE external_actions SET receipt='1859281733620449485',provider='discord' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await read(), null, 'a provider whose receipt does not name an address gives none');
+}));
+
+// The agent reads the same post address the owner page links, on the by-ID read and both lists, only once the action is completed.
+test('externalActionView_SentNativePost_PostUrlOnTheAgentReadsOnlyWhenCompleted', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const response = await propose(h, agent, 'A post that is sent.');
+    assert.equal(response.status, 200, await response.clone().text());
+    const {actionId, postUrl: proposed} = await response.json() as {actionId: string; postUrl: unknown};
+    assert.equal(proposed, null, 'a pending proposal has no post address');
+    assert.equal((await waiting(h, agent)).actions.every(a => (a as {postUrl?: unknown}).postUrl === null), true, 'waiting plans carry postUrl: null');
+    const readUrl = async () => (await h.ok(`/v1/external-actions/${actionId}`, agent) as {postUrl: unknown}).postUrl;
+    const listedUrl = async () => ((await past(h, agent)).actions.find(a => a.actionId === actionId) as {postUrl?: unknown} | undefined)?.postUrl;
+    await h.db.prepare(`UPDATE external_actions SET provider='x',status='completed',receipt='1859281733620449485',decided_at=created_at,decided_by=?,
+        dispatched_at=created_at,completed_at=created_at WHERE action_id=?`).bind(humanId, actionId).run();
+    assert.equal(await readUrl(), 'https://x.com/i/web/status/1859281733620449485');
+    assert.equal(await listedUrl(), 'https://x.com/i/web/status/1859281733620449485', 'the past-actions list carries it too');
+    for (const status of ['unknown', 'dispatching', 'failed']) {
+        await h.db.prepare('UPDATE external_actions SET status=? WHERE action_id=?').bind(status, actionId).run();
+        assert.equal(await readUrl(), null, status + ': only a completed action has a post address');
+        assert.equal(await listedUrl(), null, status + ' (list)');
+    }
+    await h.db.prepare("UPDATE external_actions SET status='completed',receipt='-1001234567890/42',provider='telegram' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await readUrl(), 'https://t.me/c/1234567890/42');
+    await h.db.prepare("UPDATE external_actions SET receipt='not-an-id',provider='x' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await readUrl(), null, 'a receipt in another shape gives none');
+    await h.db.prepare("UPDATE external_actions SET receipt='1859281733620449485',provider='discord' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await readUrl(), null, 'a provider whose receipt does not name an address gives none');
+}, true, {EXTERNAL_CREDENTIAL_KEY: 'k'.repeat(44)}));
 
 // The page for one action names what the settled action was: its agent, operation, the account the plan bound and the content.
 test('ownerPendingAction_OwnSettledAction_DescribesThePlanAndTheAccountNameOnlyWhileTheCredentialStillPointsThere', () => scenario(async ({h}) => {

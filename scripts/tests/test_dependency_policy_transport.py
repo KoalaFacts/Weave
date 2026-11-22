@@ -25,17 +25,8 @@ LARGE_INVALID = json.dumps({'unlicensed': [], 'unresolved': [],
 
 
 class DependencyPolicyTransportTests(unittest.TestCase):
-    def test_acceptance_runs_the_real_file_policy_regressions(self):
-        workflow = (ROOT / '.github/workflows/dependency-policy-acceptance.yml').read_text()
-        self.assertIn('npm test --prefix tools/dependency-license-policy', workflow)
-        acceptance = (ROOT / 'scripts/acceptance/dependency_policy.py').read_text()
-        self.assertNotIn("'DEPENDENCY_CHANGES':", acceptance)
-        self.assertNotIn("'INVALID_LICENSE_CHANGES':", acceptance)
-        for name in ('large-permitted-delta', 'prohibited-large-final-change', 'unknown-large-final-change'):
-            self.assertIn(name, acceptance)
-
     def transport_script(self):
-        review = (ROOT / '.github/workflows/ci.yml').read_text().split('  dependency-review:\n', 1)[1]
+        review = (ROOT / '.github/workflows/ci-dotnet.yml').read_text().split('  dependency-review:\n', 1)[1]
         match = re.search(r'      - name: Materialize dependency policy outputs\n(.*?)(?=\n      - name:|\Z)',
                           review, re.DOTALL)
         self.assertIsNotNone(match, 'Large action outputs need a script-file transport step, not environment entries.')

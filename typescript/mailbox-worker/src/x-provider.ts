@@ -181,6 +181,8 @@ export const x: PublishingAdapter = {
         help: 'In the X developer portal, give your app Read and Write permission, then copy its API key and secret and generate an access token and secret for your own account. Posting uses your app\'s X API access.',
         verify
     },
+    // X's own address for a post by ID; it redirects to the author's handle.
+    postUrl: receipt => idPattern.test(receipt) ? 'https://x.com/i/web/status/' + receipt : null,
     async publish({env, accountId, secret, post}) {
         let keys: XKeys | null = null;
         try { keys = xKeys(JSON.parse(secret) as Record<string, unknown>); } catch { /* an unreadable secret is refused below */ }

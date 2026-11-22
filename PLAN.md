@@ -102,7 +102,7 @@ future network EOF or proof of every historical occurrence.
 
 ### 3. Supply-chain evidence acceptance (completed through #126; #110 closed)
 
-**Inspect:** .github/workflows/ci.yml, scripts/check_dependency_review_evidence.py,
+**Inspect:** .github/workflows/ci-dotnet.yml, scripts/check_dependency_review_evidence.py,
 scripts/check_dependency_license_evidence.py, scripts/submit_nuget_snapshots.py,
 the independent Dependency Policy Acceptance workflow and their tests.
 

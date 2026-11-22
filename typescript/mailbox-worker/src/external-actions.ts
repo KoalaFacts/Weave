@@ -32,7 +32,9 @@ export type ExternalActionView = {actionId: string; provider: string; operation:
     /** What the provider later reported about a completed effect it finishes after dispatch; null when not tracked. */
     publication: PublicationView | null;
     /** The page where the owner decides this pending action; null once it is decided or expired, or without a first-party authorization server. */
-    approvalUrl: string | null};
+    approvalUrl: string | null;
+    /** The platform's own https address of a completed post when its receipt alone determines it (see `postUrlOf`); else null. */
+    postUrl: string | null};
 /** What the owner page shows for a pending action; `planDigest` is what the owner confirms. */
 export type OwnerExternalAction = {actionId: string; agentId: string; agentDisplayName: string | null; provider: string; operation: string; content: string;
     credentialRef: string; credentialRevision: string; targetAccount: string; targetDisplay: string; planDigest: string; createdAt: string; expiresAt: string;
@@ -88,6 +90,15 @@ export function effectiveStatus(stored: string, expiresAt: string, now: bigint):
     return live && exactInt64(expiresAt) <= now ? 'expired' : stored as ActionStatus;
 }
 
+/**
+ * The platform's own https address of a sent post when its receipt alone determines it (native X, Bluesky, LinkedIn, YouTube, and a
+ * Telegram channel or supergroup message); null for any other status, receipt shape or provider, or while this deployment lacks the
+ * provider. The recorded receipt fixes the address otherwise.
+ */
+export function postUrlOf(env: Env, row: Pick<Row, 'provider' | 'receipt'>, status: ActionStatus | 'expired'): string | null {
+    return status === 'completed' && row.receipt ? findProvider(env, row.provider)?.postUrl?.(row.receipt) ?? null : null;
+}
+
 function view(env: Env, row: Row, now: bigint, publication: PublicationView | null = null): ExternalActionView {
     const status = effectiveStatus(row.status, row.expires_at, now);
     const origin = status === 'pending' ? approvalOrigin(env) : null;
@@ -95,7 +106,7 @@ function view(env: Env, row: Row, now: bigint, publication: PublicationView | nu
         credentialRevision: row.credential_revision, targetAccount: row.target_account, status,
         createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!, decidedAt: apiTime(row.decided_at),
         dispatchedAt: apiTime(row.dispatched_at), completedAt: apiTime(row.completed_at), receipt: row.receipt, failure: row.failure, publication,
-        approvalUrl: origin && origin + '/account/actions/' + row.action_id};
+        approvalUrl: origin && origin + '/account/actions/' + row.action_id, postUrl: postUrlOf(env, row, status)};
 }
 
 const readRow = (tx: Transaction, actionId: string) =>
@@ -207,6 +218,56 @@ export async function listWaitingExternalActions(env: Env, caller: ActionCaller,
             .bind(caller.accountId, at.toString(), pendingActionsPerAgent).all<Row>()).results;
         // A waiting plan has not been dispatched, so it has no publication to read.
         return {actions: rows.map(row => view(env, row, at))};
+    }, clock);
+}
+
+/** The `waiting` query parameter of `GET /v1/external-actions`: absent or `true` lists waiting plans, `false` the rest. */
+export function waitingParameter(params: URLSearchParams): boolean {
+    const values = params.getAll('waiting');
+    if (values.length === 0) return true;
+    if (values.length > 1 || (values[0] !== 'true' && values[0] !== 'false')) invalidField('waiting', 'must be true or false');
+    return values[0] === 'true';
+}
+
+const actionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * The `before` query parameter of `GET /v1/external-actions?waiting=false`: an action ID of this agent, from the last
+ * entry of the previous page. Absent reads the newest page; it is refused on the waiting-plan list, which has no pages.
+ */
+export function beforeParameter(params: URLSearchParams, waiting: boolean): string | null {
+    const values = params.getAll('before');
+    if (values.length === 0) return null;
+    if (waiting) invalidField('before', 'only with waiting=false');
+    if (values.length > 1 || !actionIdPattern.test(values[0])) invalidField('before', 'must be one action ID');
+    return values[0];
+}
+
+/** At most this many actions in one `GET /v1/external-actions?waiting=false` answer. */
+export const pastActionsListed = 20;
+
+/**
+ * GET /v1/external-actions?waiting=false: this agent's newest actions that no longer wait (rejected, dispatching,
+ * completed, failed, unknown, or pending/approved past expiry), newest proposal first, each as the by-ID read returns it,
+ * tracked publication included. An app shows what became of recent posts in one read instead of one read per action ID.
+ * With `before` (an action ID of this agent, else 404 like the by-ID read) it lists the next older page, in the same order.
+ */
+export async function listPastExternalActions(env: Env, caller: ActionCaller, before: string | null = null, clock: () => bigint = nowUtc): Promise<{actions: ExternalActionView[]}> {
+    return atomic(env.db, async tx => {
+        const at = tx.store.now;
+        await caller.check(tx);
+        const cursor = before === null ? null : await ownAction(tx, caller, before);
+        // The publication columns are renamed in a subquery, so the shared column list stays unambiguous.
+        const rows = (await tx.db.prepare(`SELECT ${columns},p_state,p_url,p_error,p_checked_at
+            FROM external_actions LEFT JOIN (SELECT action_id p_action_id,state p_state,url p_url,error p_error,CAST(checked_at AS TEXT) p_checked_at
+                FROM external_publications) ON p_action_id=action_id
+            WHERE account_id=?1 AND NOT (status IN ('pending','approved') AND expires_at>CAST(?2 AS INTEGER))
+            AND (?3 IS NULL OR created_at<CAST(?3 AS INTEGER) OR (created_at=CAST(?3 AS INTEGER) AND action_id<?4))
+            ORDER BY created_at DESC,action_id DESC LIMIT ?5`)
+            .bind(caller.accountId, at.toString(), cursor?.created_at ?? null, cursor?.action_id ?? null, pastActionsListed)
+            .all<Row & {p_state: PublicationView['state'] | null; p_url: string | null; p_error: string | null; p_checked_at: string | null}>()).results;
+        return {actions: rows.map(row => view(env, row, at, row.p_state === null ? null
+            : {state: row.p_state, url: row.p_url, error: row.p_error, checkedAt: apiTime(row.p_checked_at)}))};
     }, clock);
 }
 
@@ -404,9 +465,10 @@ export function mediaIdsOf(content: string): string[] {
  * What became of an action of the human's own agent that is no longer waiting for a decision: its status, stored failure code,
  * and for a sent action the platform's receipt and, when the effect is tracked after sending, the publication's state. `sendBy` is
  * the plan's expiry while it is approved and unsent (the time by which the agent must send it, after which it is never sent), else null.
+ * `postUrl` is the platform's own https address of a sent post when its receipt alone determines it (`postUrlOf`), else null.
  */
 export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; receipt: string | null;
-    publication: PublicationView | null; about: OwnerSettledPlan; sendBy: string | null};
+    publication: PublicationView | null; about: OwnerSettledPlan; sendBy: string | null; postUrl: string | null};
 /**
  * What the settled action was, so the owner who returns to its page sees which action it is: the agent, the operation, the
  * account the plan bound (`targetDisplay` is the credential's name for it while the credential still points at that account,
@@ -446,7 +508,8 @@ export async function ownerPendingAction(env: Env, humanId: string, actionId: st
         const about: OwnerSettledPlan = {agentId: row.account_id, agentDisplayName: names?.display_name ?? null, provider: row.provider, operation: row.operation,
             targetAccount: row.target_account, targetDisplay: names?.target_account === row.target_account ? names.target_display : null, content: row.content};
         return {frozen: false as const, action: null, settled: {status, failure: row.failure, receipt: sent ? row.receipt : null,
-            publication: sent ? await readPublication(tx, actionId) : null, about, sendBy: status === 'approved' ? apiTime(row.expires_at) : null}};
+            publication: sent ? await readPublication(tx, actionId) : null, about, sendBy: status === 'approved' ? apiTime(row.expires_at) : null,
+            postUrl: postUrlOf(env, row, status)}};
     });
 }
 

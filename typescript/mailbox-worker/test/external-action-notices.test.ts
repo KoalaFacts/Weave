@@ -15,9 +15,9 @@ const endpoint = 'https://provider.test/post';
 const hourTicks = 36_000_000_000n;
 const nowTicks = () => BigInt(Date.now()) * 10000n;
 
-async function scenario(run: (s: {h: Harness; provider: Provider}) => Promise<void>) {
+async function scenario(run: (s: {h: Harness; provider: Provider}) => Promise<void>, bindings: Record<string, string> = {}) {
     const provider: Provider = {calls: 0, respond: () => Response.json({externalId: 'post-1'})};
-    const h = await start({bindings: {EXTERNAL_ACTION_TEST_ENDPOINT: endpoint}, outboundService: async (request: Request) => {
+    const h = await start({bindings: {EXTERNAL_ACTION_TEST_ENDPOINT: endpoint, ...bindings}, outboundService: async (request: Request) => {
         if (request.url !== endpoint) return new Response('unexpected', {status: 599});
         provider.calls++;
         return provider.respond();
@@ -63,7 +63,7 @@ test('inbox_ProposedAction_PendingNoticeWithoutContent', () => scenario(async ({
     const action = await propose(h, agent);
     const notices = await actionNotices(h, agent);
     assert.deepEqual(notices, [{kind: 'external-action', actionId: action.actionId, status: 'pending', credentialRef: 'linkedin-main',
-        provider: 'test-http', targetAccount: 'urn:li:person:alpha', credentialRevision: 'rev-1', operation: 'publish_text', createdAt: action.createdAt, expiresAt: action.expiresAt, decidedAt: null, completedAt: null, failure: null}]);
+        provider: 'test-http', targetAccount: 'urn:li:person:alpha', credentialRevision: 'rev-1', operation: 'publish_text', createdAt: action.createdAt, expiresAt: action.expiresAt, decidedAt: null, completedAt: null, failure: null, receipt: null, postUrl: null}]);
     assert.equal(JSON.stringify(notices).includes('Episode 12'), false, 'notices never carry the planned content');
 }));
 
@@ -87,9 +87,9 @@ test('inbox_EveryActionStatus_NoticeMatchesPublishedNoticeSchema', () => scenari
     await run(() => Response.json({reason: 'duplicate content'}, {status: 422}));
     await run(() => new Response('{}', {status: 502}));
     const page = await h.ok('/v1/inbox', agent) as {notices: Notice[]};
-    const statuses = page.notices.filter(notice => notice.kind === 'external-action').map(notice => `${notice.status}:${notice.failure}`);
-    assert.deepEqual(new Set(statuses), new Set(['pending:null', 'approved:null', 'rejected:null', 'expired:null', 'completed:null',
-        'failed:provider-rejected: duplicate content', 'unknown:outcome-unknown']), 'positive control: every reachable status is checked');
+    const statuses = page.notices.filter(notice => notice.kind === 'external-action').map(notice => `${notice.status}:${notice.failure}:${notice.receipt}`);
+    assert.deepEqual(new Set(statuses), new Set(['pending:null:null', 'approved:null:null', 'rejected:null:null', 'expired:null:null', 'completed:null:post-1',
+        'failed:provider-rejected: duplicate content:null', 'unknown:outcome-unknown:null']), 'positive control: every reachable status is checked');
     const pageSchema = spec.paths['/v1/inbox'].get.responses['200'].content['application/json'].schema;
     assert.equal(mismatch(spec, pageSchema, page, 'inbox'), null);
     const actionSchema = (spec.components.schemas.Notice.oneOf as Schema[]).find(option => option.properties?.kind?.const === 'external-action')!;
@@ -103,6 +103,7 @@ test('inbox_EveryActionStatus_NoticeMatchesPublishedNoticeSchema', () => scenari
     assert.match(mismatch(spec, actionSchema, {...notice, status: 'sent'}, 'item') ?? '', /item\.status is not one of/);
     assert.match(mismatch(spec, actionSchema, {...notice, createdAt: '2026-11-15 00:00:00'}, 'item') ?? '', /item\.createdAt does not match/);
     assert.match(mismatch(spec, actionSchema, {...notice, decidedAt: 1}, 'item') ?? '', /item\.decidedAt matches no anyOf option/);
+    assert.match(mismatch(spec, actionSchema, {...notice, receipt: 'x'.repeat(257)}, 'item') ?? '', /item\.receipt matches no anyOf option/);
 }));
 
 test('inbox_CredentialReconnectedAfterProposal_NoticeKeepsTheActionsAccount', () => scenario(async ({h}) => {
@@ -123,7 +124,7 @@ test('inbox_ApprovedAndExecuted_OneNoticeWithLatestStatus', () => scenario(async
     const {actionId} = await propose(h, agent);
     await approve(h, humanId, actionId);
     const approved = await actionNotices(h, agent);
-    assert.deepEqual(approved.map(n => [n.actionId, n.status]), [[actionId, 'approved']]);
+    assert.deepEqual(approved.map(n => [n.actionId, n.status, n.receipt]), [[actionId, 'approved', null]]);
     assert.equal(typeof approved[0].decidedAt, 'string');
 
     const executed = await h.ok(`/v1/external-actions/${actionId}/execute`, agent, 'POST', {}) as {status: string; completedAt: string};
@@ -131,7 +132,36 @@ test('inbox_ApprovedAndExecuted_OneNoticeWithLatestStatus', () => scenario(async
     assert.equal(provider.calls, 1);
     const completed = await actionNotices(h, agent);
     assert.deepEqual(completed.map(n => [n.actionId, n.status, n.completedAt, n.failure]), [[actionId, 'completed', executed.completedAt, null]]);
+    const read = await h.ok(`/v1/external-actions/${actionId}`, agent) as {receipt: string | null};
+    assert.equal(typeof read.receipt, 'string', 'positive control: the sent action has a receipt to report');
+    assert.deepEqual(completed.map(n => n.receipt), [read.receipt], 'the notice carries the same receipt the action read returns');
 }));
+
+// A sent native post's notice names its platform address, the same one the action read returns, so an app links it without copying
+// each platform's address rules; any other status, receipt shape or provider gives null.
+test('inbox_SentNativePost_NoticePostUrlEqualsTheActionRead', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const {actionId} = await propose(h, agent);
+    const both = async () => {
+        const read = await h.ok(`/v1/external-actions/${actionId}`, agent) as {postUrl: unknown};
+        const notices = await actionNotices(h, agent);
+        assert.equal(notices.length, 1);
+        assert.equal(notices[0].postUrl, read.postUrl, 'the notice and the action read agree');
+        return notices[0].postUrl;
+    };
+    assert.equal(await both(), null, 'a pending plan has no post address');
+    await h.db.prepare(`UPDATE external_actions SET provider='x',status='completed',receipt='1859281733620449485',decided_at=created_at,decided_by=?,
+        dispatched_at=created_at,completed_at=created_at,updated_at=updated_at+1 WHERE action_id=?`).bind(humanId, actionId).run();
+    assert.equal(await both(), 'https://x.com/i/web/status/1859281733620449485');
+    for (const status of ['unknown', 'dispatching', 'failed']) {
+        await h.db.prepare('UPDATE external_actions SET status=? WHERE action_id=?').bind(status, actionId).run();
+        assert.equal(await both(), null, status + ': only a completed action has a post address');
+    }
+    await h.db.prepare("UPDATE external_actions SET status='completed',receipt='-1001234567890/42',provider='telegram' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await both(), 'https://t.me/c/1234567890/42');
+    await h.db.prepare("UPDATE external_actions SET receipt='1859281733620449485',provider='discord' WHERE action_id=?").bind(actionId).run();
+    assert.equal(await both(), null, 'a provider whose receipt does not name an address gives none');
+}, {EXTERNAL_CREDENTIAL_KEY: 'k'.repeat(44)}));
 
 test('inbox_UnknownOutcome_NoticeReportsUnknown', () => scenario(async ({h, provider}) => {
     const {agent, humanId} = await ownedAgent(h);
@@ -303,7 +333,7 @@ test('accountNotices_WindowAndExpiryEdges_ExactTicks', () => scenario(async ({h}
     const lapsesNow = await row('approved', since - day, now);
     const stillLive = await row('approved', since - day, now + 1n);
     await h.db.prepare('DELETE FROM external_actions WHERE action_id=?').bind(template.actionId).run();
-    const notices = await accountNotices(new Transaction(h.db as never, now), agent.accountId, now) as Notice[];
+    const notices = await accountNotices(environment(h), new Transaction(h.db as never, now), agent.accountId, now) as Notice[];
     assert.deepEqual(notices[0] && [notices[0].actionId, notices[0].status], [lapsesNow, 'expired'], 'ranked by its expiry, now');
     // The other two share the instant one tick into the window, so their mutual order is not part of the contract.
     assert.deepEqual(new Map(notices.slice(1).map(n => [n.actionId, n.status])),

@@ -31,7 +31,7 @@ class SourceTests(unittest.TestCase):
     def setUp(self):
         self.run = {'id': 123, 'status': 'completed', 'conclusion': 'success',
                     'head_branch': 'main', 'event': 'workflow_dispatch',
-                    'path': '.github/workflows/release.yml', 'head_sha': 'a' * 40,
+                    'path': '.github/workflows/release-dotnet.yml', 'head_sha': 'a' * 40,
                     'head_repository': {'full_name': 'KoalaFacts/Weave'}}
         self.artifact = {'id': 456, 'name': 'nuget-packages-v1.2.3', 'expired': False}
         self.pages = [{'artifacts': [self.artifact]}]

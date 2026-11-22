@@ -319,7 +319,7 @@ def main() -> None:
     shared_files = [destination for source, destination in moves.items()
                     if source.startswith('src/Foundation/Weave.Shared/')
                     and source.endswith('.cs') and destination]
-    ci = ROOT / '.github/workflows/ci.yml'
+    ci = ROOT / '.github/workflows/ci-dotnet.yml'
     ci.write_text(ci.read_text().replace('--exclude src/Foundation/Weave.Shared/',
                   '--exclude ' + ' '.join(shared_files)), encoding='utf-8')
 

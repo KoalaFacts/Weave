@@ -39,7 +39,7 @@ class ReadOnlyTransport:
 
 class HistoricalBaselineTests(unittest.TestCase):
     def run_step(self, api=None, source_sha=SHA, source_ref='refs/heads/main'):
-        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        workflow = (ROOT / '.github/workflows/ci-dotnet.yml').read_text()
         self.assertIn(STEP, workflow, 'Historical baseline needs its own explicit validation step')
         step = workflow.split(STEP, 1)[1].split('\n      - ', 1)[0]
         code = textwrap.dedent(step.split('        run: |\n', 1)[1])

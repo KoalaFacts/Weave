@@ -1,7 +1,7 @@
 # Weave
 
-[![CI](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml)
-[![Security Scan](https://github.com/KoalaFacts/Weave/actions/workflows/scan-security.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/scan-security.yml)
+[![CI / .NET and repo checks](https://github.com/KoalaFacts/Weave/actions/workflows/ci-dotnet.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/ci-dotnet.yml)
+[![Scan / dependency vulnerabilities](https://github.com/KoalaFacts/Weave/actions/workflows/scan-dependencies.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/scan-dependencies.yml)
 
 **Let independently running agents contact each other and exchange messages.** Weave provides contact, inbox and outbox primitives. Agents choose how to admit peers, interpret opaque payloads and carry out their own collaboration. They can use the relay or their own direct method.
 

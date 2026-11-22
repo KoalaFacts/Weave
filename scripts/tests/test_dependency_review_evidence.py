@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class DependencyReviewWorkflowTests(unittest.TestCase):
     def job(self):
-        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/ci-dotnet.yml").read_text(encoding="utf-8")
         return workflow.split("  dependency-review:\n", 1)[1]
 
     def test_evidence_gate_precedes_dependency_review(self):

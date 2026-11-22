@@ -1,4 +1,4 @@
-name: OAuth authorization Worker isolated verification
+name: CI / auth-worker
 
 on:
   push:
@@ -14,7 +14,7 @@ on:
       - experiments/oauth-provider-agnostic/**
       - examples/remote-mcp-pair/oauth.ts
       - examples/remote-mcp-pair/run.ts
-      - .github/workflows/oauth-auth-worker.yml
+      - .github/workflows/ci-auth-worker.yml
   pull_request:
     branches: [main]
     paths:
@@ -28,7 +28,7 @@ on:
       - experiments/oauth-provider-agnostic/**
       - examples/remote-mcp-pair/oauth.ts
       - examples/remote-mcp-pair/run.ts
-      - .github/workflows/oauth-auth-worker.yml
+      - .github/workflows/ci-auth-worker.yml
   workflow_dispatch:
 
 permissions:

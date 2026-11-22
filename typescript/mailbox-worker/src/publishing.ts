@@ -61,6 +61,8 @@ export type PublishingAdapter = {
     /** Sends the post. Return rejected only when nothing was published; throw when the outcome is uncertain. */
     publish(call: PublishCall): Promise<ProviderResult>;
     publicationStates?(secret: string, items: {receipt: string; trackFrom: number}[]): Promise<Map<string, PublicationState>>;
+    /** The platform's own https address of the post a completed receipt names, when the receipt alone determines it; otherwise null. */
+    postUrl?(receipt: string): string | null;
 };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, sha = /^[0-9a-f]{64}$/;
@@ -209,7 +211,8 @@ export function publishingProvider(adapter: PublishingAdapter): ExternalProvider
             return adapter.publish({env, accountId: call.accountId, actionId: call.actionId, targetAccount: call.targetAccount, secret: call.secret,
                 post: {...parsed, media: files}});
         },
-        ...(adapter.publicationStates ? {publicationStates: adapter.publicationStates} : {})
+        ...(adapter.publicationStates ? {publicationStates: adapter.publicationStates} : {}),
+        ...(adapter.postUrl ? {postUrl: adapter.postUrl} : {})
     };
 }
 

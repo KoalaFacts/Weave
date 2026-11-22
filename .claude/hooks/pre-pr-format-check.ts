@@ -1,6 +1,6 @@
 // PreToolUse hook for mcp__github__create_pull_request.
 // Runs `dotnet format --verify-no-changes` with the same excludes as CI's
-// "Check formatting" step (.github/workflows/ci.yml). On failure, blocks the
+// "Check formatting" step (.github/workflows/ci-dotnet.yml). On failure, blocks the
 // PR creation and surfaces the diagnostic so it can be fixed before opening a PR.
 
 import { spawn } from 'node:child_process';
