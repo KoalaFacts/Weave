@@ -112,10 +112,13 @@ remains possible later for chat channels.
   the app that proposed it, still works. A mailbox without the flags adds no note.
 - **Older recent actions (2026-11-23).** When more than 20 recent outcomes exist, the page no longer only says so: it
   links "Older actions" to `/account?recent=<actionId>`, the last action listed, and that page lists the next 20 in
-  the same order (equal change times by action ID), with "Newest actions" back to the first page; each outcome of the
-  last 7 days is reached once. The mailbox `ownerOverview(humanId, after, recentBefore)` RPC takes the cursor: one of
-  this human's actions that no longer waits, otherwise (another human's, a waiting plan, unknown or malformed) the
-  list is empty and the page says "No older actions from the last 7 days." The agents paging is separate. No schema,
+  the same order (equal change times by action ID), with "Newest actions" back to the first page; while nothing changes
+  between page loads, each outcome of the last 7 days is reached once (an action that changes in between can move
+  across pages). The mailbox `ownerOverview(humanId, after, recentBefore)` RPC takes the cursor: one of this human's
+  actions that no longer waits, otherwise (another human's, a waiting plan, unknown) the list is empty and the page
+  says "No older actions from the last 7 days."; a malformed cursor empties the whole overview, as a malformed `after`
+  does (the auth Worker forwards only a UUID). Deploy the mailbox first: an older mailbox ignores the cursor, so its
+  later pages repeat the first. The agents paging is separate. No schema,
   agent API or MCP change. Workerd test `account_MoreRecentActionsThanListed_OlderActionsLinkPagesThroughAllOnce`
   pages through 25 outcomes with equal times and refuses another human's cursor; mutations of the owner check, the
   waiting-plan check, the unknown-cursor check, the tie order, the RPC argument and the link condition were each caught.
