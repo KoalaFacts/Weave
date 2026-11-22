@@ -445,8 +445,11 @@ test('setContactBlock_BlockThenUnblock_StopsMessagesAndNeedsANewRequest',async()
         assert.deepEqual(await ok(env,b.accountId,'set_contact_block',{peerAccountId:a.accountId,expectedGeneration:String(blocked.generation),blocked:true}),blocked);
         assert.equal((await call(env,b.accountId,'set_contact_block',{peerAccountId:a.accountId,expectedGeneration:String(before.generation),blocked:false})).status,409);
         // Neither side can send, and the message pending on the old generation is not delivered.
-        assert.notEqual((await call(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:text('after')})).status,200);
-        assert.notEqual((await call(env,b.accountId,'send_message',{recipientAccountId:a.accountId,message:text('reply')})).status,200);
+        for(const [from,to] of [[a,b],[b,a]]){
+            const refused=await call(env,from.accountId,'send_message',{recipientAccountId:to.accountId,message:text('after')});
+            assert.equal(refused.status,409);
+            assert.equal(refused.body.code,'not-connected');
+        }
         const inbox=await ok(env,b.accountId,'list_my_inbox',{});
         assert.equal(inbox.items.some((item:{message?:{messageId:string}})=>item.message?.messageId===pending.messageId),false);
         const receipt=(await ok(env,a.accountId,'list_my_outbox',{})).items.find((item:{messageId:string})=>item.messageId===pending.messageId);
@@ -458,7 +461,9 @@ test('setContactBlock_BlockThenUnblock_StopsMessagesAndNeedsANewRequest',async()
         assert.equal(unblocked.isBlockedByAccount,false);
         assert.equal(BigInt(unblocked.generation),BigInt(blocked.generation)+1n);
         // Unblocking restores no contact: sending still fails until a new request is accepted.
-        assert.notEqual((await call(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:text('still no')})).status,200);
+        const still=await call(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:text('still no')});
+        assert.equal(still.status,409);
+        assert.equal(still.body.code,'not-connected');
         const requested=await ok(env,a.accountId,'request_contact',{requesterAddressId:a.cardId,recipientAccountId:b.accountId,
             recipientAddressId:b.cardId,message:text('may we talk again?')});
         await ok(env,b.accountId,'decide_contact',{requestId:requested.request.requestId,requesterAccountId:a.accountId,
