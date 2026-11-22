@@ -52,6 +52,17 @@ lost.
   OpenAPI `Notice`; only `completed` has a receipt; an over-long receipt is refused by the checker) and the exact
   pending shape. Mutations, each killed and reverted: notice receipt always `null` (2 tests fail); OpenAPI `receipt`
   made non-nullable (1 test fails).
+- **Post address (added 2026-11-22, follow-up to #527).** Each notice also carries `postUrl`, the same value
+  `GET /v1/external-actions/{actionId}` returns: the post's https address on the platform, set only when the action is
+  `completed` and its receipt alone names the post (native X, Bluesky, LinkedIn, YouTube, or a Telegram channel or
+  supergroup message), otherwise `null`. Both reads use one function (`postUrlOf`), computed from the stored receipt at
+  read time, so they cannot disagree and no schema change is needed; unlike `publication.url` it does not change after
+  completion without a notice. Envoylet's notice-only rows can then link a native post without its own copy of each
+  platform's address rules. Verification: `inbox_SentNativePost_NoticePostUrlEqualsTheActionRead` (X and Telegram
+  addresses equal the action read; `unknown`, `dispatching`, `failed`, pending and Discord give `null`), and the
+  OpenAPI `Notice` check covers every status. Mutation: the notice's `postUrl` forced to `null` fails that test;
+  dropping `postUrl` from the schema's `required` list is not caught (the response check accepts a present optional
+  member), so the required list is pinned only by review.
 - **Own actions only.** Only rows with the caller's `account_id` are read. Another agent's actions never appear.
 - **Lost proposals.** A proposal whose HTTP response was lost (the case behind Envoylet's `propose-idempotency`
   request) shows up as a `pending` notice with its `actionId`. The app can then show the owner the plan, or let it
