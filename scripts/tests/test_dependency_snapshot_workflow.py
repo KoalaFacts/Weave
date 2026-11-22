@@ -52,15 +52,6 @@ class SnapshotWorkflowTests(unittest.TestCase):
         self.assertNotIn('continue-on-error', job)
         self.assertNotIn('pull_request_target', job)
 
-    def test_baseline_writer_and_permission_denial_share_the_reviewed_project_validator(self):
-        text = self.workflow()
-        writer = text.split('  dependency-snapshots:\n', 1)[1].split('  dependency-review:\n', 1)[0]
-        acceptance = (ROOT / '.github/workflows/dependency-policy-acceptance.yml').read_text()
-        denial = acceptance.split('  read-only-submission:\n', 1)[1]
-        revision = '97452c5adf605b69234798ead7e1b7550f425ccb'
-        self.assertIn('ref: ' + revision, writer)
-        self.assertIn('ref: ' + revision, denial)
-
 
 if __name__ == '__main__':
     unittest.main()

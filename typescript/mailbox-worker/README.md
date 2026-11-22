@@ -92,11 +92,7 @@ it remains available in the failure report if that check fails.
 This protects the permitted SQL scope; it does not lock out concurrent administrators
 or provide an atomic snapshot across deployment steps.
 
-The separately approved exact-source-pinned [human D1 migration workflow](../../.github/workflows/approved-human-schema-migration.yml)
-retains the explicitly reviewed `maintain` path. Do not invoke that migration
-until historical account, message, ACK and identity-link preservation and a safe
-recovery path have been established; the latest production inventory has **not**
-established those facts. Direct authorized script execution selects its mode with
+The separately approved human D1 migration workflow was removed on 2026-11-22 (git history keeps it); no workflow selects `maintain`. Direct authorized script execution selects its mode with
 `WEAVE_DEPLOY_DATABASE_MODE`; unknown or explicitly empty values fail before
 external operations. `completed-only` still requires deployment and ledger-check
 approval; it is not a read-only inspection.
