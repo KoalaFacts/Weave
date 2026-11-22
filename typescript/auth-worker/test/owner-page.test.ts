@@ -404,23 +404,41 @@ test("ownerPage_RecentActions_NoneOrUnlistedStatus_NeverGuessed",async()=>{
   assert.ok(!odd.includes("leftover"));
 });
 
-// When the mailbox left some actions out of either list, the page says so instead of reading as the whole list; otherwise, or from
-// a mailbox that predates the flags, it says nothing.
-test("ownerPage_ListsLeftSomeOut_SaysOnlyHowManyAreShownAndWhereTheRestAre",async()=>{
+// When the mailbox left some waiting actions out, the page says so; when it left recent ones out, it links to the older ones after
+// the last listed. Otherwise, or from a mailbox that predates the flags, it adds neither.
+test("ownerPage_ListsLeftSomeOut_SaysHowManyWaitingAreShownAndLinksToOlderRecent",async()=>{
   const agentId=randomUUID();
   const recentActions=[0,1].map(i=>({actionId:randomUUID(),agentId,agentDisplayName:null,provider:"x",operation:"publish_post",status:"rejected" as const,failure:null,changedAt:iso(now-i)}));
+  const olderLink='<p><a href="/account?recent='+recentActions[1]!.actionId+'">Older actions</a></p>';
   const both=await ownerPage(base({recentActions,moreExternalActions:true,moreRecentActions:true}),human,new Map(),null,now).text();
   assert.match(both,/<p>Only the 0 oldest actions waiting for approval are shown\. Approve or reject some to see the rest here; each one's own page, where the app that proposed it links you, also works\.<\/p>/);
-  assert.match(both,/<p>Only the 2 most recent are listed; older ones from the last 7 days are not shown here\. Each one's own page, where the app that proposed it links you, still says what became of it\.<\/p>/);
-  assert.ok(both.indexOf("Only the 0 oldest")<both.indexOf("<h2>Recent actions</h2>")&&both.indexOf("Only the 2 most recent")>both.indexOf("<h2>Recent actions</h2>"),"each note under its own list");
+  assert.ok(both.includes(olderLink),both);
+  assert.ok(both.indexOf("Only the 0 oldest")<both.indexOf("<h2>Recent actions</h2>")&&both.indexOf(olderLink)>both.indexOf("<h2>Recent actions</h2>"),"each under its own list");
+  assert.ok(!both.includes("Newest actions"),"the first page links to no newer one");
   const pendingOnly=await ownerPage(base({recentActions,moreExternalActions:true}),human,new Map(),null,now).text();
-  assert.ok(pendingOnly.includes("oldest actions waiting")&&!pendingOnly.includes("most recent are listed"));
+  assert.ok(pendingOnly.includes("oldest actions waiting")&&!pendingOnly.includes("Older actions"));
   const recentOnly=await ownerPage(base({recentActions,moreRecentActions:true}),human,new Map(),null,now).text();
-  assert.ok(!recentOnly.includes("oldest actions waiting")&&recentOnly.includes("most recent are listed"));
+  assert.ok(!recentOnly.includes("oldest actions waiting")&&recentOnly.includes(olderLink));
   const complete=await ownerPage(base({recentActions}),human,new Map(),null,now).text();
-  assert.ok(!complete.includes("Only the "),"nothing left out, no note");
+  assert.ok(!complete.includes("Only the ")&&!complete.includes("Older actions"),"nothing left out, no note or link");
   const older={...base({recentActions})} as Record<string,unknown>;delete older.moreExternalActions;delete older.moreRecentActions;
-  assert.ok(!(await ownerPage(older as OwnerOverview,human,new Map(),null,now).text()).includes("Only the "),"a mailbox without the flags adds no note");
+  const unflagged=await ownerPage(older as OwnerOverview,human,new Map(),null,now).text();
+  assert.ok(!unflagged.includes("Only the ")&&!unflagged.includes("Older actions"),"a mailbox without the flags adds neither");
+});
+
+// A later page of recent actions links back to the newest, and on only while more are left out; an empty later page says there are
+// no older ones instead of claiming none happened in the last 7 days.
+test("ownerPage_LaterRecentPage_LinksToNewestAndSaysWhenNoneAreOlder",async()=>{
+  const agentId=randomUUID(),cursor=randomUUID();
+  const recentActions=[0,1].map(i=>({actionId:randomUUID(),agentId,agentDisplayName:null,provider:"x",operation:"publish_post",status:"rejected" as const,failure:null,changedAt:iso(now-i)}));
+  const middle=await ownerPage(base({recentActions,moreRecentActions:true}),human,new Map(),null,now,null,cursor).text();
+  assert.ok(middle.includes('<p><a href="/account">Newest actions</a> · <a href="/account?recent='+recentActions[1]!.actionId+'">Older actions</a></p>'),middle);
+  const last=await ownerPage(base({recentActions}),human,new Map(),null,now,null,cursor).text();
+  assert.ok(last.includes('<p><a href="/account">Newest actions</a></p>')&&!last.includes("Older actions"),last);
+  const empty=await ownerPage(base(),human,new Map(),null,now,null,cursor).text();
+  assert.ok(empty.includes('<p>No older actions from the last 7 days.</p><p><a href="/account">Newest actions</a></p>'),empty);
+  assert.ok(!empty.includes("None of your agents' actions was decided"));
+  assert.equal(empty.split("Newest actions").length-1,1,"one link back, not two");
 });
 
 // A not-sent action explains its stored failure code in plain words and says what the owner can do; a code the page does not

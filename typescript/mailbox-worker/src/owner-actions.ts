@@ -32,8 +32,8 @@ export type RevokedAgentGrants = {agentId: string; revokedGrantIds: string[]};
 /**
  * `agents` is one page of the human's agents, oldest first; `nextAgents` is the cursor of the following page, null on the last.
  * `externalActions` are the pending governed actions of all the human's agents, each confirmed by its `planDigest`; `recentActions`
- * those that stopped waiting in the last 7 days, newest first, at most 20; `moreExternalActions` and `moreRecentActions` say whether
- * either list left some out (more than 200 pending, or more than 20 recent); and
+ * those that stopped waiting in the last 7 days, newest first, at most 20 (after the action `recentBefore` names, when given);
+ * `moreExternalActions` and `moreRecentActions` say whether either list left some out (more than 200 pending, or more recent); and
  * `revokedGrants` the recent revocations of all of them, whichever page is shown. `ownerGrants` are the live grants that manage
  * every agent, and `revokedOwnerGrantIds` those revoked in the last 30 days, for the same token clean-up; never rendered.
  * `connectors` are the publishing platforms an owner can connect an agent to, with the fields each asks for.
@@ -77,10 +77,11 @@ const placeholders = (values: unknown[]) => values.map(() => '?').join(',');
  * cursor that is not one of this human's agents, sees no agents; a frozen human sees only that.
  */
 export async function ownerOverview(env: Env, humanId: string, after: string | null = null, clock: () => bigint = nowUtc,
-    revocationStart: () => string = () => crypto.randomUUID()): Promise<OwnerOverview> {
+    revocationStart: () => string = () => crypto.randomUUID(), recentBefore: string | null = null): Promise<OwnerOverview> {
     requireReadable(env);
     const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: [], nextAgents: null, externalActions: [], moreExternalActions: false, recentActions: [], moreRecentActions: false, revokedGrants: [], ownerGrants: [], revokedOwnerGrantIds: [], connectors: []};
-    if (typeof humanId !== 'string' || !uuidPattern.test(humanId) || (after !== null && (typeof after !== 'string' || !uuidPattern.test(after)))) return empty;
+    if (typeof humanId !== 'string' || !uuidPattern.test(humanId) || (after !== null && (typeof after !== 'string' || !uuidPattern.test(after)))
+        || (recentBefore !== null && (typeof recentBefore !== 'string' || !uuidPattern.test(recentBefore)))) return empty;
     return atomic(env.db, async tx => {
         const nowTicks = clock(), now = nowTicks.toString();
         const human = await tx.db.prepare('SELECT subject,frozen_at FROM humans WHERE human_id=?').bind(humanId).first<{subject: string; frozen_at: string | null}>();
@@ -128,7 +129,7 @@ export async function ownerOverview(env: Env, humanId: string, after: string | n
         }
         // One more than is shown of each, only to say that some were left out.
         const externalActions = await pendingForOwner(tx, humanId, nowTicks, null, pendingActionsShownToOwner + 1);
-        const recentActions = await recentForOwner(tx, humanId, nowTicks, recentActionsShownToOwner + 1);
+        const recentActions = await recentForOwner(tx, humanId, nowTicks, recentActionsShownToOwner + 1, recentBefore);
         const ownerGrants = (await tx.db.prepare('SELECT grant_id,client_id,client_name,CAST(created_at AS TEXT) created_at FROM owner_grants WHERE human_id=? AND revoked_at IS NULL ORDER BY created_at DESC,grant_id LIMIT ?')
             .bind(humanId, maxLiveOwnerGrants).all<{grant_id: string; client_id: string; client_name: string | null; created_at: string}>()).results;
         const revokedOwnerGrants = (await tx.db.prepare('SELECT grant_id FROM owner_grants WHERE human_id=? AND revoked_at IS NOT NULL AND revoked_at>CAST(? AS INTEGER) ORDER BY revoked_at DESC,grant_id LIMIT ?')

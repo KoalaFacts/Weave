@@ -291,8 +291,9 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
   if(req.method==="GET"){
     // An unusable cursor shows the first page rather than an error.
     const cursor=url.searchParams.get("agents"),after=cursor!==null&&agentCursorPattern.test(cursor)?cursor:null;
+    const recentCursor=url.searchParams.get("recent"),recentBefore=recentCursor!==null&&agentCursorPattern.test(recentCursor)?recentCursor:null;
     let overview:OwnerOverview;
-    try{overview=await env.MAILBOX.ownerOverview(session.humanId,after);}catch{return directoryUnavailable();}
+    try{overview=await env.MAILBOX.ownerOverview(session.humanId,after,recentBefore);}catch{return directoryUnavailable();}
     // Retry SDK clean-up a failed or interrupted revocation left behind; the page renders either way.
     const cleaned=!overview.frozen&&await revokeRevokedSdkGrants(api,[...overview.revokedGrants,
       {agentId:session.humanId,revokedGrantIds:overview.revokedOwnerGrantIds}]);
@@ -304,7 +305,7 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
       return messagePage(503,"Temporarily unavailable","Weave cannot show your agents right now. Try again later.");
     }
     // A pending clean-up this very visit finished is reported as finished.
-    return ownerPage(overview,session,tokens,result==="cleanup-pending"&&cleaned?"cleanup-complete":result,now,after);
+    return ownerPage(overview,session,tokens,result==="cleanup-pending"&&cleaned?"cleanup-complete":result,now,after,recentBefore);
   }
   const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
   if(action==="expired")return accountRedirect("form-expired");
@@ -345,6 +346,7 @@ async function connectAccountForm(req:Request,env:Env):Promise<Response>{
     return accountRedirect("unavailable");
   }
 }
+/** An agent or action ID used as a page cursor. */
 const agentCursorPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const actionPathPattern=/^\/account\/actions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 /**

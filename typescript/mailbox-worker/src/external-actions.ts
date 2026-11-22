@@ -382,17 +382,28 @@ export type OwnerRecentAction = {actionId: string; agentId: string; agentDisplay
 /**
  * The human's agents' actions that stopped waiting in the last 7 days, newest change first, at most 20: decided, sent, failed or
  * unknown by their last change, and a plan left pending or approved past its expiry (expired) by that expiry. Only agents the human owns now.
- * `limit` lets the overview read one more to tell whether any were left out.
+ * `limit` lets the overview read one more to tell whether any were left out. `before` names the last action of the previous page
+ * and lists those after it in the same order; a cursor that is not one of this human's listed actions lists none.
  */
-export async function recentForOwner(tx: Transaction, humanId: string, now: bigint, limit = recentActionsShownToOwner): Promise<OwnerRecentAction[]> {
+export async function recentForOwner(tx: Transaction, humanId: string, now: bigint, limit = recentActionsShownToOwner, before: string | null = null): Promise<OwnerRecentAction[]> {
     const since = (now - recentActionWindowTicks).toString(), at = now.toString();
+    // The cursor is the last action of the previous page: one of this human's that no longer waits, or the page is empty.
+    let cursor: {changed: string; actionId: string} | null = null;
+    if (before !== null) {
+        const row = await tx.db.prepare(`SELECT CAST(CASE WHEN x.status IN ('pending','approved') AND x.expires_at<=CAST(? AS INTEGER) THEN x.expires_at ELSE x.updated_at END AS TEXT) changed
+            FROM external_actions x JOIN accounts a ON a.account_id=x.account_id
+            WHERE x.action_id=? AND a.human_id=? AND (x.status<>'pending' OR x.expires_at<=CAST(? AS INTEGER))`)
+            .bind(at, before, humanId, at).first<{changed: string}>();
+        if (!row) return [];
+        cursor = {changed: row.changed, actionId: before};
+    }
     const rows = (await tx.db.prepare(`SELECT action_id,account_id,provider,operation,status,failure,expires_at,CAST(changed AS TEXT) changed_at,display_name FROM (SELECT x.action_id,x.account_id,x.provider,x.operation,x.status,x.failure,CAST(x.expires_at AS TEXT) expires_at,
         CASE WHEN x.status IN ('pending','approved') AND x.expires_at<=CAST(? AS INTEGER) THEN x.expires_at ELSE x.updated_at END changed,a.display_name
         FROM external_actions x JOIN accounts a ON a.account_id=x.account_id
         WHERE a.human_id=? AND (x.status<>'pending' OR x.expires_at<=CAST(? AS INTEGER)))
-        WHERE changed>CAST(? AS INTEGER) AND changed<=CAST(? AS INTEGER)
+        WHERE changed>CAST(? AS INTEGER) AND changed<=CAST(? AS INTEGER)${cursor === null ? '' : ' AND (changed<CAST(? AS INTEGER) OR (changed=CAST(? AS INTEGER) AND action_id>?))'}
         ORDER BY changed DESC,action_id LIMIT ?`)
-        .bind(at, humanId, at, since, at, limit)
+        .bind(at, humanId, at, since, at, ...(cursor === null ? [] : [cursor.changed, cursor.changed, cursor.actionId]), limit)
         .all<{action_id: string; account_id: string; provider: string; operation: string; status: string; failure: string | null; expires_at: string; changed_at: string; display_name: string | null}>()).results;
     return rows.map(row => {
         const status = effectiveStatus(row.status, row.expires_at, now);

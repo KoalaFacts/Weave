@@ -592,24 +592,40 @@ test("account_SentExternalAction_ListedUnderRecentActionsForItsOwnerOnly",{timeo
   assert.ok(!(await (await account(await sessionCookie(stranger))).text()).includes(action.actionId));
 });
 
-// More recent outcomes than the page lists: the page says only the newest are listed, through the real mailbox read.
-test("account_MoreRecentActionsThanListed_SaysSomeAreLeftOut",{timeout:90_000},async()=>{
+// More recent outcomes than the page lists: the page links to the older ones, and following the links pages through every one exactly
+// once, through the real mailbox read. Another human following the same link sees none of them.
+test("account_MoreRecentActionsThanListed_OlderActionsLinkPagesThroughAllOnce",{timeout:90_000},async()=>{
   const human=await seedHuman(),{action}=await proposeAction(human,"Many "+randomUUID());
   const recentOf=(html:string)=>html.slice(html.indexOf("<h2>Recent actions</h2>"),html.indexOf("<h2>Apps that manage all your agents</h2>"));
+  const ids=(html:string)=>[...html.matchAll(/<li><a href="\/account\/actions\/([0-9a-f-]{36})">/g)].map(match=>match[1]!);
+  const older=(html:string)=>/<a href="(\/account\?recent=[0-9a-f-]{36})">Older actions<\/a>/.exec(html)?.[1];
+  const page=async(path:string,cookie:string)=>recentOf(await (await shared.mf.dispatchFetch(issuer+path,{redirect:"manual",headers:{Cookie:cookie}})).text());
   const copies=async(n:number)=>(await db()).prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<?)
     INSERT INTO external_actions(action_id,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,target_account,plan_digest,status,decided_at,decided_by,created_at,expires_at,updated_at)
     SELECT lower(hex(randomblob(4)))||'-0000-4000-8000-'||printf('%012d',i),account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,
     target_account,plan_digest,'rejected',created_at,?,created_at,expires_at,updated_at-i FROM external_actions,n WHERE action_id=?`).bind(n,human.humanId,action.actionId).run();
+  const cookie=await sessionCookie(human);
   await copies(20);
-  const twenty=recentOf(await (await account(await sessionCookie(human))).text());
-  assert.equal(twenty.split("<li>").length-1,20);
-  assert.ok(!twenty.includes("most recent are listed"),"exactly as many as listed: no note");
-  await copies(1);
-  const more=recentOf(await (await account(await sessionCookie(human))).text());
-  assert.equal(more.split("<li>").length-1,20);
-  assert.ok(more.includes("<p>Only the 20 most recent are listed; older ones from the last 7 days are not shown here."),more);
-  const stranger=await seedHuman();
-  assert.ok(!recentOf(await (await account(await sessionCookie(stranger))).text()).includes("most recent are listed"));
+  const twenty=await page("/account",cookie);
+  assert.equal(ids(twenty).length,20);
+  assert.equal(older(twenty),undefined,"exactly as many as listed: no link");
+  // The second batch repeats the first's change times, so the order between equal times decides the pages.
+  await copies(5);
+  const first=await page("/account",cookie);
+  assert.equal(ids(first).length,20);
+  assert.ok(!first.includes("Newest actions"),"the first page links to no newer one");
+  const next=older(first);
+  assert.equal(next,"/account?recent="+ids(first).at(-1),first);
+  const second=await page(next!,cookie);
+  assert.equal(ids(second).length,5,second);
+  assert.equal(older(second),undefined,"the last page links to no older one");
+  assert.ok(second.includes('<a href="/account">Newest actions</a>'),second);
+  assert.equal(new Set([...ids(first),...ids(second)]).size,25,"every recent action is listed once");
+  const stranger=await seedHuman(),strangerCookie=await sessionCookie(stranger);
+  assert.equal(older(await page("/account",strangerCookie)),undefined);
+  const borrowed=await page(next!,strangerCookie);
+  assert.equal(ids(borrowed).length,0,"another human's cursor lists nothing");
+  assert.ok(borrowed.includes("No older actions from the last 7 days."),borrowed);
 });
 
 test("account_ApproveExternalAction_Stale_RedirectsToGithubNoEffect",{timeout:60_000},async()=>{

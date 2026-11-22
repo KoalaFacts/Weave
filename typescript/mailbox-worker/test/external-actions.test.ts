@@ -1296,6 +1296,57 @@ test('ownerOverview_RecentActions_AtMostTheNewestTwenty', () => scenario(async (
     assert.equal(exact.moreRecentActions, false);
 }));
 
+// The overview pages through the recent actions after a cursor, in the same order, ties broken by action ID, each listed once; a cursor
+// that is not one of this human's actions that no longer wait (another human's, a waiting one, an unknown one) lists none, and one past
+// the 7-day window has nothing older to list.
+test('ownerOverview_RecentBefore_PagesThroughEachOnceAndRefusesForeignCursors', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const ids: string[] = [];
+    for (let i = 0; i < recentActionsShownToOwner + 5; i++) {
+        await h.db.prepare("UPDATE external_actions SET status='rejected',decided_at=created_at,decided_by=? WHERE account_id=? AND status='pending'").bind(humanId, agent.accountId).run();
+        const response = await propose(h, agent, 'Paged ' + i);
+        assert.equal(response.status, 200, await response.clone().text());
+        ids.push((await response.json() as {actionId: string}).actionId);
+    }
+    const now = BigInt((await h.db.prepare('SELECT CAST(MAX(updated_at) AS TEXT) t FROM external_actions').first<string>('t'))!) + 100n;
+    // Pairs share a change time, so the order between equal times decides where a page ends.
+    for (const [i, id] of ids.entries()) await h.db.prepare("UPDATE external_actions SET status='rejected',decided_at=created_at,decided_by=?,updated_at=CAST(? AS INTEGER) WHERE action_id=?")
+        .bind(humanId, (now - 50n + BigInt(Math.floor(i / 2))).toString(), id).run();
+    const page = async (before: string | null, who = humanId) => {
+        const overview = await ownerOverview(environment(h), who, null, () => now, undefined, before);
+        if (overview.frozen) throw Error('frozen');
+        return overview;
+    };
+    const first = await page(null);
+    assert.equal(first.recentActions.length, recentActionsShownToOwner);
+    assert.equal(first.moreRecentActions, true);
+    const second = await page(first.recentActions.at(-1)!.actionId);
+    assert.equal(second.recentActions.length, 5);
+    assert.equal(second.moreRecentActions, false);
+    const listed = [...first.recentActions, ...second.recentActions];
+    assert.equal(new Set(listed.map(action => action.actionId)).size, ids.length, 'each listed once');
+    const expected = ids.map((id, i) => ({id, changed: Math.floor(i / 2)})).sort((a, b) => b.changed - a.changed || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map(entry => entry.id);
+    assert.deepEqual(listed.map(action => action.actionId), expected, 'newest first, equal times by action ID');
+    // Another human with recent actions of their own: our cursor does not page through theirs.
+    const {agent: strangerAgent, humanId: stranger} = await ownedAgent(h);
+    const theirs = await propose(h, strangerAgent, 'Theirs');
+    assert.equal(theirs.status, 200, await theirs.clone().text());
+    await h.db.prepare("UPDATE external_actions SET status='rejected',decided_at=created_at,decided_by=?,updated_at=CAST(? AS INTEGER) WHERE action_id=?")
+        .bind(stranger, (now - 60n).toString(), (await theirs.json() as {actionId: string}).actionId).run();
+    assert.equal((await page(null, stranger)).recentActions.length, 1);
+    assert.deepEqual((await page(first.recentActions.at(-1)!.actionId, stranger)).recentActions, [], "another human's cursor lists none");
+    // A plan still waiting, last changed between listed ones, is no cursor.
+    const waiting = await propose(h, agent, 'Still waiting');
+    assert.equal(waiting.status, 200, await waiting.clone().text());
+    const waitingId = (await waiting.json() as {actionId: string}).actionId;
+    await h.db.prepare('UPDATE external_actions SET updated_at=CAST(? AS INTEGER) WHERE action_id=?').bind((now - 40n).toString(), waitingId).run();
+    assert.deepEqual((await page(waitingId)).recentActions, [], 'a waiting action is no cursor');
+    assert.deepEqual((await page(crypto.randomUUID())).recentActions, [], 'an unknown cursor lists none');
+    await h.db.prepare('UPDATE external_actions SET updated_at=CAST(? AS INTEGER) WHERE action_id=?').bind((now - recentActionWindowTicks).toString(), expected[3]!).run();
+    assert.deepEqual((await page(expected[3]!)).recentActions, [], 'nothing older than a cursor past the 7-day window is listed');
+    assert.deepEqual(await ownerOverview(environment(h), humanId, null, () => now, undefined, 'not-an-id'), await ownerOverview(environment(h), crypto.randomUUID()), 'a malformed cursor reads as nothing');
+}));
+
 // The page for one action tells its owner what became of an action no longer waiting, and nobody else anything.
 test('ownerPendingAction_OwnActionNoLongerPending_SettledWithStatusAndFailureOnlyForItsOwner', () => scenario(async ({h}) => {
     const {agent, humanId} = await ownedAgent(h);

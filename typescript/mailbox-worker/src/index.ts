@@ -41,7 +41,9 @@ export class HumanDirectory extends WorkerEntrypoint<Env> {
     listAgents(humanId: string, after: string | null = null): Promise<AgentPage> { return listHumanAgents(scopedEnv(this.env), humanId, after); }
     createAgent(input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> { return createOwnedAgent(scopedEnv(this.env), input); }
     hasAgent(humanId: string, accountId: string): Promise<boolean> { return humanHasAgent(scopedEnv(this.env), humanId, accountId); }
-    ownerOverview(humanId: string, after: string | null = null): Promise<OwnerOverview> { return ownerOverview(scopedEnv(this.env), humanId, after); }
+    ownerOverview(humanId: string, after: string | null = null, recentBefore: string | null = null): Promise<OwnerOverview> {
+        return ownerOverview(scopedEnv(this.env), humanId, after, undefined, undefined, recentBefore);
+    }
     ownerAction(input: OwnerAction): Promise<OwnerActionResult> { return ownerAction(scopedEnv(this.env), input); }
     connectCredential(input: ConnectCredentialInput): Promise<ConnectCredentialResult> { return connectExternalCredential(scopedEnv(this.env), input); }
     connectAccount(input: ConnectAccountInput): Promise<ConnectAccountResult> { return connectAccount(scopedEnv(this.env), input); }

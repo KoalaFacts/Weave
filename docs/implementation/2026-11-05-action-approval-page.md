@@ -110,6 +110,15 @@ remains possible later for chat channels.
   mailbox overview now reads one more of each and adds `moreExternalActions` and `moreRecentActions`; when true the page
   says under that list that only the oldest N (or most recent N) are shown and that each action's own page, linked from
   the app that proposed it, still works. A mailbox without the flags adds no note.
+- **Older recent actions (2026-11-23).** When more than 20 recent outcomes exist, the page no longer only says so: it
+  links "Older actions" to `/account?recent=<actionId>`, the last action listed, and that page lists the next 20 in
+  the same order (equal change times by action ID), with "Newest actions" back to the first page; each outcome of the
+  last 7 days is reached once. The mailbox `ownerOverview(humanId, after, recentBefore)` RPC takes the cursor: one of
+  this human's actions that no longer waits, otherwise (another human's, a waiting plan, unknown or malformed) the
+  list is empty and the page says "No older actions from the last 7 days." The agents paging is separate. No schema,
+  agent API or MCP change. Workerd test `account_MoreRecentActionsThanListed_OlderActionsLinkPagesThroughAllOnce`
+  pages through 25 outcomes with equal times and refuses another human's cursor; mutations of the owner check, the
+  waiting-plan check, the unknown-cursor check, the tie order, the RPC argument and the link condition were each caught.
 - **Warning before disconnecting an account with waiting actions (2026-11-18).** Each connected account on `/account`
   that the owner's waiting actions use says, above its Disconnect button, how many of that agent's actions waiting for
   approval use it and that disconnecting it means they can never be approved or sent (the confirm would answer
