@@ -126,9 +126,8 @@ npm test
 npm pack --dry-run --json
 ```
 
-The independent repository workflow also drives the compiled stdio entry
-through Weave's real MCP connector, exact operation authorization and
-invocation journal. The package includes only built JavaScript, declarations,
+The workflow that ran the stdio entry through Weave's MCP connector was
+removed on 2026-11-22. The package includes only built JavaScript, declarations,
 this README and both license texts. This early package does not provide
 network isolation for plugin code or a general plugin authoring framework.
 
