@@ -238,6 +238,24 @@ test('publishingAdapters_PublishAtAccepted_OnlyPostizAndOnlyWhereDescribed', asy
     }
 });
 
+// A text-only account (Teams: media max 0) must not offer media in the description agents read, and its refusals must say text.
+test('describePost_TextOnlyAdapter_OffersNoMediaAndRefusesItByName', async () => {
+    const textOnly = publishingAdapters.filter(adapter => adapter.rules.media.max === 0);
+    assert.deepEqual(textOnly.map(adapter => adapter.name), ['teams'], 'positive control: the text-only adapter is checked');
+    for (const adapter of textOnly) {
+        const described = describePost(adapter.rules, 'account');
+        assert.doesNotMatch(described, /uploaded files|up to 0|\(;|Text or media/, described);
+        assert.match(described, /"media": \[\] \(this account takes no images or video\)/, described);
+        assert.match(described, /\}\. Text is required\./, described);
+        assert.equal(await check(adapter, {text: ' ', media: []}, 'account'), 'text is required', adapter.name);
+        assert.equal(await check(adapter, {text: 'hi', media: [file()]}, 'account'), 'media is not supported here; send text only', adapter.name);
+        assert.equal(await check(adapter, {text: 'hi', media: []}, 'account'), null, adapter.name);
+    }
+    // Media-taking adapters keep their wording.
+    assert.match(describePost(telegram.rules, 'account'), /"media": up to 10 of your uploaded files[^]*Text or media is required\./);
+    assert.equal(await check(telegram, {text: ' ', media: []}, 'account'), 'text or media is required');
+});
+
 // A sent post's own address is derived only from a receipt in exactly the shape each adapter confirms; anything else is no link.
 test('postUrl_ReceiptInTheConfirmedShape_PlatformAddressElseNull', () => {
     const adapter = (name: string) => publishingAdapters.find(item => item.name === name)!;
