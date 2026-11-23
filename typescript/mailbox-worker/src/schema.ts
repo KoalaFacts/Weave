@@ -288,6 +288,21 @@ export const ownerGrantApprovals = sqliteTable("owner_grant_approvals", {
     check("owner_grant_approvals_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
 ]);
 
+// Which owner grant made an app's decision on one external action (A1-2, owner-approved 2026-11-23): written in the same
+// transaction as the decision on external_actions, whose decided_by stays the human the grant acts for. An action has at
+// most one approval and one rejection (an unused approval may later be withdrawn), so the key is the action and the
+// decision. A decision on Weave's own owner page writes no row. Rows are never deleted, so the grant stays recorded.
+export const ownerGrantDecisions = sqliteTable("owner_grant_decisions", {
+    action_id: text("action_id").notNull().references(() => externalActions.action_id, {onDelete:"restrict"}),
+    decision: text("decision").notNull(),
+    grant_id: text("grant_id").notNull().references(() => ownerGrants.grant_id, {onDelete:"restrict"}),
+    decided_at: exactInteger("decided_at").notNull(),
+}, t => [
+    primaryKey({columns:[t.action_id, t.decision]}),
+    index("owner_grant_decisions_grant").on(t.grant_id),
+    check("owner_grant_decisions_decision",sql`decision IN ('approved','rejected')`)
+]);
+
 // An https callback that the app holding one owner grant registers for status changes of the external actions of the
 // agents that grant may act for (push webhook W1, owner-approved 2026-11-23). secret_sealed is the per-webhook HMAC
 // secret, sealed at rest and shown to the app once. Rows are never deleted: revoked_at records the end, so every

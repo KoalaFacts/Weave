@@ -44,6 +44,11 @@ on:
         required: true
         type: boolean
         default: false
+      apply_owner_grant_decisions_schema:
+        description: Owner-approved app approval (A1) only; applies exactly the owner_grant_decisions table and its index; needs owner_grants; production scope, set per run
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
 # All issue comments trigger this workflow, even when its release job skips.
@@ -156,6 +161,13 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
           WEAVE_RELEASE_OWNER_GRANT_APPROVALS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_owner_grant_approvals_schema || 'false' }}
+      - name: Gate the opt-in owner_grant_decisions schema before all other release work
+        shell: bash
+        run: node typescript/mailbox-worker/scripts/approved-owner-grant-decisions.ts
+        env:
+          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
+          WEAVE_RELEASE_OWNER_GRANT_DECISIONS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_owner_grant_decisions_schema || 'false' }}
       # Full product CI includes the .NET tests and mandatory 90% owner coverage gate.
       # Worker/OAuth suites alone cannot authorize a production release while this CI is pending or red.
       - name: Require passed full CI and coverage on main for this commit
@@ -299,6 +311,13 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
           WEAVE_RELEASE_OWNER_GRANT_APPROVALS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_owner_grant_approvals_schema || 'false' }}
+      - name: Revalidate the opt-in owner_grant_decisions schema inside protected production
+        run: node scripts/approved-owner-grant-decisions.ts
+        working-directory: typescript/mailbox-worker
+        env:
+          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
+          WEAVE_RELEASE_OWNER_GRANT_DECISIONS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_owner_grant_decisions_schema || 'false' }}
       - name: Verify resources, migrate, confirm, and deploy existing demo
         run: node scripts/deploy.ts
         working-directory: typescript/mailbox-worker
@@ -312,6 +331,7 @@ jobs:
           WEAVE_APPROVED_APP_WEBHOOKS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_app_webhooks_schema == true && 'true' || 'false' }}
           WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_app_webhook_deliveries_schema == true && 'true' || 'false' }}
           WEAVE_APPROVED_OWNER_GRANT_APPROVALS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_owner_grant_approvals_schema == true && 'true' || 'false' }}
+          WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_owner_grant_decisions_schema == true && 'true' || 'false' }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
         working-directory: typescript/mailbox-worker
