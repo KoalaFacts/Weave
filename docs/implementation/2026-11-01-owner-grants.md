@@ -260,3 +260,31 @@ either opt-in missing, an unapproved index, ambiguous values, maintain mode and 
 `test/deploy-entry.test.ts` checks the workflow input and gates. Mutations caught: the deploy ignoring the opt-in, the
 live-schema read missing from the completed-only allow list, the production revalidation step removed, an owner comment
 able to opt in, the input defaulting to true, and the attempt bound dropped. Not run against a deployment.
+
+W2, step 2 queues the deliveries; still nothing is sent (W3):
+
+- **When.** Every write that changes an external action's status stages one `INSERT … SELECT` into
+  `app_webhook_deliveries` right after the status write, in the same D1 batch: propose (`pending`), the owner's approval
+  (`approved`) and rejection or withdrawal (`rejected`), execute's claim (`dispatching`, or `failed` when the plan no longer
+  holds) and the provider's outcome (`completed`, `failed` or `unknown`). A plan that lapses with nothing written
+  (`expired`) is not a change and queues nothing; its `expiresAt` is on the action read.
+- **Who.** One row per live webhook of every live owner grant of the human who owns the action's agent when the change
+  is written. A revoked webhook or grant, a frozen human and an ownerless agent get none; revoking later does not remove
+  rows already queued (W3 re-checks before sending).
+- **Only real changes.** The insert selects the action only if it now has that status with `updated_at` equal to the
+  change's own time, so a guarded update that matched nothing (a lost race, a second decision) queues nothing.
+- **Event ID.** `<webhookId>:<actionId>:<status>`, stable across retries and unique per receiver; an action reaches each
+  status at most once, and a repeated insert is `ON CONFLICT(event_id) DO NOTHING`. `occurred_at` is the change's time,
+  `next_attempt_at` equals it (due at once), `attempts` 0. Only the action ID and status are stored for the body.
+- **Owner deploy.** Needs `app_webhook_deliveries` in production (step 1's `apply_app_webhook_deliveries_schema: true`);
+  without it every status write would fail, which the release gate prevents by refusing a completed-only release until the
+  table is applied.
+
+Verification: `test/app-webhook-deliveries.test.ts` (mailbox, real Miniflare D1 through the Worker's HTTP routes and the
+owner actions) covers the full lifecycle (`pending`, `approved`, `dispatching`, `completed` with stable event IDs, due at
+once, each at its change's time, nothing more on a repeated execute), only live webhooks of live grants of the owner
+(two webhooks on one grant, a second grant, a revoked webhook, a webhook of a revoked grant, another human's grant),
+revocation midway, rejection and a refused second decision, provider rejection and unknown outcome, a pre-dispatch refusal,
+a frozen owner, five concurrent executes (each change queued once), a staged change that did not happen, and no webhooks.
+Mutations caught: each of the six staging calls removed, the frozen, grant-revoked, webhook-revoked, owner, status and
+change-time conditions dropped, `next_attempt_at` left `NULL`, and the conflict clause removed. Not run against a deployment.
