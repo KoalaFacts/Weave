@@ -3,7 +3,7 @@ import { confirmKeyRequest, revokeKeyForOwner } from './agent-keys.ts';
 import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, rejectBindingRequest } from './binding-requests.ts';
 import { ownedAgentLimit, ownedAgentPage, requireReadable, writesRefused } from './humans.ts';
 import { rejectKeyRequest } from './key-requests.ts';
-import { maxLiveOwnerGrants, revokeGrantIn } from './client-grants.ts';
+import { maxLiveOwnerGrants, revokeGrantIn, stopAppDecisionsIn } from './client-grants.ts';
 import { maxLiveWebhooks, type WebhookView } from './app-webhooks.ts';
 import { confirmExternalAction, pendingActionsShownToOwner, pendingForOwner, recentActionsShownToOwner, recentForOwner, rejectExternalAction, type OwnerExternalAction, type OwnerRecentAction } from './external-actions.ts';
 import { ownedCredentials, revokeExternalCredential, type OwnerCredential } from './external-credentials.ts';
@@ -27,8 +27,9 @@ export type OwnerAddress = {addressId: string; label: string | null; isPublic: b
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[];
     grants: OwnerGrant[]; addresses: OwnerAddress[]; credentials: OwnerCredential[]};
 /** An owner grant: one client that may manage every agent the human owns. The name is self-reported. `webhooks` are its
- * live push-webhook callbacks (`register_webhook`, app-supplied URLs), oldest first. */
-export type OwnerAppGrant = {grantId: string; clientId: string; clientName: string | null; createdAt: string; webhooks: WebhookView[]};
+ * live push-webhook callbacks (`register_webhook`, app-supplied URLs), oldest first. `appDecides` says whether the owner
+ * also let it approve or reject their agents' pending plans (A1) and has not stopped that since. */
+export type OwnerAppGrant = {grantId: string; clientId: string; clientName: string | null; createdAt: string; webhooks: WebhookView[]; appDecides: boolean};
 /** Grants of one agent revoked in the last 30 days, for the authorization server's token clean-up retry; never rendered. */
 export type RevokedAgentGrants = {agentId: string; revokedGrantIds: string[]};
 /**
@@ -49,7 +50,7 @@ export type OwnerAction = {humanId: string; authAt: number} & (
     | {kind: 'reject-binding' | 'confirm-key' | 'reject-key' | 'reject-action'; requestId: string}
     | {kind: 'revoke-key'; agentId: string; kid: string}
     | {kind: 'issue-recovery-code'; agentId: string}
-    | {kind: 'revoke-grant'; grantId: string}
+    | {kind: 'revoke-grant' | 'stop-app-decisions'; grantId: string}
     | {kind: 'revoke-credential'; agentId: string; credentialRef: string});
 export type OwnerFailureReason = 'stale-authentication' | 'frozen' | 'not-found' | 'not-pending' | 'expired' | 'agent-limit' | 'already-owned' | 'key-in-use'
     | 'key-limit' | 'endorser-revoked' | 'requesting-key-revoked' | 'keys-changed' | 'plan-changed' | 'account-changed' | 'unavailable';
@@ -132,8 +133,10 @@ export async function ownerOverview(env: Env, humanId: string, after: string | n
         // One more than is shown of each, only to say that some were left out.
         const externalActions = await pendingForOwner(tx, humanId, nowTicks, null, pendingActionsShownToOwner + 1);
         const recentActions = await recentForOwner(tx, humanId, nowTicks, recentActionsShownToOwner + 1, recentBefore);
-        const ownerGrants = (await tx.db.prepare('SELECT grant_id,client_id,client_name,CAST(created_at AS TEXT) created_at FROM owner_grants WHERE human_id=? AND revoked_at IS NULL ORDER BY created_at DESC,grant_id LIMIT ?')
-            .bind(humanId, maxLiveOwnerGrants).all<{grant_id: string; client_id: string; client_name: string | null; created_at: string}>()).results;
+        const ownerGrants = (await tx.db.prepare(`SELECT grant_id,client_id,client_name,CAST(created_at AS TEXT) created_at,
+            EXISTS(SELECT 1 FROM owner_grant_approvals a WHERE a.grant_id=owner_grants.grant_id AND a.revoked_at IS NULL) decides
+            FROM owner_grants WHERE human_id=? AND revoked_at IS NULL ORDER BY created_at DESC,grant_id LIMIT ?`)
+            .bind(humanId, maxLiveOwnerGrants).all<{grant_id: string; client_id: string; client_name: string | null; created_at: string; decides: number}>()).results;
         // Every live callback of the grants shown: each has at most `maxLiveWebhooks`, so this is all of them.
         const webhooks = ownerGrants.length === 0 ? [] : (await tx.db.prepare(`SELECT webhook_id,grant_id,url,CAST(created_at AS TEXT) created_at
             FROM app_webhooks WHERE grant_id IN (${placeholders(ownerGrants)}) AND revoked_at IS NULL
@@ -152,7 +155,8 @@ export async function ownerOverview(env: Env, humanId: string, after: string | n
             moreRecentActions: recentActions.length > recentActionsShownToOwner,
             revokedGrants,
             ownerGrants: ownerGrants.map(row => ({grantId: row.grant_id, clientId: row.client_id, clientName: row.client_name, createdAt: apiTime(row.created_at)!,
-                webhooks: webhooks.filter(w => w.grant_id === row.grant_id).map(w => ({webhookId: w.webhook_id, url: w.url, createdAt: apiTime(w.created_at)!}))})),
+                webhooks: webhooks.filter(w => w.grant_id === row.grant_id).map(w => ({webhookId: w.webhook_id, url: w.url, createdAt: apiTime(w.created_at)!})),
+                appDecides: row.decides === 1})),
             revokedOwnerGrantIds: revokedOwnerGrants.map(row => row.grant_id),
             connectors: publishingAdapters.filter(adapter => publishingAdapter(env, adapter.name)).map(ownerConnector),
             agents: owned.map(agent => ({agentId: agent.account_id, displayName: agent.display_name,
@@ -179,7 +183,7 @@ function validShape(input: unknown): OwnerAction | null {
         case 'reject-binding': case 'confirm-key': case 'reject-key': case 'reject-action': return uuid(action.requestId) ? input as OwnerAction : null;
         case 'revoke-key': return uuid(action.agentId) && typeof action.kid === 'string' && kidPattern.test(action.kid) ? input as OwnerAction : null;
         case 'issue-recovery-code': return uuid(action.agentId) ? input as OwnerAction : null;
-        case 'revoke-grant': return typeof action.grantId === 'string' && grantIdPattern.test(action.grantId) ? input as OwnerAction : null;
+        case 'revoke-grant': case 'stop-app-decisions': return typeof action.grantId === 'string' && grantIdPattern.test(action.grantId) ? input as OwnerAction : null;
         case 'revoke-credential': return uuid(action.agentId) && typeof action.credentialRef === 'string' && credentialRefPattern.test(action.credentialRef) ? input as OwnerAction : null;
         default: return null;
     }
@@ -201,6 +205,8 @@ async function decide(env: Env, tx: Transaction, input: DecidedAction, at: bigin
         case 'revoke-key': return revokeKeyForOwner(tx, input.humanId, input.agentId, input.kid, at);
         // A protective action: no re-authentication window. The worst a stolen session does is disconnect the owner's own clients.
         case 'revoke-grant': return revokeGrantIn(tx, input.humanId, input.grantId);
+        // Protective too: it only takes a permission away from the owner's own app.
+        case 'stop-app-decisions': return stopAppDecisionsIn(tx, input.humanId, input.grantId);
         // Protective, like revoking a grant: disconnecting needs no fresh authentication.
         case 'revoke-credential': return revokeExternalCredential(tx, input.humanId, input.agentId, input.credentialRef, at);
     }

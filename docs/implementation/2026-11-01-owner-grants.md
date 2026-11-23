@@ -373,7 +373,8 @@ tolerated. Not run against a deployment.
 A1, approved by the owner on 2026-11-23: an owner may let the app holding one owner grant approve or reject that
 owner's agents' pending plans. It is off by default, chosen per OAuth client on Weave's own consent page and revocable
 on `/account`; the constraints are in [advance-weave](../../.claude/skills/advance-weave/SKILL.md#project-rules).
-Step 1 of A1-1 adds the table and its release gate; nothing reads or writes the table yet, so no app can decide.
+Step 1 of A1-1 adds the table and its release gate; step 2 lets the owner choose it on the consent page and stop it on
+`/account`. Nothing reads the permission to decide yet (A1-2), so no app can decide.
 
 - **Table.** `owner_grant_approvals`: one row per owner grant whose owner chose to let the app decide. `grant_id` is
   the primary key and references `owner_grants` (`ON DELETE restrict`); `human_id` (required, references `humans`,
@@ -390,7 +391,36 @@ Step 1 of A1-1 adds the table and its release gate; nothing reads or writes the 
   production dispatch with `apply_owner_grant_approvals_schema: true` (with `apply_owner_grants_schema: true` while
   `owner_grants` is also missing); otherwise it stops before any change.
 
-Verification: `test/approved-owner-grant-approvals.test.ts` pins the statements to the generator and refuses a default
+- **Choosing it (A1-1 step 2).** The owner consent page carries one unticked box inside the approve form, "Also let
+  this app approve or reject the pending external actions of all your agents for you", and its list of what the app
+  cannot do now says so unless the box is ticked. `readConsent` accepts `appDecides` only once, only as `yes`, and only
+  on an approval for all agents, so an agent's own grant can never carry it. `recordOwnerGrant` takes `appDecides`
+  (boolean, absent means false) and inserts the `owner_grant_approvals` row in the same transaction as the grant, so a
+  refused grant (frozen human, grant limit) records no permission either.
+- **Seeing and stopping it.** `ownerOverview` gives each live owner grant `appDecides`, true while its row is not
+  revoked. `/account` says per app whether it may approve or reject, and offers "Stop it approving" (owner action
+  `stop-app-decisions`) for one that may. Stopping is protective like revoking, so it needs no fresh sign-in; it sets
+  `revoked_at` once (idempotent), keeps the grant's other access, and answers not-found for another human's grant or a
+  grant without the permission. Revoking the owner grant sets the row's `revoked_at` in the same transaction. A mailbox
+  that predates the field shows no sentence.
+- **Limits.** An auth-worker deployed ahead of the mailbox sends `appDecides` to a mailbox that ignores it: the grant
+  is recorded without the permission (fails safe; the release gate already requires the table). Stopping does not
+  re-check that the grant is live, so A1-2's decision must itself refuse revoked grants and frozen humans, not rely on
+  the row alone.
+
+Verification of step 2: `test/owner-grants.test.ts` (`recordOwnerGrant_AppDecides_RecordedOnlyWhenChosenShownAndStoppable`)
+covers off-by-default, a non-boolean refused, the overview flag, stop (old sign-in, idempotent, first time kept, grant
+still live), another human and a grant without the permission refused, revocation ending it, and a frozen human;
+auth-worker `test/consent.test.ts` covers the box and every refused combination; `test/owner-page.test.ts` the sentences
+and the stop form's token; `test/workerd-owner-app-grant.test.ts` drives both Workers: an agent consent with the box is
+refused, an owner consent with it records one row (and the earlier owner grant none), `/account` shows it, the stop form
+ends it with result `done` while the app's `list_agents` still works, and the page then says it cannot decide. Mutations
+caught: the box accepted on any approval, its value unchecked, the row inserted unconditionally, the stop ignoring the
+human, revocation keeping the permission, the overview ignoring `revoked_at`, the consent always passing true, and the
+stop token never issued. Not run against a deployment; the opt-in `apply_owner_grant_approvals_schema` of step 1 still
+applies.
+
+Verification of step 1: `test/approved-owner-grant-approvals.test.ts` pins the statements to the generator and refuses a default
 on `created_at`, a revocation check against a constant, a missing `human_id`, a unique index, a cascading key on either
 reference and the index before the table, and covers the plan combined with `owner_grants`; `test/deploy.test.ts` runs
 opted-in completed-only releases on a real Miniflare D1 (the table alone, with the owner grant and webhook tables in one

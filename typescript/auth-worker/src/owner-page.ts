@@ -137,7 +137,16 @@ function grantsSection(grants:OwnerGrant[],tokens:ReadonlyMap<string,string>):st
 function ownerGrantsSection(grants:readonly OwnerAppGrant[],tokens:ReadonlyMap<string,string>):string{
   if(grants.length===0)return "<p>No app manages all your agents.</p>";
   return "<ul>"+grants.map(grant=>"<li>"+(grant.clientName===null?"Unnamed client":esc(grant.clientName)+unverified)+"; client ID <code>"+esc(grant.clientId)+"</code>; connected "+
-    esc(grant.createdAt)+webhooksList(grant.webhooks)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
+    esc(grant.createdAt)+decisionsNote(grant,tokens)+webhooksList(grant.webhooks)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
+}
+
+/** Whether the owner let the app approve or reject their agents' pending actions (A1), with the form that stops it. A mailbox
+ * that predates the permission (undefined) shows nothing. */
+function decisionsNote(grant:{grantId:string;appDecides?:boolean},tokens:ReadonlyMap<string,string>):string{
+  if(grant.appDecides===undefined)return "";
+  if(!grant.appDecides)return "<p>It cannot approve or reject your agents' external actions: you decide each one here.</p>";
+  return "<p><strong>It may approve or reject your agents' pending external actions for you.</strong></p>"+
+    form("Stop it approving","stop-app-decisions:"+grant.grantId,tokens);
 }
 
 /** Where the app has Weave send status changes of your agents' actions (never their content). The URLs are app-supplied: escaped
@@ -407,6 +416,7 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
     await add("reject-action:"+action.actionId,{kind:"reject-action",requestId:action.actionId});
   }
   for(const g of overview.ownerGrants)await add("revoke-grant:"+g.grantId,{kind:"revoke-grant",grantId:g.grantId});
+  for(const g of overview.ownerGrants)if(g.appDecides===true)await add("stop-app-decisions:"+g.grantId,{kind:"stop-app-decisions",grantId:g.grantId});
   for(const agent of overview.agents){
     await add("issue-recovery-code:"+agent.agentId,{kind:"issue-recovery-code",agentId:agent.agentId});
     for(const k of agent.keys)await add("revoke-key:"+agent.agentId+":"+k.kid,{kind:"revoke-key",agentId:agent.agentId,kid:k.kid});

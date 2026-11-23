@@ -206,7 +206,8 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     if(owner){
       const grantId=crypto.randomUUID();
       let recorded:RecordOwnerGrantResult;
-      try{recorded=await env.MAILBOX.recordOwnerGrant({grantId,humanId:human.humanId,clientId:approved.request.clientId,clientName:nonce.clientName});}
+      try{recorded=await env.MAILBOX.recordOwnerGrant({grantId,humanId:human.humanId,clientId:approved.request.clientId,clientName:nonce.clientName,
+        appDecides:form.get("appDecides")==="yes"});}
       catch{return directoryUnavailable();}
       if(!recorded.ok)return recorded.reason==="grant-limit"
         ?messagePage(400,"Not connected","You already let 20 apps manage all your agents. Revoke one on your Weave account page, then try again.")

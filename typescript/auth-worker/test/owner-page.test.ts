@@ -250,11 +250,15 @@ test("ownerPage_OwnerAppGrants_EscapedUnverifiedWithRevokeAndTokens",async()=>{
   const hostile=randomUUID(),unnamed=randomUUID(),revoked=randomUUID();
   const overview=base({ownerGrants:[
     {grantId:hostile,clientId:'https://office.example/"><script>x</script>',clientName:'<script>alert(1)</script>',createdAt:iso(now),
-      webhooks:[{webhookId:randomUUID(),url:'https://office.example/hooks?a="><img src=x>',createdAt:iso(now)},{webhookId:randomUUID(),url:"https://office.example/second",createdAt:iso(now+1)}]},
-    {grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now-1000),webhooks:[]}],revokedOwnerGrantIds:[revoked]});
+      webhooks:[{webhookId:randomUUID(),url:'https://office.example/hooks?a="><img src=x>',createdAt:iso(now)},{webhookId:randomUUID(),url:"https://office.example/second",createdAt:iso(now+1)}],appDecides:true},
+    {grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now-1000),webhooks:[],appDecides:false}],revokedOwnerGrantIds:[revoked]});
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
-  assert.deepEqual([...tokens.keys()].sort(),["revoke-grant:"+hostile,"revoke-grant:"+unnamed].sort());
+  // Only the grant the owner let decide gets a form that stops it.
+  assert.deepEqual([...tokens.keys()].sort(),["revoke-grant:"+hostile,"revoke-grant:"+unnamed,"stop-app-decisions:"+hostile].sort());
   const body=await html(ownerPage(overview,human,tokens,null,now));
+  assert.equal(body.match(/It may approve or reject your agents' pending external actions for you\./g)?.length,1,body);
+  assert.equal(body.match(/It cannot approve or reject your agents' external actions/g)?.length,1,body);
+  assert.ok(body.includes(">Stop it approving</button>"),body);
   assert.ok(body.includes("<h2>Apps that manage all your agents</h2>"));
   assert.ok(body.includes("including agents you add later"));
   assert.ok(!body.includes("<script>"),"client-supplied text must not become markup");
@@ -271,6 +275,7 @@ test("ownerPage_OwnerAppGrants_EscapedUnverifiedWithRevokeAndTokens",async()=>{
   // A mailbox deployed before the list (no `webhooks` member) shows the grant without any webhook sentence.
   const older=await html(ownerPage(base({ownerGrants:[{grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now)} as OwnerAppGrant]}),human,new Map(),null,now));
   assert.ok(older.includes("Unnamed client")&&!older.includes("status updates")&&!older.includes("Weave sends it"),older);
+  assert.ok(!older.includes("approve or reject"),"a mailbox that predates the permission shows no permission sentence");
 });
 
 // A mailbox that predates `settled`, or a status the page has no text for, reads as the generic sentence, never as text the page

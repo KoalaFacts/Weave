@@ -38,7 +38,14 @@ test("readConsent_InvalidBodies_ReturnNull",async()=>{
     "handle="+handle+"&decision=approve&agent=new&agentName=a&agentName=b",
     "handle="+handle+"&decision=approve",
     "handle="+handle+"&decision=approve&agent=not-a-uuid",
-    "handle="+handle+"&decision=approve&agent=new&agentName="+"x".repeat(9000)
+    "handle="+handle+"&decision=approve&agent=new&agentName="+"x".repeat(9000),
+    // Letting the app decide is only an option of an owner grant, with exactly the checkbox's value.
+    "handle="+handle+"&decision=approve&agent="+account+"&appDecides=yes",
+    "handle="+handle+"&decision=approve&agent=new&agentName=a&appDecides=yes",
+    "handle="+handle+"&decision=deny&appDecides=yes",
+    "handle="+handle+"&decision=approve&agent=all&appDecides=on",
+    "handle="+handle+"&decision=approve&agent=all&appDecides=",
+    "handle="+handle+"&decision=approve&agent=all&appDecides=yes&appDecides=yes"
   ])assert.equal(await readConsent(consentRequest(value)),null,value.slice(0,120));
 });
 
@@ -51,6 +58,9 @@ test("readConsent_ValidChoices_ReturnForm",async()=>{
   assert.equal(existing?.get("agent"),account);
   const all=await readConsent(consentRequest(new URLSearchParams({handle,decision:"approve",agent:"all"}).toString()));
   assert.equal(all?.get("agent"),"all");
+  assert.equal(all?.has("appDecides"),false);
+  const deciding=await readConsent(consentRequest(new URLSearchParams({handle,decision:"approve",agent:"all",appDecides:"yes"}).toString()));
+  assert.equal(deciding?.get("appDecides"),"yes");
   const deny=await readConsent(consentRequest(new URLSearchParams({handle,decision:"deny"}).toString()));
   assert.equal(deny?.get("decision"),"deny");
 });
@@ -213,7 +223,12 @@ test("ownerConsentPage_SaysWhatTheAppMayAndMayNotDo_ApprovesOnlyAll",async()=>{
   assert.ok(!html.includes("<script>")&&!html.includes("<img")&&!html.includes("<b>alice"),"client metadata and login are escaped");
   assert.match(html,/manage all of your Weave agents/);
   assert.match(html,/now or later/);
-  assert.match(html,/approve an external action: you approve each one on this site/);
+  assert.match(html,/approve or reject an external action, unless you tick the box below: otherwise you decide each one on this site/);
+  // The app may decide only if the owner ticks the box, which starts unticked and sits in the approve form.
+  assert.equal(html.match(/name="appDecides"/g)!.length,1);
+  assert.match(html,/<input type="checkbox" name="appDecides" value="yes">/);
+  assert.doesNotMatch(html,/checked/);
+  assert.match(html,/<form[^>]*>(?:(?!<\/form>)[\s\S])*name="appDecides"(?:(?!<\/form>)[\s\S])*value="approve"/);
   assert.match(html,/agent keys or recovery codes/);
   assert.match(html,/revoke this access at any time/);
   // Exactly one approve form, naming all agents, and one deny form; nothing else to choose.
@@ -223,7 +238,7 @@ test("ownerConsentPage_SaysWhatTheAppMayAndMayNotDo_ApprovesOnlyAll",async()=>{
   assert.doesNotMatch(html,/agentName/);
   for(const form of html.match(/<form[\s\S]*?<\/form>/g)!){
     const fields=new URLSearchParams();
-    for(const m of form.matchAll(/name="([a-z]+)" value="([^"]*)"/g))fields.set(m[1]!,m[2]!);
+    for(const m of form.matchAll(/name="([A-Za-z]+)" value="([^"]*)"/g))fields.set(m[1]!,m[2]!);
     assert.ok(await readConsent(consentRequest(fields.toString())),"each form submits what readConsent accepts");
   }
 });

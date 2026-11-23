@@ -4,7 +4,7 @@ import { build } from 'esbuild';
 import { start } from './harness.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { maxLiveOwnerGrants, recordGrant, recordOwnerGrant, revokeGrant } from '../src/client-grants.ts';
-import { ownerOverview } from '../src/owner-actions.ts';
+import { ownerAction, ownerOverview } from '../src/owner-actions.ts';
 import { type Database, type Env } from '../src/database.ts';
 import { remoteMcp } from '../src/remote-mcp.ts';
 import { maxLiveWebhooks, registerWebhook, revokeWebhook } from '../src/app-webhooks.ts';
@@ -66,6 +66,52 @@ test('recordOwnerGrant_Human_RecordedFrozenAndUnknownRefused', async () => {
         await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(humanId).run();
         assert.deepEqual(await recordOwnerGrant(env, { grantId: crypto.randomUUID(), humanId, clientId }), { ok: false, reason: 'frozen' });
         assert.deepEqual(await recordOwnerGrant(environment(h.db, { RECOVERY_READ_ONLY: 'true' }), { grantId: crypto.randomUUID(), humanId, clientId }), { ok: false, reason: 'unavailable' });
+    } finally { await h.close(); }
+});
+
+// A1-1: letting the owner grant's app approve or reject is off unless the consent asked for it, stored in the same transaction,
+// shown on the owner overview, stopped on its own (keeping the grant) or with the grant, and never reachable for another human.
+test('recordOwnerGrant_AppDecides_RecordedOnlyWhenChosenShownAndStoppable', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db), humanId = await human(env), other = await human(env);
+        const plain = crypto.randomUUID(), deciding = crypto.randomUUID(), revoked = crypto.randomUUID();
+        const row = (grantId: string) => h.db.prepare('SELECT human_id,revoked_at FROM owner_grant_approvals WHERE grant_id=?').bind(grantId).first();
+        assert.deepEqual(await recordOwnerGrant(env, { grantId: plain, humanId, clientId }), { ok: true });
+        assert.deepEqual(await recordOwnerGrant(env, { grantId: crypto.randomUUID(), humanId, clientId, appDecides: false }), { ok: true });
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM owner_grant_approvals').first('n'), 0, 'off unless chosen');
+        assert.deepEqual(await recordOwnerGrant(env, { grantId: deciding, humanId, clientId, appDecides: true }), { ok: true });
+        assert.deepEqual(await recordOwnerGrant(env, { grantId: revoked, humanId, clientId, appDecides: true }), { ok: true });
+        assert.deepEqual(await row(deciding), { human_id: humanId, revoked_at: null });
+        await assert.rejects(recordOwnerGrant(env, { grantId: crypto.randomUUID(), humanId, clientId, appDecides: 'yes' as unknown as boolean }));
+        const shown = async () => {
+            const overview = await ownerOverview(env, humanId);
+            assert.equal(overview.frozen, false);
+            return Object.fromEntries((overview as { ownerGrants: { grantId: string; appDecides: boolean }[] }).ownerGrants.map(g => [g.grantId, g.appDecides]));
+        };
+        const before = await shown();
+        assert.equal(before[plain], false);
+        assert.equal(before[deciding], true);
+        const authAt = Date.now();
+        // Another human's grant is indistinguishable from one without the permission.
+        assert.deepEqual(await ownerAction(env, { humanId: other, authAt, kind: 'stop-app-decisions', grantId: deciding }), { ok: false, reason: 'not-found' });
+        assert.deepEqual(await ownerAction(env, { humanId, authAt, kind: 'stop-app-decisions', grantId: plain }), { ok: false, reason: 'not-found' });
+        assert.deepEqual(await row(deciding), { human_id: humanId, revoked_at: null });
+        // Protective: an old sign-in may stop it; it is idempotent and keeps the grant live.
+        assert.deepEqual(await ownerAction(env, { humanId, authAt: 0, kind: 'stop-app-decisions', grantId: deciding }), { ok: true });
+        const stoppedAt = (await row(deciding) as { revoked_at: unknown }).revoked_at;
+        assert.notEqual(stoppedAt, null);
+        assert.deepEqual(await ownerAction(env, { humanId, authAt, kind: 'stop-app-decisions', grantId: deciding }), { ok: true });
+        assert.deepEqual((await row(deciding) as { revoked_at: unknown }).revoked_at, stoppedAt, 'the first stop time is kept');
+        assert.equal(await h.db.prepare('SELECT revoked_at FROM owner_grants WHERE grant_id=?').bind(deciding).first('revoked_at'), null);
+        assert.equal((await shown())[deciding], false);
+        // Revoking the grant ends its permission in the same transaction.
+        assert.deepEqual(await revokeGrant(env, { humanId, grantId: revoked }), { ok: true });
+        assert.notEqual((await row(revoked) as { revoked_at: unknown }).revoked_at, null);
+        // A frozen human records no grant, so no permission either.
+        await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(other).run();
+        assert.deepEqual(await recordOwnerGrant(env, { grantId: crypto.randomUUID(), humanId: other, clientId, appDecides: true }), { ok: false, reason: 'frozen' });
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM owner_grant_approvals').first('n'), 2);
     } finally { await h.close(); }
 });
 

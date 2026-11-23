@@ -44,13 +44,15 @@ export async function readBoundedForm(request: Request, maxBytes: number): Promi
 export async function readConsent(request: Request): Promise<URLSearchParams|null> {
   const form=await readBoundedForm(request,8192);
   if(!form)return null;
-  if([...form.keys()].some(k=>!["handle","decision","agent","agentName"].includes(k))||
+  if([...form.keys()].some(k=>!["handle","decision","agent","agentName","appDecides"].includes(k))||
     form.getAll("handle").length!==1||form.getAll("decision").length!==1||
-    form.getAll("agent").length>1||form.getAll("agentName").length>1)return null;
+    form.getAll("agent").length>1||form.getAll("agentName").length>1||form.getAll("appDecides").length>1)return null;
   const agent=form.get("agent");
   // An approval names exactly one agent (an existing account UUID, or "new" with its name), or "all" for an owner grant.
   if(agent!==null&&agent!=="new"&&agent!=="all"&&!accountId.test(agent))return null;
   if(form.has("agentName")!==(agent==="new"))return null;
   if(form.get("decision")==="approve"&&agent===null)return null;
+  // Letting the app approve or reject (A1) is only an option of an owner grant, ticked on the consent page.
+  if(form.has("appDecides")&&(form.get("appDecides")!=="yes"||agent!=="all"||form.get("decision")!=="approve"))return null;
   return form;
 }
