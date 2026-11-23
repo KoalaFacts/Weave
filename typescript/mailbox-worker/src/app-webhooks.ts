@@ -1,6 +1,6 @@
 /** Push webhook registrations (W1 step 2): the app holding an owner grant registers, lists and revokes the https callbacks
  * it wants told about external-action status changes of its human's agents. The signing secret is returned once, at
- * registration, and kept only sealed. Rows are never deleted, so every registration stays recorded. Nothing is sent yet.
+ * registration, and kept only sealed. Rows are never deleted, so every registration stays recorded. Delivery is W2 (queue) and W3 (`webhook-sender.ts`).
  */
 import { sealWebhookSecret } from './credential-vault.ts';
 import { atomic, type Env, type Transaction } from './database.ts';
