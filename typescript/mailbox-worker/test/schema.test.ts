@@ -19,10 +19,10 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
     const db=await database();
     try {
         const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);
-        assert.deepEqual(tables,['account_addresses','accounts','address_agent_cards','agent_access_tokens','agent_assertions','agent_keys','app_webhook_deliveries','app_webhooks','binding_requests','client_grants','contact_cards','contact_requests','contacts','counters','data_migrations','external_action_keys','external_actions','external_credentials','external_media','external_publications','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','mcp_idempotency','message_delivery','owner_grants','rate_limits','recovery_codes','stream_cursors','stream_leases']);
+        assert.deepEqual(tables,['account_addresses','accounts','address_agent_cards','agent_access_tokens','agent_assertions','agent_keys','app_webhook_deliveries','app_webhooks','binding_requests','client_grants','contact_cards','contact_requests','contacts','counters','data_migrations','external_action_keys','external_actions','external_credentials','external_media','external_publications','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','mcp_idempotency','message_delivery','owner_grant_approvals','owner_grants','rate_limits','recovery_codes','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),267);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),271);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
         // The archived legacy rows are never looked up by the removed account credential.
@@ -204,6 +204,22 @@ test('client_grants refuses unknown humans or accounts, empty or oversized clien
         for(const name of ['','n'.repeat(129)]) assert.throws(()=>named.run('g3','h1','synthetic-a','client',name),/constraint/i,name.length+'');
         named.run('g3','h1','synthetic-a','client','n'.repeat(128));
         assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='client_grants_owner'").get()?.name,'client_grants_owner');
+    } finally { db.close(); }
+});
+
+test('owner_grant_approvals keeps one row per grant and refuses unknown grants or humans and a revocation before creation',async()=>{
+    const db=await database();
+    try {
+        db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES('h1','github','42','2020-01-01T00:00:00Z','alice',0,0)").run();
+        db.prepare("INSERT INTO owner_grants(grant_id,human_id,client_id,created_at) VALUES('g1','h1','client',10),('g2','h1','client',10),('g3','h1','client',10)").run();
+        const insert=db.prepare('INSERT INTO owner_grant_approvals(grant_id,human_id,created_at,revoked_at) VALUES(?,?,10,?)');
+        insert.run('g1','h1',null);
+        for(const row of [['g1','h1',null],['missing','h1',null],['g2','missing',null],['g2',null,null],['g2','h1',9]])
+            assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        insert.run('g2','h1',10);
+        assert.throws(()=>db.prepare("INSERT INTO owner_grant_approvals(grant_id,human_id) VALUES('g3','h1')").run(),/constraint/i,'no default time: a row exists only when written on purpose');
+        assert.throws(()=>db.prepare("DELETE FROM owner_grants WHERE grant_id='g1'").run(),/constraint/i,'a grant with an approval row is never deleted');
+        assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='owner_grant_approvals_human'").get()?.name,'owner_grant_approvals_human');
     } finally { db.close(); }
 });
 
