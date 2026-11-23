@@ -16,8 +16,11 @@ import { isoUtc } from './time.ts';
  * a request's timeout starts when it is made, so no more are started at a time: one slow receiver cannot time out the
  * others while they wait for a connection. */
 export const maxWebhookAttempts = 10, firstRetryMs = 60_000, webhookTimeoutMs = 5_000, concurrentWebhooks = 6;
+/** A finished delivery (delivered, given up or finished unsent) is deleted once its status change is this old, at most
+ * `prunePerRun` a run. Every delivery finishes within about 8.5 hours of the change, so one still due is never deleted. */
+export const deliveryRetentionMs = 7 * 86_400_000, prunePerRun = 64;
 /** Each phase runs on its own 48-statement budget. The claim costs 2 reads and a batch of 3 guards plus one claim per
- * delivery (20); marking costs 1 read and 3 guards plus one update per accepted delivery (19). A phase retried after a
+ * delivery and one pruning delete (21); marking costs 1 read and 3 guards plus one update per accepted delivery (19). A phase retried after a
  * concurrent write runs out of budget on its third try: a refused claim sends nothing, and refused marking leaves sent
  * deliveries due, to be sent again (at least once). */
 const duePerRun = 15;
@@ -43,7 +46,7 @@ export async function webhookSignature(secret: string, timestamp: number, body: 
 }
 
 /** Scheduled sweep. A delivery whose webhook or grant was revoked, whose human was frozen or whose agent that human no
- * longer owns is finished unsent. */
+ * longer owns is finished unsent. The claim also deletes finished deliveries past the retention period. */
 export async function sweepWebhooks(env: Env, now: number = Date.now()): Promise<void> {
     if (writesRefused(env) || !env.EXTERNAL_CREDENTIAL_KEY) return;
     const claimed = await atomic(budgetDatabase(env.db), async tx => {
@@ -61,6 +64,9 @@ export async function sweepWebhooks(env: Env, now: number = Date.now()): Promise
             tx.writes.push(tx.db.prepare(`UPDATE app_webhook_deliveries SET attempts=attempts+?,next_attempt_at=CAST(? AS INTEGER)
                 WHERE event_id=? AND attempts=? AND delivered_at IS NULL`).bind(row.live ? 1 : 0, next, row.event_id, row.attempts));
         }
+        tx.writes.push(tx.db.prepare(`DELETE FROM app_webhook_deliveries WHERE rowid IN (SELECT rowid FROM app_webhook_deliveries
+            WHERE next_attempt_at IS NULL AND occurred_at<=CAST(? AS INTEGER) ORDER BY occurred_at LIMIT ?)`)
+            .bind(ticks(now - deliveryRetentionMs).toString(), prunePerRun));
         return rows.filter(row => row.live);
     });
     const accepted: string[] = [];

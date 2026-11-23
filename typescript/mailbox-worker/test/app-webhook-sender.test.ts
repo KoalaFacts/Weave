@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
 import { sealWebhookSecret } from '../src/credential-vault.ts';
-import { concurrentWebhooks, firstRetryMs, maxWebhookAttempts } from '../src/webhook-sender.ts';
+import { concurrentWebhooks, deliveryRetentionMs, firstRetryMs, maxWebhookAttempts, prunePerRun } from '../src/webhook-sender.ts';
 import type { Env } from '../src/database.ts';
 
 // Push webhook W3: the scheduled sender POSTs each queued delivery, signed, at least once with bounded retries, never
@@ -277,4 +277,48 @@ test('sweepWebhooks_MoreDueThanConnections_NeverMoreThanSixInFlight', () => scen
     assert.equal(concurrentWebhooks, 6);
     assert.equal(most, concurrentWebhooks, 'requests wait for a free connection before their timeout starts');
     assert.equal((await deliveries(h)).filter(d => d.delivered_at !== null).length, concurrentWebhooks + 3);
+}));
+
+// Push webhook W4: finished deliveries are deleted once their status change is older than the retention period.
+const age = (h: Harness, eventId: string, ms: number) =>
+    h.db.prepare('UPDATE app_webhook_deliveries SET occurred_at=CAST(? AS INTEGER),delivered_at=MAX(delivered_at,CAST(? AS INTEGER)) WHERE event_id=?')
+        .bind(ticks(Date.now() - ms), ticks(Date.now() - ms), eventId).run();
+
+test('sweepWebhooks_FinishedDeliveryPastRetention_DeletedAndRecentOrDueOnesKept', () => scenario(async ({h, receiver}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const grantId = await grant(h, humanId);
+    const delivered = await webhook(h, grantId), abandoned = await webhook(h, grantId), recent = await webhook(h, grantId), due = await webhook(h, grantId);
+    const actionId = await propose(h, agent);
+    receiver.respond = request => new Response(null, {status: request.url.endsWith(abandoned.webhookId) || request.url.endsWith(due.webhookId) ? 500 : 204});
+    await sweep(h);
+    const id = (w: {webhookId: string}) => `${w.webhookId}:${actionId}:pending`;
+    await h.db.prepare('UPDATE app_webhook_deliveries SET next_attempt_at=NULL WHERE event_id=?').bind(id(abandoned)).run();
+    await age(h, id(delivered), deliveryRetentionMs + 60_000);
+    await age(h, id(abandoned), deliveryRetentionMs + 60_000);
+    await age(h, id(recent), deliveryRetentionMs - 60_000);
+    await age(h, id(due), deliveryRetentionMs + 60_000);
+    await h.db.prepare('UPDATE app_webhook_deliveries SET next_attempt_at=CAST(? AS INTEGER) WHERE event_id=?').bind(ticks(Date.now() + 3_600_000), id(due)).run();
+
+    await sweep(h);
+
+    assert.deepEqual((await deliveries(h)).map(d => d.event_id).sort(), [id(recent), id(due)].sort(),
+        'delivered and given-up deliveries past retention are deleted; a recent one and one still due are kept');
+    assert.equal(await actionStatus(h, actionId), 'pending', 'pruning never changes the action');
+    assert.equal(await h.db.prepare('SELECT COUNT(*) n FROM app_webhooks').first<number>('n'), 4, 'the registrations are kept');
+}));
+
+test('sweepWebhooks_MoreFinishedThanOneRun_PrunesABoundedBatchEachRun', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const {webhookId} = await webhook(h, await grant(h, humanId));
+    const actionId = await propose(h, agent);
+    const old = ticks(Date.now() - deliveryRetentionMs - 60_000);
+    for (let i = 0; i < prunePerRun + 5; i++)
+        await h.db.prepare(`INSERT INTO app_webhook_deliveries(event_id,webhook_id,action_id,status,occurred_at,attempts,next_attempt_at,delivered_at)
+            VALUES(?,?,?,'completed',CAST(? AS INTEGER),1,NULL,CAST(? AS INTEGER))`).bind(`old-${i}`, webhookId, actionId, old, old).run();
+
+    await sweep(h);
+    assert.equal((await deliveries(h)).filter(d => d.event_id.startsWith('old-')).length, 5);
+    await sweep(h);
+    assert.equal((await deliveries(h)).filter(d => d.event_id.startsWith('old-')).length, 0);
+    assert.equal((await deliveries(h)).length, 1, 'the fresh delivered one stays');
 }));
