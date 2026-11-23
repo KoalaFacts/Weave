@@ -7,7 +7,7 @@ import { maxLiveOwnerGrants, recordGrant, recordOwnerGrant, revokeGrant } from '
 import { ownerOverview } from '../src/owner-actions.ts';
 import { type Database, type Env } from '../src/database.ts';
 import { remoteMcp } from '../src/remote-mcp.ts';
-import { maxLiveWebhooks } from '../src/app-webhooks.ts';
+import { maxLiveWebhooks, registerWebhook, revokeWebhook } from '../src/app-webhooks.ts';
 import { ownerMcpTools } from '../src/private-mcp-tools.ts';
 import { openWebhookSecret } from '../src/credential-vault.ts';
 import { oauthConfiguration } from '../src/remote-oauth.ts';
@@ -212,6 +212,38 @@ test('ownerOverview_OwnerGrants_LiveListedRevokedForCleanUp', async () => {
 });
 
 const vaultKey = Buffer.alloc(32, 7).toString('base64url');
+test('ownerOverview_OwnerGrantWebhooks_LiveCallbacksListedPerLiveGrantOnly', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db, { EXTERNAL_CREDENTIAL_KEY: vaultKey }), humanId = await human(env), otherHuman = await human(env);
+        const [office, quiet, revoked, foreign] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+        for (const [grantId, owner] of [[office, humanId], [quiet, humanId], [revoked, humanId], [foreign, otherHuman]])
+            assert.deepEqual(await recordOwnerGrant(env, { grantId, humanId: owner, clientId }), { ok: true });
+        const register = async (grantId: string, url: string) => {
+            const result = await registerWebhook(env, { grantId, url }, async () => {});
+            if (!result.ok) throw Error(result.reason);
+            return result.webhook;
+        };
+        const first = await register(office, 'https://office.example/hooks/a'), gone = await register(office, 'https://office.example/hooks/gone');
+        const second = await register(office, 'https://office.example/hooks/b');
+        assert.deepEqual(await revokeWebhook(env, { grantId: office, webhookId: gone.webhookId }, async () => {}), { ok: true });
+        await register(revoked, 'https://revoked.example/hooks');
+        await register(foreign, 'https://foreign.example/hooks');
+        assert.deepEqual(await revokeGrant(env, { humanId, grantId: revoked }), { ok: true });
+
+        const overview = await ownerOverview(env, humanId);
+        if (overview.frozen) throw Error('frozen');
+        const byGrant = Object.fromEntries(overview.ownerGrants.map(grant => [grant.grantId, grant.webhooks]));
+        assert.deepEqual(Object.keys(byGrant).sort(), [office, quiet].sort(), 'a revoked grant is not listed');
+        const plain = (w: { webhookId: string; url: string; createdAt: string }) => ({ ...w, createdAt: Date.parse(w.createdAt) });
+        assert.deepEqual(byGrant[office].map(plain), [first, second].map(plain), 'live callbacks of that grant, oldest first, without secrets');
+        assert.deepEqual(byGrant[quiet], []);
+        const other = await ownerOverview(env, otherHuman);
+        if (other.frozen) throw Error('frozen');
+        assert.deepEqual(other.ownerGrants.map(grant => grant.webhooks.map(w => w.url)), [['https://foreign.example/hooks']], 'another human sees only their own');
+    } finally { await h.close(); }
+});
+
 test('ownerGrant_Webhooks_RegisterListRevokeSecretOnceSealedAndGrantScoped', async () => {
     const h = await start();
     try {

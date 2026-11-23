@@ -1,4 +1,5 @@
 import type {OwnerAddress,OwnerAppGrant,OwnerBindingRequest,OwnerGrant,OwnerKey,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
+import type {WebhookView} from "../../mailbox-worker/src/app-webhooks.ts";
 import type {OwnerExternalAction,OwnerRecentAction} from "../../mailbox-worker/src/external-actions.ts";
 import type {OwnerCredential} from "../../mailbox-worker/src/external-credentials.ts";
 import type {OwnerConnector} from "../../mailbox-worker/src/publishing.ts";
@@ -136,7 +137,16 @@ function grantsSection(grants:OwnerGrant[],tokens:ReadonlyMap<string,string>):st
 function ownerGrantsSection(grants:readonly OwnerAppGrant[],tokens:ReadonlyMap<string,string>):string{
   if(grants.length===0)return "<p>No app manages all your agents.</p>";
   return "<ul>"+grants.map(grant=>"<li>"+(grant.clientName===null?"Unnamed client":esc(grant.clientName)+unverified)+"; client ID <code>"+esc(grant.clientId)+"</code>; connected "+
-    esc(grant.createdAt)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
+    esc(grant.createdAt)+webhooksList(grant.webhooks)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
+}
+
+/** Where the app has Weave send status changes of your agents' actions (never their content). The URLs are app-supplied: escaped
+ * text, never a link. A mailbox that predates the list (undefined) shows nothing. Revoking the app's access stops them all. */
+function webhooksList(webhooks:readonly WebhookView[]|undefined):string{
+  if(webhooks===undefined)return "";
+  if(webhooks.length===0)return "<p>It receives no status updates from Weave.</p>";
+  return "<p>Weave sends it the status of your agents' actions (never their content) at:</p><ul>"+webhooks.map(webhook=>
+    "<li><code>"+esc(webhook.url)+"</code>; registered "+esc(webhook.createdAt)+"</li>").join("")+"</ul>";
 }
 
 /**

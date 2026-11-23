@@ -4,6 +4,7 @@ import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, 
 import { ownedAgentLimit, ownedAgentPage, requireReadable, writesRefused } from './humans.ts';
 import { rejectKeyRequest } from './key-requests.ts';
 import { maxLiveOwnerGrants, revokeGrantIn } from './client-grants.ts';
+import { maxLiveWebhooks, type WebhookView } from './app-webhooks.ts';
 import { confirmExternalAction, pendingActionsShownToOwner, pendingForOwner, recentActionsShownToOwner, recentForOwner, rejectExternalAction, type OwnerExternalAction, type OwnerRecentAction } from './external-actions.ts';
 import { ownedCredentials, revokeExternalCredential, type OwnerCredential } from './external-credentials.ts';
 import { publishingAdapter, publishingAdapters } from './external-providers.ts';
@@ -25,8 +26,9 @@ export type OwnerGrant = {grantId: string; clientId: string; clientName: string 
 export type OwnerAddress = {addressId: string; label: string | null; isPublic: boolean; hasAgentCard: boolean; createdAt: string};
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[];
     grants: OwnerGrant[]; addresses: OwnerAddress[]; credentials: OwnerCredential[]};
-/** An owner grant: one client that may manage every agent the human owns. The name is self-reported. */
-export type OwnerAppGrant = {grantId: string; clientId: string; clientName: string | null; createdAt: string};
+/** An owner grant: one client that may manage every agent the human owns. The name is self-reported. `webhooks` are its
+ * live push-webhook callbacks (`register_webhook`, app-supplied URLs), oldest first. */
+export type OwnerAppGrant = {grantId: string; clientId: string; clientName: string | null; createdAt: string; webhooks: WebhookView[]};
 /** Grants of one agent revoked in the last 30 days, for the authorization server's token clean-up retry; never rendered. */
 export type RevokedAgentGrants = {agentId: string; revokedGrantIds: string[]};
 /**
@@ -132,6 +134,11 @@ export async function ownerOverview(env: Env, humanId: string, after: string | n
         const recentActions = await recentForOwner(tx, humanId, nowTicks, recentActionsShownToOwner + 1, recentBefore);
         const ownerGrants = (await tx.db.prepare('SELECT grant_id,client_id,client_name,CAST(created_at AS TEXT) created_at FROM owner_grants WHERE human_id=? AND revoked_at IS NULL ORDER BY created_at DESC,grant_id LIMIT ?')
             .bind(humanId, maxLiveOwnerGrants).all<{grant_id: string; client_id: string; client_name: string | null; created_at: string}>()).results;
+        // Every live callback of the grants shown: each has at most `maxLiveWebhooks`, so this is all of them.
+        const webhooks = ownerGrants.length === 0 ? [] : (await tx.db.prepare(`SELECT webhook_id,grant_id,url,CAST(created_at AS TEXT) created_at
+            FROM app_webhooks WHERE grant_id IN (${placeholders(ownerGrants)}) AND revoked_at IS NULL
+            ORDER BY created_at,webhook_id LIMIT ?`).bind(...ownerGrants.map(row => row.grant_id), maxLiveOwnerGrants * maxLiveWebhooks)
+            .all<{webhook_id: string; grant_id: string; url: string; created_at: string}>()).results;
         const revokedOwnerGrants = (await tx.db.prepare('SELECT grant_id FROM owner_grants WHERE human_id=? AND revoked_at IS NOT NULL AND revoked_at>CAST(? AS INTEGER) ORDER BY revoked_at DESC,grant_id LIMIT ?')
             .bind(humanId, revokedSince, revokedGrantsPerRead).all<{grant_id: string}>()).results;
         const credentials = await ownedCredentials(tx, ownedIds);
@@ -144,7 +151,8 @@ export async function ownerOverview(env: Env, humanId: string, after: string | n
             recentActions: recentActions.slice(0, recentActionsShownToOwner),
             moreRecentActions: recentActions.length > recentActionsShownToOwner,
             revokedGrants,
-            ownerGrants: ownerGrants.map(row => ({grantId: row.grant_id, clientId: row.client_id, clientName: row.client_name, createdAt: apiTime(row.created_at)!})),
+            ownerGrants: ownerGrants.map(row => ({grantId: row.grant_id, clientId: row.client_id, clientName: row.client_name, createdAt: apiTime(row.created_at)!,
+                webhooks: webhooks.filter(w => w.grant_id === row.grant_id).map(w => ({webhookId: w.webhook_id, url: w.url, createdAt: apiTime(w.created_at)!}))})),
             revokedOwnerGrantIds: revokedOwnerGrants.map(row => row.grant_id),
             connectors: publishingAdapters.filter(adapter => publishingAdapter(env, adapter.name)).map(ownerConnector),
             agents: owned.map(agent => ({agentId: agent.account_id, displayName: agent.display_name,

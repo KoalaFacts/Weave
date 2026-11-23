@@ -346,4 +346,22 @@ Verification: `test/app-webhook-sender.test.ts` (mailbox, real Miniflare D1 thro
 a given-up, a recent and a still-due delivery and checks that only the first two are deleted, with the action and the four
 registrations unchanged, and that 69 old finished rows are pruned as 64 then 5. Mutations caught: the delete removed, the
 `next_attempt_at IS NULL` guard dropped, the retention period set to zero, and the per-run bound removed. Not run against
-a deployment. W4 step 2 (the owner page and Agent Start list the registrations) is still to do.
+a deployment.
+
+W4, step 2 shows the registrations on the owner page. `HumanDirectory.ownerOverview` returns each live owner grant with
+`webhooks`, its live callbacks (`webhookId`, `url`, `createdAt`), oldest first, read by grant ID in the overview's own
+transaction (at most 20 grants of 10 callbacks each; never a secret). Under each app in "Apps that manage all your agents"
+on `/account`, the auth Worker lists the URLs as escaped text, never links ("Weave sends it the status of your agents'
+actions (never their content) at: …"), or says "It receives no status updates from Weave."; revoking the app's access stops
+them all. A mailbox Worker deployed before this field (no `webhooks` member) shows the app without either sentence, so the
+auth Worker may be deployed first. Agent Start is unchanged: it is written for agents, and webhooks belong to owner apps,
+whose MCP tool descriptions already state the delivery contract. No schema change; an owner deploy of both Workers
+(`completed-only`).
+
+Verification: `test/owner-grants.test.ts` (mailbox, Miniflare D1) registers three callbacks on one grant and revokes one,
+and checks the overview lists the two live ones on that grant only, nothing for a grant without callbacks or a revoked
+grant, and only their own for another human. `test/owner-page.test.ts` (auth) checks the hostile URL is escaped and never a
+link, the empty sentence, and the older-mailbox case. `test/workerd-owner-app-grant.test.ts` (two Workers) checks `/account`
+lists the live callback registered through `register_webhook` and not the revoked one. Mutations caught: the revoked
+condition dropped, callbacks not filtered by grant, the URL unescaped, the list not rendered, and the missing member not
+tolerated. Not run against a deployment.
