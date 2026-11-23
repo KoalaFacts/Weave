@@ -419,15 +419,19 @@ Step 1 of A1-1 adds the table and its release gate; step 2 lets the owner choose
   default-off `apply_owner_grant_decisions_schema` input, gated before release work and again inside protected
   production, and its own deploy variable (`WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA`). Until production has the
   table, every completed-only release must be a manual production dispatch with `apply_owner_grant_decisions_schema:
-  true`. Nothing writes the table yet.
+  true` (with `apply_owner_grants_schema: true` while `owner_grants` is also missing); otherwise it stops before any
+  change. Nothing writes the table yet.
 
 Verification of A1-2 step 1: `test/approved-owner-grant-decisions.test.ts` pins the statements to the generator and
 refuses a default on `decided_at`, a nullable grant, a key on the action alone, an unchecked decision value, a unique
-index, a cascading key on either reference and the index before the table, and covers the plan combined with
-`owner_grants`; `test/schema.test.ts` checks the constraints at insert time; `test/deploy.test.ts` runs opted-in
+index, a cascading or no-action key on either reference and the index before the table, and covers the plan combined
+with `owner_grants`; `test/schema.test.ts` checks the constraints at insert time; `test/deploy.test.ts` runs opted-in
 completed-only releases on a real Miniflare D1 (the table alone, all six approved tables in one batch, refusals with the
 opt-in missing or `owner_grants` also missing, an unapproved index, ambiguous values, maintain mode and the OAuth
-bootstrap); `test/deploy-entry.test.ts` checks the workflow input and gates. Not run against a deployment.
+bootstrap); `test/deploy-entry.test.ts` checks the workflow input and that both gate steps exist. Mutations caught: the
+deploy ignoring the opt-in, the live-schema read missing from the completed-only allow list, the input defaulting to
+true, an owner comment able to opt in, either gate step removed, the decision check dropped, and (independent
+reviewer) `restrict` weakened to `no action`. Not run against a deployment.
 
 Verification of step 2: `test/owner-grants.test.ts` (`recordOwnerGrant_AppDecides_RecordedOnlyWhenChosenShownAndStoppable`)
 covers off-by-default, a non-boolean refused, the overview flag, stop (old sign-in, idempotent, first time kept, grant

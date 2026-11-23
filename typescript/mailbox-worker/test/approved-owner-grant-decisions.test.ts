@@ -28,6 +28,8 @@ for (const [name, statements] of [
     ['any decision value', [table.replace("CHECK(decision IN ('approved','rejected'))", 'CHECK(decision IS NOT NULL)'), index]],
     ['a unique index', [table, index.replace('CREATE INDEX', 'CREATE UNIQUE INDEX')]],
     ['a cascading foreign key on the action', [table.replace('(`action_id`) ON UPDATE no action ON DELETE restrict', '(`action_id`) ON UPDATE no action ON DELETE cascade'), index]],
+    ['a no-action foreign key on the action', [table.replace('(`action_id`) ON UPDATE no action ON DELETE restrict', '(`action_id`) ON UPDATE no action ON DELETE no action'), index]],
+    ['a no-action foreign key on the grant', [table.replace('(`grant_id`) ON UPDATE no action ON DELETE restrict', '(`grant_id`) ON UPDATE no action ON DELETE no action'), index]],
     ['a cascading foreign key on the grant', [table.replace('(`grant_id`) ON UPDATE no action ON DELETE restrict', '(`grant_id`) ON UPDATE no action ON DELETE cascade'), index]]
 ] as [string, string[]][]) test('the owner_grant_decisions opt-in refuses ' + name, () => {
     assert.throws(() => ownerGrantDecisionsChange.plan(statements), /approved owner_grant_decisions schema \(table and index\)/);
