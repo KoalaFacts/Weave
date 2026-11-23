@@ -274,6 +274,24 @@ export const ownerGrants = sqliteTable("owner_grants", {
     check("owner_grants_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
 ]);
 
+// An https callback that the app holding one owner grant registers for status changes of the external actions of the
+// agents that grant may act for (push webhook W1, owner-approved 2026-11-23). secret_sealed is the per-webhook HMAC
+// secret, sealed at rest and shown to the app once. Rows are never deleted: revoked_at records the end, so every
+// registration stays recorded.
+export const appWebhooks = sqliteTable("app_webhooks", {
+    webhook_id: text("webhook_id").notNull().primaryKey(),
+    grant_id: text("grant_id").notNull().references(() => ownerGrants.grant_id, {onDelete:"restrict"}),
+    url: text("url").notNull(),
+    secret_sealed: opaqueBytes("secret_sealed").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+    revoked_at: exactInteger("revoked_at"),
+}, t => [
+    index("app_webhooks_grant").on(t.grant_id),
+    check("app_webhooks_url",sql`substr(url,1,8)='https://' AND length(url) BETWEEN 9 AND 2048`),
+    check("app_webhooks_secret",sql`length(secret_sealed) BETWEEN 29 AND 512`),
+    check("app_webhooks_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
+]);
+
 // Private MCP write idempotency keys, per account and retained 24 hours. result_id names the stored message or request.
 export const mcpIdempotency = sqliteTable("mcp_idempotency", {
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),

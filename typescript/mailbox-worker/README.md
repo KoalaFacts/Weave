@@ -77,13 +77,15 @@ deployment replaces it, and a failed check leaves that version serving. (Pausing
 to add about a minute of 503 responses to every release while protecting nothing.)
 The one-time OAuth bootstrap still deploys maintenance first, because it adds bindings.
 
-Two owner-approved exceptions, each off by default and set per run: a manual production dispatch with
+Three owner-approved exceptions, each off by default and set per run: a manual production dispatch with
 `apply_external_action_keys_schema: true` lets completed-only apply exactly the approved `external_action_keys`
-table and unique index (`schema-366`, `scripts/approved-external-action-keys.ts`), and `apply_owner_grants_schema: true`
+table and unique index (`schema-366`, `scripts/approved-external-action-keys.ts`), `apply_owner_grants_schema: true`
 exactly the approved `owner_grants` table and its index (`scripts/approved-owner-grants.ts`, see the
-[owner app grants record](../../docs/implementation/2026-11-01-owner-grants.md#owner-app-grants-2026-11-17)); nothing else.
-Both share `scripts/approved-schema-change.ts`; with both on, one batch applies both, and every pending statement must
-belong to an enabled change. It compares full
+[owner app grants record](../../docs/implementation/2026-11-01-owner-grants.md#owner-app-grants-2026-11-17)), and
+`apply_app_webhooks_schema: true` exactly the approved `app_webhooks` table and its index
+(`scripts/approved-app-webhooks.ts`, see [push webhooks for apps](../../docs/implementation/2026-11-01-owner-grants.md#push-webhooks-for-apps-2026-11-23));
+nothing else. All share `scripts/approved-schema-change.ts`; with several on, one batch applies them, and every pending
+statement must belong to an enabled change. It compares full
 normalized definitions, refuses any other pending statement or a differing existing table or index, and is a no-op once
 applied. Operator steps, the exact statements and the read-only check are in the
 [implementation record](../../docs/implementation/2026-11-05-propose-idempotency.md#release-path-applying-the-table-to-production-2026-11-12).

@@ -170,3 +170,36 @@ revocation ending the next call for every agent while the other person's client 
 refresh token gets `invalid_grant`. `test/consent.test.ts` and `test/owner-page.test.ts` check the pages' text, escaping
 and forms; the mailbox `test/owner-grants.test.ts` checks the `agent-not-found` and `agent-limit` codes. Each was
 checked by removing the guard it covers. Not run against a deployment.
+
+## Push webhooks for apps (2026-11-23)
+
+The owner approved, on 2026-11-23, a signed push webhook for apps (status-change notification 2/2 on the shared plan):
+an app that holds an owner app grant registers an `https` callback and is told when an external action of one of that
+human's agents changes status, instead of polling. Inbox notices stay. It is delivered in sub-steps W1–W4 (ledger in
+[docs/implementation/README.md](README.md#weave-scheduled-task-ledger)).
+
+W1, step 1 (this section) adds only storage and its release gate; nothing reads or writes the table yet:
+
+- **Table.** `app_webhooks`: webhook ID, the owner grant it belongs to (`grant_id`, foreign key to `owner_grants`,
+  restrict), the callback `url` (must start with `https://`, at most 2048 characters), `secret_sealed` (the per-webhook
+  HMAC secret sealed at rest, 29 to 512 bytes; the app sees the secret once, at registration), and creation and
+  revocation times with `revoked_at >= created_at`. Index on `grant_id`. Rows are never deleted, so every registration
+  stays recorded. It holds no agent ID: like the grant, a webhook covers whatever agents the human owns at each status
+  change.
+- **Release gate.** `scripts/approved-app-webhooks.ts` is the third instance of `scripts/approved-schema-change.ts`,
+  with its own default-off `apply_app_webhooks_schema` input on the manual production dispatch, its own gates before
+  release work and inside protected production, and its own deploy variable (`WEAVE_APPROVED_APP_WEBHOOKS_SCHEMA`).
+  An owner comment or a repository-scope release can never opt in.
+- **Owner deploy.** Until production has `app_webhooks`, every completed-only release must be a manual production
+  dispatch with `apply_app_webhooks_schema: true` (and `apply_owner_grants_schema: true` while `owner_grants` is also
+  missing, since a plan holding both refuses with only one opt-in); otherwise it stops before any change. SQLite does
+  not need the referenced table to exist when a table is created, so the generator's order (`app_webhooks` first)
+  applies cleanly in one batch.
+
+Verification: `test/approved-app-webhooks.test.ts` pins the statements to the generator, refuses a plain-`http`
+check, a looser secret length, a unique index, a cascading key and the index before the table, and covers the plan
+combined with `owner_grants`; `test/deploy.test.ts` runs opted-in completed-only releases on a real Miniflare D1
+(`app_webhooks` alone, with `owner_grants` in one batch, refusals with either opt-in missing, an unapproved index,
+ambiguous values, maintain mode and the OAuth bootstrap); `test/deploy-entry.test.ts` checks the workflow input and
+gates. Mutations caught: the deploy ignoring the opt-in, the `https` check dropped, an owner comment able to opt in,
+and the live-schema read missing from the completed-only allow list. Not run against a deployment.
