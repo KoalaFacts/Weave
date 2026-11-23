@@ -7,6 +7,9 @@ import { maxLiveOwnerGrants, recordGrant, recordOwnerGrant, revokeGrant } from '
 import { ownerOverview } from '../src/owner-actions.ts';
 import { type Database, type Env } from '../src/database.ts';
 import { remoteMcp } from '../src/remote-mcp.ts';
+import { maxLiveWebhooks } from '../src/app-webhooks.ts';
+import { ownerMcpTools } from '../src/private-mcp-tools.ts';
+import { openWebhookSecret } from '../src/credential-vault.ts';
 import { oauthConfiguration } from '../src/remote-oauth.ts';
 
 // remote-private uses bundler-resolution imports; evaluate the bundled production module.
@@ -205,5 +208,76 @@ test('ownerOverview_OwnerGrants_LiveListedRevokedForCleanUp', async () => {
         if (overview.frozen) throw Error('frozen');
         assert.deepEqual(overview.ownerGrants.map(grant => [grant.grantId, grant.clientId, grant.clientName]), [[live, clientId, 'AI Office']]);
         assert.deepEqual(overview.revokedOwnerGrantIds, [revoked]);
+    } finally { await h.close(); }
+});
+
+const vaultKey = Buffer.alloc(32, 7).toString('base64url');
+test('ownerGrant_Webhooks_RegisterListRevokeSecretOnceSealedAndGrantScoped', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db, { EXTERNAL_CREDENTIAL_KEY: vaultKey }), humanId = await human(env), grantId = crypto.randomUUID(), otherGrant = crypto.randomUUID();
+        assert.deepEqual(await recordOwnerGrant(env, { grantId, humanId, clientId }), { ok: true });
+        assert.deepEqual(await recordOwnerGrant(env, { grantId: otherGrant, humanId, clientId }), { ok: true });
+        const call = mcp(env, () => ownerClaims(humanId, grantId)), other = mcp(env, () => ownerClaims(humanId, otherGrant));
+        const registered = (await resultOf(await call({ name: 'register_webhook', args: { url: 'https://Office.Example/hooks/weave?x=1' } }))).structuredContent;
+        assert.equal(registered.url, 'https://office.example/hooks/weave?x=1');
+        assert.match(registered.secret, /^[A-Za-z0-9_-]{43}$/);
+        const row = await h.db.prepare('SELECT grant_id,url,secret_sealed,revoked_at FROM app_webhooks WHERE webhook_id=?').bind(registered.webhookId)
+            .first<{ grant_id: string; url: string; secret_sealed: ArrayBuffer; revoked_at: null }>();
+        assert.equal(row!.grant_id, grantId);
+        assert.equal(row!.revoked_at, null);
+        const sealed = new Uint8Array(row!.secret_sealed);
+        assert.equal(Buffer.from(sealed).includes(Buffer.from(registered.secret)), false);
+        assert.equal(await openWebhookSecret(vaultKey, registered.webhookId, grantId, sealed), registered.secret);
+        await assert.rejects(openWebhookSecret(vaultKey, registered.webhookId, otherGrant, sealed));
+        const listed = (await resultOf(await call({ name: 'list_webhooks' }))).structuredContent;
+        assert.deepEqual(listed, { items: [{ webhookId: registered.webhookId, url: registered.url, createdAt: registered.createdAt }], nextCursor: null });
+        assert.equal(JSON.stringify(listed).includes(registered.secret), false);
+        // Another grant of the same human neither sees nor revokes it.
+        assert.deepEqual((await resultOf(await other({ name: 'list_webhooks' }))).structuredContent, { items: [], nextCursor: null });
+        assert.deepEqual((await resultOf(await other({ name: 'revoke_webhook', args: { webhookId: registered.webhookId } }))).structuredContent,
+            { status: 404, code: 'webhook-not-found' });
+        assert.equal(await h.db.prepare('SELECT revoked_at FROM app_webhooks WHERE webhook_id=?').bind(registered.webhookId).first('revoked_at'), null);
+        for (let i = 0; i < 2; i++)
+            assert.deepEqual((await resultOf(await call({ name: 'revoke_webhook', args: { webhookId: registered.webhookId } }))).structuredContent,
+                { webhookId: registered.webhookId, revoked: true });
+        assert.notEqual(await h.db.prepare('SELECT revoked_at FROM app_webhooks WHERE webhook_id=?').bind(registered.webhookId).first('revoked_at'), null);
+        assert.deepEqual((await resultOf(await call({ name: 'list_webhooks' }))).structuredContent, { items: [], nextCursor: null });
+        // A revocation committed after authorization is refused inside the write's own transaction.
+        const late = await resultOf(await call({ name: 'register_webhook', args: { url: 'https://office.example/late' },
+            afterAuthorize: async () => { assert.deepEqual(await revokeGrant(env, { humanId, grantId }), { ok: true }); } }));
+        assert.deepEqual(late.structuredContent, { status: 401, code: 'grant-revoked' });
+        assert.equal((await call({ name: 'register_webhook', args: { url: 'https://office.example/again' } })).status, 401);
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM app_webhooks').first('n'), 1);
+    } finally { await h.close(); }
+});
+
+test('ownerGrant_RegisterWebhook_InvalidUrlLimitAndNoVaultKeyRefusedNothingWritten', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db, { EXTERNAL_CREDENTIAL_KEY: vaultKey }), humanId = await human(env), grantId = crypto.randomUUID();
+        assert.deepEqual(await recordOwnerGrant(env, { grantId, humanId, clientId }), { ok: true });
+        const call = mcp(env, () => ownerClaims(humanId, grantId));
+        for (const url of ['http://office.example/hook', 'https://user:pw@office.example/hook', 'https://user@office.example/hook', 'https://:pw@office.example/hook', 'https://office.example/hook#frag', 'https://office.example/hook#',
+            'not a url', '/relative', 'https://127.0.0.1/hook', 'https://[::1]/hook', 'https://0x7f.1/hook', 'https://localhost/hook', 'https://a.localhost./hook', 'https://2130706433/hook', 'https://office.example/' + 'a'.repeat(2048), 42]) {
+            const refused = await resultOf(await call({ name: 'register_webhook', args: { url } }));
+            assert.equal(refused.isError, true, String(url));
+            assert.equal(refused.structuredContent.field, 'url', String(url));
+        }
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM app_webhooks').first('n'), 0);
+        for (let i = 0; i < maxLiveWebhooks; i++)
+            assert.equal((await resultOf(await call({ name: 'register_webhook', args: { url: 'https://office.example/' + i } }))).isError, undefined);
+        const over = await resultOf(await call({ name: 'register_webhook', args: { url: 'https://office.example/over' } }))
+        assert.deepEqual(over.structuredContent,
+            { status: 409, code: 'webhook-limit' });
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM app_webhooks').first('n'), maxLiveWebhooks);
+        assert.match(ownerMcpTools.find(t => t.name === 'register_webhook')!.description, new RegExp(`At most ${maxLiveWebhooks} live callbacks`));
+        const first = (await resultOf(await call({ name: 'list_webhooks' }))).structuredContent.items[0].webhookId;
+        await resultOf(await call({ name: 'revoke_webhook', args: { webhookId: first } }));
+        assert.equal((await resultOf(await call({ name: 'register_webhook', args: { url: 'https://office.example/after' } }))).isError, undefined);
+        const keyless = await resultOf(await mcp(environment(h.db), () => ownerClaims(humanId, grantId))({ name: 'register_webhook', args: { url: 'https://office.example/k' } }));
+        assert.equal(keyless.isError, true);
+        assert.match(keyless.content[0].text, /HTTP 503/);
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM app_webhooks').first('n'), maxLiveWebhooks + 1);
     } finally { await h.close(); }
 });

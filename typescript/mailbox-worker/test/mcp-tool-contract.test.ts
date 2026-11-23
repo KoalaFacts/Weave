@@ -161,6 +161,9 @@ test('real D1 results of every private tool conform to their published output sc
         const created=await run(humanId,'create_agent',{displayName:'Contract desk'});
         assert.equal((await run(humanId,'list_agents')).items.length,2);
         assert.equal((await run(humanId,'rename_agent',{accountId:created.accountId,displayName:'Renamed desk'})).displayName,'Renamed desk');
+        const hook=await run(humanId,'register_webhook',{url:'https://office.example/hook'});
+        assert.equal((await run(humanId,'list_webhooks')).items.length,1);
+        assert.equal((await run(humanId,'revoke_webhook',{webhookId:hook.webhookId})).revoked,true);
         assert.deepEqual([...seen].sort(),(privateMcpTools as Schema[]).map(t=>t.name).sort(),'every private tool was exercised');
     }finally{await h.close();provider.close();}
 });

@@ -203,3 +203,34 @@ combined with `owner_grants`; `test/deploy.test.ts` runs opted-in completed-only
 ambiguous values, maintain mode and the OAuth bootstrap); `test/deploy-entry.test.ts` checks the workflow input and
 gates. Mutations caught: the deploy ignoring the opt-in, the `https` check dropped, an owner comment able to opt in,
 and the live-schema read missing from the completed-only allow list. Not run against a deployment.
+
+W1, step 2 adds the registration tools over the private MCP endpoint; still nothing is delivered (W2–W3):
+
+- **Tools.** `register_webhook {url}`, `list_webhooks {}` and `revoke_webhook {webhookId}`, scope `weave:agents.manage`,
+  so only an owner grant reaches them (an agent's own token gets `403`), with no `Weave-Agent` header. A webhook belongs to
+  the grant that registered it: another grant of the same human neither lists nor revokes it (`webhook-not-found`).
+- **Callback.** An absolute `https` URL to a DNS name, of at most 2048 characters, with no user info and no fragment,
+  stored normalized (`URL.href`). IP literals (including the numeric forms URL parsing turns into IPv4) and `localhost`
+  names are refused. Anything else is the tool error `invalid` on field `url`. Weave does not resolve or call it yet;
+  the W3 sender must still check where a name resolves and refuse redirects.
+- **Grant end.** Revoking the owner grant or freezing its human leaves the webhook rows unrevoked but unreachable: every
+  tool call re-checks the grant. W2–W3 must deliver only while the grant is live and the human not frozen.
+- **Secret.** 32 random bytes, base64url (43 characters), returned only in the `register_webhook` result. It is stored
+  sealed with AES-256-GCM under `EXTERNAL_CREDENTIAL_KEY`, bound to the webhook and grant IDs, so a sealed secret copied
+  to another row fails to open; `list_webhooks` never returns it. Without the key, registration answers `503`.
+- **Limits and records.** At most 10 live callbacks per grant (`409 webhook-limit`; revoke one first). Revoking is
+  idempotent and sets `revoked_at`; rows are never deleted. The grant is re-checked inside each call's own transaction,
+  so a revocation or freeze committed after authorization refuses the write (`grant-revoked`).
+- **Owner deploy.** The tools need `app_webhooks` in production (`apply_app_webhooks_schema: true`, step 1); until then
+  they fail and write nothing.
+
+Verification: `test/owner-grants.test.ts` (mailbox) covers register, normalized URL, secret shape, sealed bytes that do
+not contain the secret and open only with their own grant ID, list without secrets, cross-grant list and revoke refusal,
+idempotent revoke, a revocation committed between authorization and the write, refused URLs, the limit and
+re-registration after a revoke, and the missing key; refused URLs include `http`, user info, a fragment, IP literals
+(`127.0.0.1`, `[::1]`, `0x7f.1`, `2130706433`) and `localhost` names; `test/mcp-tool-contract.test.ts` checks the three
+tools' real D1 results against their published output schemas. `test/workerd-owner-app-grant.test.ts` (auth-worker, two workers)
+registers, lists, refuses `http`, refuses an agent token, revokes, and checks that the revoked grant cannot touch its
+webhooks while every registration stays recorded. Mutations caught: the grant filter dropped from revoke and from list,
+the live limit, the `https`, user, password, fragment and IP-literal checks, and the in-transaction grant re-check removed; the
+`https` mutation was also caught by the workerd test. Not run against a deployment.
