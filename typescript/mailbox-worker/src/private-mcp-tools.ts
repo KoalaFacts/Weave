@@ -161,11 +161,11 @@ export const ownerMcpTools = [
     tool('approve_action', 'Approve one pending external action of an agent your human owns, on the exact plan: pass the planDigest of the plan you showed your human. '
         + 'Allowed only while your human chose on Weave\'s consent page to let this app approve or reject; refused with decisions-off otherwise (your human can stop it on their Weave account page at any time). '
         + 'Weave re-checks the plan as on its own approval page: refused with plan-changed or account-changed when the plan or its account changed, expired after its hour, not-pending once decided. '
-        + 'Approving sends nothing: the agent still executes it once. The decision is recorded with this grant and shown to your human. ' + manage,
+        + 'Approving sends nothing: the agent still executes it once. The decision is recorded with this grant; your human sees it on their Weave account page. ' + manage,
         'weave:agents.manage', {actionId:id('A pending external action of an agent your human owns.'), planDigest:{...str(43, 'The plan digest the action was proposed with.'), pattern:'^[A-Za-z0-9_-]{43}$'}},
         ['actionId','planDigest'], decided),
     tool('reject_action', 'Reject one pending external action of an agent your human owns, or withdraw an approval the agent has not used yet, so it is never sent. '
-        + 'Allowed only while your human lets this app approve or reject (decisions-off otherwise); not-pending once it was sent or settled. The decision is recorded with this grant and shown to your human. ' + manage,
+        + 'Allowed only while your human lets this app approve or reject (decisions-off otherwise); not-pending once it was sent or settled. The decision is recorded with this grant; your human sees it on their Weave account page. ' + manage,
         'weave:agents.manage', {actionId:id('An external action of an agent your human owns.')}, ['actionId'], decided)
 ];
 

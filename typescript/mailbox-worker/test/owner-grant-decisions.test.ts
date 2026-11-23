@@ -176,8 +176,10 @@ test('rejectAction_WithdrawsAnUnusedApprovalButNeverOneBeingSent', () => scenari
     assert.equal(late.status, 409);
     assert.equal(codeOf(late), 'not-pending');
     assert.equal(calls.length, 1);
-    await h.db.prepare("UPDATE external_actions SET status='unknown' WHERE action_id=?").bind(sent).run();
-    assert.equal((await tool(h, humanId, grantId, 'reject_action', {actionId: sent})).status, 409, 'unknown is never reopened');
+    for (const status of ['dispatching', 'unknown']) {
+        await h.db.prepare('UPDATE external_actions SET status=? WHERE action_id=?').bind(status, sent).run();
+        assert.equal((await tool(h, humanId, grantId, 'reject_action', {actionId: sent})).status, 409, status + ' is never reopened');
+    }
 }));
 
 test('ownerPageDecision_WritesNoGrantRow', () => scenario(async ({h}) => {
@@ -211,6 +213,9 @@ test('getPendingAction_TheOwnerPagesPlanForThisHumansPendingActionsOnly', () => 
     assert.equal(read.body.planDigest, await digestOf(h, mine.humanId, actionId), 'the digest the owner page confirms');
     assert.deepEqual([read.body.agentId, read.body.content, read.body.targetDisplay, read.body.accountChanged], [mine.agent.accountId, 'Episode 12 is live.', 'Desk Alpha', false]);
     assert.equal((await tool(h, mine.humanId, grantId, 'get_pending_action', {actionId: other})).status, 404, "another human's plan");
+    const expiring = await propose(h, mine.agent);
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind(ticks(), expiring).run();
+    assert.equal((await tool(h, mine.humanId, grantId, 'get_pending_action', {actionId: expiring})).status, 404, 'once expired');
     await ownerAction(environment(h), {kind: 'reject-action', requestId: actionId, humanId: mine.humanId, authAt: Date.now()} as OwnerAction);
     assert.equal((await tool(h, mine.humanId, grantId, 'get_pending_action', {actionId})).status, 404, 'once decided');
     await h.db.prepare('UPDATE owner_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind(ticks(), grantId).run();
