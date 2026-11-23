@@ -374,7 +374,8 @@ A1, approved by the owner on 2026-11-23: an owner may let the app holding one ow
 owner's agents' pending plans. It is off by default, chosen per OAuth client on Weave's own consent page and revocable
 on `/account`; the constraints are in [advance-weave](../../.claude/skills/advance-weave/SKILL.md#project-rules).
 Step 1 of A1-1 adds the table and its release gate; step 2 lets the owner choose it on the consent page and stop it on
-`/account`. Nothing reads the permission to decide yet (A1-2), so no app can decide.
+`/account`. A1-2 records which grant decided (step 1) and lets the app decide (step 2); A1-3 will show that grant on the
+owner page.
 
 - **Table.** `owner_grant_approvals`: one row per owner grant whose owner chose to let the app decide. `grant_id` is
   the primary key and references `owner_grants` (`ON DELETE restrict`); `human_id` (required, references `humans`,
@@ -420,7 +421,37 @@ Step 1 of A1-1 adds the table and its release gate; step 2 lets the owner choose
   production, and its own deploy variable (`WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA`). Until production has the
   table, every completed-only release must be a manual production dispatch with `apply_owner_grant_decisions_schema:
   true` (with `apply_owner_grants_schema: true` while `owner_grants` is also missing); otherwise it stops before any
-  change. Nothing writes the table yet.
+  change. Step 2 writes it.
+
+- **Deciding (A1-2 step 2).** Three owner-grant MCP tools (scope `weave:agents.manage`, no `Weave-Agent` header):
+  `get_pending_action {actionId}` returns one pending, unexpired plan of the human's agents exactly as the owner page's
+  `pendingForOwner` builds it, including `planDigest` and `accountChanged` (`action-not-found` for anything else; it needs
+  no permission to decide, because the grant can already act as those agents). `approve_action {actionId, planDigest}`
+  and `reject_action {actionId}` (`src/app-decisions.ts`) run, in one transaction: the grant check (live, this human's,
+  human not frozen; otherwise 401 `grant-revoked`), the grant's live `owner_grant_approvals` row (otherwise 403
+  `decisions-off`), then the owner page's own `confirmExternalAction` / `rejectExternalAction` with the human as
+  `decided_by`, and on success the `owner_grant_decisions` row. So the exact digest, revalidation of the provider
+  contract and credential (`plan-changed`, `account-changed`), expiry (`expired`), `not-pending` once decided or sent,
+  withdrawal of an unused approval, and `dispatching` / `unknown` never reopened are unchanged, and approval still sends
+  nothing: the agent executes. Unlike the owner page there is no fresh-sign-in window: the owner's consent-page choice is
+  the authority, and stopping it or revoking the grant ends it on the next call. An agent's own grant never reaches these
+  tools (403 at the scope check). The MCP layer names each refusal code with a hint.
+
+Verification of A1-2 step 2: `test/owner-grant-decisions.test.ts` covers approve as the human with the grant recorded and
+one send, no permission and a stopped permission (`decisions-off`, nothing written), a revoked grant and a frozen human
+(401), another human's action (404, and naming the other human with this grant is 401), a wrong digest and a changed
+credential, expiry (approve refused, reject allowed), withdrawal of an unused approval but never of a sent or `unknown`
+action, an owner-page decision writing no row, malformed arguments and maintenance mode, and `get_pending_action`
+(the owner page's digest, another human's and a decided plan not found, a revoked grant 401);
+`test/mcp-tool-contract.test.ts` checks the three results against their output schemas; auth-worker
+`test/workerd-owner-app-grant.test.ts` drives both Workers: the deciding app reads the plan, a wrong digest is
+`plan-changed`, an agent token is 403, the approval records the grant with the human as `decided_by`, the agent
+executes once against the fake provider, and after "Stop it approving" on `/account` both tools answer `decisions-off`.
+Mutations caught: the permission check removed, its `revoked_at` ignored, the grant check removed (both in the decision
+and in the read), the decision row not written, the decision label fixed to `approved`, the digest format check
+removed, and (at the two-Worker boundary) the permission check removed. A `human_id` condition on the permission read
+was dropped because the grant check already binds the human and no test could tell it apart. Not run against a
+deployment; production needs both A1 opt-ins (`apply_owner_grant_approvals_schema`, `apply_owner_grant_decisions_schema`).
 
 Verification of A1-2 step 1: `test/approved-owner-grant-decisions.test.ts` pins the statements to the generator and
 refuses a default on `decided_at`, a nullable grant, a key on the action alone, an unchecked decision value, a unique

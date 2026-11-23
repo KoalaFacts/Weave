@@ -155,9 +155,15 @@ test('real D1 results of every private tool conform to their published output sc
             planDigest:overview.externalActions[0].planDigest} as OwnerAction),{ok:true});
         assert.equal((await run(a.accountId,'execute_external_action',{actionId:action.actionId})).status,'completed');
         assert.equal((await run(a.accountId,'list_my_external_actions',{waiting:false})).actions[0].postUrl,null,'a completed test-http action has no post address');
-        // Agent management runs for the human behind an owner grant.
+        const toApprove=await run(a.accountId,'propose_external_action',{credentialRef:'linkedin-main',operation:'publish_text',content:'contract-app-approves'});
+        const toReject=await run(a.accountId,'propose_external_action',{credentialRef:'linkedin-main',operation:'publish_text',content:'contract-app-rejects'});
+        // Agent management runs for the human behind an owner grant; this one may also decide (A1).
         ownerGrant=crypto.randomUUID();
-        assert.deepEqual(await recordOwnerGrant(env,{grantId:ownerGrant,humanId,clientId:'https://office.example/client.json'}),{ok:true});
+        assert.deepEqual(await recordOwnerGrant(env,{grantId:ownerGrant,humanId,clientId:'https://office.example/client.json',appDecides:true}),{ok:true});
+        const plan=await run(humanId,'get_pending_action',{actionId:toApprove.actionId});
+        assert.equal(plan.content,'contract-app-approves');
+        assert.equal((await run(humanId,'approve_action',{actionId:toApprove.actionId,planDigest:plan.planDigest})).status,'approved');
+        assert.equal((await run(humanId,'reject_action',{actionId:toReject.actionId})).status,'rejected');
         const created=await run(humanId,'create_agent',{displayName:'Contract desk'});
         assert.equal((await run(humanId,'list_agents')).items.length,2);
         assert.equal((await run(humanId,'rename_agent',{accountId:created.accountId,displayName:'Renamed desk'})).displayName,'Renamed desk');

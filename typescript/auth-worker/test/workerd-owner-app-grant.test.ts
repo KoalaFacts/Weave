@@ -45,10 +45,16 @@ async function fakeGithub(request:Request):Promise<Response>{
 
 // The owner app's fake webhook receiver (push webhook W3); the mailbox reaches nothing else.
 const webhookPosts:{url:string;headers:Headers;body:string}[]=[];
+const providerPosts:string[]=[];
 async function mailboxOutbound(request:Request):Promise<Response>{
   if(request.method==="POST"&&request.url.startsWith("https://office.example/")){
     webhookPosts.push({url:request.url,headers:request.headers,body:await request.text()});
     return new Response(null,{status:204});
+  }
+  // The test-only provider: it completes every send, so an approved plan can be executed.
+  if(request.method==="POST"&&request.url==="https://provider.test/post"){
+    providerPosts.push(await request.text());
+    return Response.json({externalId:"post-"+providerPosts.length});
   }
   return new Response("Outbound denied",{status:403});
 }
@@ -294,6 +300,21 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
   assert.equal(live.results[0]!.human_id,grant.human_id);
   assert.equal(live.results[0]!.revoked_at,null);
   assert.equal((await db.prepare("SELECT count(*) AS n FROM owner_grant_approvals").first<{n:number}>())!.n,1,"neither the first owner grant nor the agent's grant was given it");
+  // A1-2: that app reads a pending plan of the human's agent as the owner page shows it and approves that exact plan; the
+  // agent then executes it once. The decision is the human's, and the grant that made it is recorded with it.
+  const queued=await call(mf,decidingToken,"propose_external_action",{credentialRef:"desk",operation:"publish_text",content:"Lunch is served."},created.accountId);
+  const plan=await call(mf,decidingToken,"get_pending_action",{actionId:queued.actionId});
+  assert.equal(plan.content,"Lunch is served.");
+  assert.match(await refused(mf,decidingToken,"approve_action",{actionId:queued.actionId,planDigest:"A".repeat(43)}),/plan-changed/);
+  assert.equal((await mcp(mf,otherToken,"approve_action",{actionId:queued.actionId,planDigest:plan.planDigest})).status,403,"an agent's own grant never approves");
+  assert.deepEqual(await call(mf,decidingToken,"approve_action",{actionId:queued.actionId,planDigest:plan.planDigest}),{actionId:queued.actionId,status:"approved"});
+  assert.deepEqual(await db.prepare("SELECT decision,grant_id FROM owner_grant_decisions WHERE action_id=?").bind(queued.actionId).all().then(r=>r.results),
+    [{decision:"approved",grant_id:live.results[0]!.grant_id}]);
+  assert.equal((await db.prepare("SELECT decided_by FROM external_actions WHERE action_id=?").bind(queued.actionId).first<{decided_by:string}>())!.decided_by,grant.human_id);
+  assert.equal((await call(mf,decidingToken,"execute_external_action",{actionId:queued.actionId},created.accountId)).status,"completed");
+  assert.equal(providerPosts.length,1,"sent once, by the agent's execute");
+  const unshown=await call(mf,decidingToken,"propose_external_action",{credentialRef:"desk",operation:"publish_text",content:"Dinner at six."},created.accountId);
+  const unshownPlan=await call(mf,decidingToken,"get_pending_action",{actionId:unshown.actionId});
   const shown=await (await mf.dispatchFetch(issuer+"/account",{headers:{Cookie:owner.session}})).text();
   assert.ok(shown.includes("<strong>It may approve or reject your agents' pending external actions for you.</strong>"),shown);
   const stop=/name="action" value="([^"]+)"><button type="submit">Stop it approving<\/button>/.exec(shown)?.[1];
@@ -304,6 +325,9 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
   assert.match(stopped.headers.get("location")??"",/result=done/);
   assert.notEqual((await db.prepare("SELECT revoked_at FROM owner_grant_approvals WHERE grant_id=?").bind(live.results[0]!.grant_id).first<{revoked_at:number|null}>())!.revoked_at,null);
   assert.ok(Array.isArray((await call(mf,decidingToken,"list_agents")).items),"stopping it keeps the app's other access");
+  assert.match(await refused(mf,decidingToken,"approve_action",{actionId:unshown.actionId,planDigest:unshownPlan.planDigest}),/decisions-off/,"stopped on /account: the next call is refused");
+  assert.match(await refused(mf,decidingToken,"reject_action",{actionId:unshown.actionId}),/decisions-off/);
+  assert.equal((await db.prepare("SELECT status FROM external_actions WHERE action_id=?").bind(unshown.actionId).first<{status:string}>())!.status,"pending");
   const after=await (await mf.dispatchFetch(issuer+"/account",{headers:{Cookie:owner.session}})).text();
   assert.ok(after.includes("It cannot approve or reject your agents' external actions")&&!after.includes("Stop it approving"),after);
 });

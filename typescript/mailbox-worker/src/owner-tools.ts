@@ -1,7 +1,9 @@
-/** Agent management through an owner grant: list, create and rename the agents a human owns, and register, list and
- * revoke the grant's push webhooks. The human comes from the verified grant, never from tool arguments, and every write
- * re-checks the grant inside its own transaction.
+/** Agent management through an owner grant: list, create and rename the agents a human owns, register, list and
+ * revoke the grant's push webhooks, and, while the owner allows it (A1), approve or reject their agents' pending plans.
+ * The human comes from the verified grant, never from tool arguments, and every write re-checks the grant inside its own
+ * transaction.
  */
+import { appDecideExternalAction, appPendingAction } from './app-decisions.ts';
 import { listWebhooks, registerWebhook, revokeWebhook } from './app-webhooks.ts';
 import { createOwnedAgent, listHumanAgents, renameOwnedAgent } from './humans.ts';
 import { ownerGrantCheck } from './client-grants.ts';
@@ -9,6 +11,7 @@ import { atomic, type Env } from './database.ts';
 import { fail, invalidField, json, problem } from './wire.ts';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const digest = /^[A-Za-z0-9_-]{43}$/;
 const agentView = (accountId: string, displayName: string | null) => ({accountId, displayName});
 
 export async function executeOwnerMcp(env: Env, humanId: string, name: string, args: Record<string, unknown>, grantId: string, sourceIp: string): Promise<Response> {
@@ -72,6 +75,26 @@ export async function executeOwnerMcp(env: Env, humanId: string, name: string, a
             const revoked = await revokeWebhook(env, {grantId, webhookId: args.webhookId}, check);
             if (revoked.ok) return json({webhookId: args.webhookId as string, revoked: true});
             if (revoked.reason === 'not-found') fail(404, 'webhook-not-found');
+            fail(503, 'unavailable');
+        }
+        if (name === 'get_pending_action') {
+            only(['actionId'], ['actionId']);
+            if (typeof args.actionId !== 'string' || !uuid.test(args.actionId)) invalidField('actionId', 'must be a lowercase UUID');
+            const pending = await appPendingAction(env, humanId, args.actionId as string, check);
+            if (!pending) fail(404, 'action-not-found');
+            return json(pending);
+        }
+        if (name === 'approve_action' || name === 'reject_action') {
+            const approve = name === 'approve_action';
+            only(approve ? ['actionId', 'planDigest'] : ['actionId'], approve ? ['actionId', 'planDigest'] : ['actionId']);
+            if (typeof args.actionId !== 'string' || !uuid.test(args.actionId)) invalidField('actionId', 'must be a lowercase UUID');
+            if (approve && (typeof args.planDigest !== 'string' || !digest.test(args.planDigest))) invalidField('planDigest', 'must be the 43-character plan digest');
+            const decided = await appDecideExternalAction(env, {humanId, grantId, actionId: args.actionId as string,
+                planDigest: approve ? args.planDigest as string : null}, check);
+            if (decided.ok) return json({actionId: args.actionId as string, status: approve ? 'approved' : 'rejected'});
+            if (decided.reason === 'decisions-off') fail(403, 'decisions-off');
+            if (decided.reason === 'not-found') fail(404, 'action-not-found');
+            if (decided.reason === 'not-pending' || decided.reason === 'expired' || decided.reason === 'plan-changed' || decided.reason === 'account-changed') fail(409, decided.reason);
             fail(503, 'unavailable');
         }
         fail(404, 'unavailable');
