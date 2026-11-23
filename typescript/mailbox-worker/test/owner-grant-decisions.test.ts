@@ -335,3 +335,30 @@ test('ownerOverview_RecentActions_AppApprovedThenExpiredUnsent_NamesApp_ExpiredU
     assert.equal(byId.get(undecided)?.status, 'expired');
     assert.equal(byId.get(undecided)?.decidedByApp, null, 'expired undecided');
 }));
+
+test('ownerOverview_RecentActions_AppApprovedThenRejected_PagesEachOnceNamingTheApp', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const grantId = await grant(h, humanId);
+    const ids: string[] = [];
+    for (let i = 0; i < 25; i++) {
+        const actionId = await propose(h, agent);
+        // Half carry both decision rows (the app approved, then withdrew it): the list's join must still yield one entry each.
+        if (i % 2 === 0) assert.equal((await tool(h, humanId, grantId, 'approve_action', {actionId, planDigest: await digestOf(h, humanId, actionId)})).status, 200);
+        assert.equal((await tool(h, humanId, grantId, 'reject_action', {actionId})).status, 200);
+        ids.push(actionId);
+    }
+    const page = async (before: string | null) => {
+        const overview = await ownerOverview(environment(h), humanId, null, undefined, undefined, before);
+        if (overview.frozen) throw Error('frozen');
+        return overview;
+    };
+    const first = await page(null);
+    assert.equal(first.recentActions.length, 20);
+    assert.equal(first.moreRecentActions, true);
+    const second = await page(first.recentActions.at(-1)!.actionId);
+    assert.equal(second.recentActions.length, 5);
+    assert.equal(second.moreRecentActions, false);
+    const listed = [...first.recentActions, ...second.recentActions];
+    assert.deepEqual(new Set(listed.map(a => a.actionId)), new Set(ids), 'each listed once across the pages');
+    assert.ok(listed.every(a => a.status === 'rejected' && a.decidedByApp?.grantId === grantId), 'each names the app');
+}));

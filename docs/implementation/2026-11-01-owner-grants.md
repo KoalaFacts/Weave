@@ -466,11 +466,12 @@ reads the A1-2 table, so production needs both A1 opt-ins.
 Verification of the recent-actions list: `test/owner-grant-decisions.test.ts` covers, through `ownerOverview`, an app
 approval that was sent, an app rejection, the owner withdrawing an app's approval and an owner approval (null), the app
 withdrawing the owner's approval (the app), each action listed once, another human's app decision absent from this list
-and named on that human's own, and an app approval that expired unsent (the app) beside a plan expired undecided (null);
+and named on that human's own, an app approval that expired unsent (the app) beside a plan expired undecided (null), and 25
+app-decided actions, half with both an approval and a rejection row, paged once each across two pages;
 auth-worker `test/owner-page.test.ts` checks the entry's wording, escaping of name and client ID, a null or empty name,
 and nothing added for null, absent and malformed values; `test/workerd-owner-app-grant.test.ts` reads `/account` across
 both Workers and finds the app named on the entry of the action the app approved and the agent sent. Mutations caught:
-the decision joined fixed to `approved`, the join not limited to its action, the field always null, the client name
+the decision joined fixed to `approved`, the join not limited to its decision or to its action, the field always null, the client name
 dropped (mailbox); the name unescaped, the client ID unescaped, the client-ID check removed, the entry not showing the
 app (also caught by the workerd test), and an empty name shown as a name (auth-worker). The `decided_at` condition in
 the join is equivalent, as above.
