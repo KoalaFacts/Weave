@@ -17,12 +17,15 @@ export type RegisterResult = {ok: true; webhook: WebhookView; secret: string}
     | {ok: false; reason: 'invalid-url' | 'webhook-limit' | 'unavailable'};
 export type RevokeResult = {ok: true} | {ok: false; reason: 'not-found' | 'unavailable'};
 
-/** The normalized callback, or null: absolute https, no user info, no fragment, at most 2048 characters. */
+/** The normalized callback, or null: absolute https to a DNS name, no user info, no fragment, at most 2048 characters.
+ * IP literals and localhost are refused at registration; the sender still has to check where a name resolves. */
 export function webhookUrl(value: unknown): string | null {
     if (typeof value !== 'string' || value.length > 2048) return null;
     let url: URL;
     try { url = new URL(value); } catch { return null; }
     if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.hash !== '' || value.includes('#')) return null;
+    const host = url.hostname.replace(/\.$/, '');
+    if (host.startsWith('[') || /^[0-9.]+$/.test(host) || host === 'localhost' || host.endsWith('.localhost')) return null;
     return url.href.length <= 2048 ? url.href : null;
 }
 

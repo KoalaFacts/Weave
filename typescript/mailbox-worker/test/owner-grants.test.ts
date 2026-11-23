@@ -259,7 +259,7 @@ test('ownerGrant_RegisterWebhook_InvalidUrlLimitAndNoVaultKeyRefusedNothingWritt
         assert.deepEqual(await recordOwnerGrant(env, { grantId, humanId, clientId }), { ok: true });
         const call = mcp(env, () => ownerClaims(humanId, grantId));
         for (const url of ['http://office.example/hook', 'https://user:pw@office.example/hook', 'https://user@office.example/hook', 'https://:pw@office.example/hook', 'https://office.example/hook#frag', 'https://office.example/hook#',
-            'not a url', '/relative', 'https://office.example/' + 'a'.repeat(2048), 42]) {
+            'not a url', '/relative', 'https://127.0.0.1/hook', 'https://[::1]/hook', 'https://0x7f.1/hook', 'https://localhost/hook', 'https://a.localhost./hook', 'https://2130706433/hook', 'https://office.example/' + 'a'.repeat(2048), 42]) {
             const refused = await resultOf(await call({ name: 'register_webhook', args: { url } }));
             assert.equal(refused.isError, true, String(url));
             assert.equal(refused.structuredContent.field, 'url', String(url));
