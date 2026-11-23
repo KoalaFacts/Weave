@@ -320,6 +320,9 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
   const unshownPlan=await call(mf,decidingToken,"get_pending_action",{actionId:unshown.actionId});
   const shown=await (await mf.dispatchFetch(issuer+"/account",{headers:{Cookie:owner.session}})).text();
   assert.ok(shown.includes("<strong>It may approve or reject your agents' pending external actions for you.</strong>"),shown);
+  // The same decision in /account's recent actions, read across both Workers: that action's entry names the app.
+  const entry=shown.split("<li>").find(item=>item.includes('href="/account/actions/'+queued.actionId+'"'));
+  assert.ok(entry?.includes(": sent; decided by an app you let decide: ")&&entry.includes(", client ID <code>"),entry);
   const stop=/name="action" value="([^"]+)"><button type="submit">Stop it approving<\/button>/.exec(shown)?.[1];
   assert.ok(stop,"the account page offers to stop it");
   const stopped=await mf.dispatchFetch(issuer+"/account",{method:"POST",redirect:"manual",headers:{"Content-Type":"application/x-www-form-urlencoded",

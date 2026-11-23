@@ -275,3 +275,90 @@ test('ownerPendingAction_OwnerDecidedOrExpiredUndecided_NoApp_AppApprovedThenExp
     assert.ok(!view.frozen && view.settled?.status === 'expired');
     assert.equal(view.settled.decidedByApp?.grantId, grantId, 'an app approval that expired unsent still names the app');
 }));
+
+const recentApps = async (h: Harness, humanId: string) => {
+    const overview = await ownerOverview(environment(h), humanId) as {recentActions: {actionId: string; status: string; decidedByApp: unknown}[]};
+    return new Map(overview.recentActions.map(a => [a.actionId, a.decidedByApp]));
+};
+
+test('ownerOverview_RecentActions_NameTheAppThatDecided_OwnerDecisionsAndOtherHumansNone', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const grantId = await grant(h, humanId);
+    await h.db.prepare("UPDATE owner_grants SET client_name='Office Desk' WHERE grant_id=?").bind(grantId).run();
+    const app = {grantId, clientId: 'https://office.example/client', clientName: 'Office Desk'};
+
+    const appApprovedSent = await propose(h, agent);
+    assert.equal((await tool(h, humanId, grantId, 'approve_action', {actionId: appApprovedSent, planDigest: await digestOf(h, humanId, appApprovedSent)})).status, 200);
+    assert.equal((await execute(h, agent, appApprovedSent)).status, 'completed');
+    const appRejected = await propose(h, agent);
+    assert.equal((await tool(h, humanId, grantId, 'reject_action', {actionId: appRejected})).status, 200);
+    // The app approved, the owner withdrew it on Weave's own page: the rejection the status rests on is the owner's.
+    const ownerWithdrew = await propose(h, agent);
+    assert.equal((await tool(h, humanId, grantId, 'approve_action', {actionId: ownerWithdrew, planDigest: await digestOf(h, humanId, ownerWithdrew)})).status, 200);
+    assert.deepEqual(await ownerAction(environment(h), {kind: 'reject-action', requestId: ownerWithdrew, humanId, authAt: Date.now()} as OwnerAction), {ok: true});
+    // The owner approved on Weave's page, the app withdrew it: the app's rejection.
+    const appWithdrew = await propose(h, agent);
+    assert.deepEqual(await ownerAction(environment(h), {kind: 'confirm-action', requestId: appWithdrew, planDigest: await digestOf(h, humanId, appWithdrew),
+        humanId, authAt: Date.now()} as OwnerAction), {ok: true});
+    const ownerApproved = await propose(h, agent);
+    assert.deepEqual(await ownerAction(environment(h), {kind: 'confirm-action', requestId: ownerApproved, planDigest: await digestOf(h, humanId, ownerApproved),
+        humanId, authAt: Date.now()} as OwnerAction), {ok: true});
+    assert.equal((await tool(h, humanId, grantId, 'reject_action', {actionId: appWithdrew})).status, 200);
+
+    const listed = await recentApps(h, humanId);
+    assert.deepEqual(listed.get(appApprovedSent), app, 'approved by the app and sent');
+    assert.deepEqual(listed.get(appRejected), app, 'rejected by the app');
+    assert.equal(listed.get(ownerWithdrew), null, 'withdrawn on the owner page');
+    assert.deepEqual(listed.get(appWithdrew), app, 'withdrawn by the app');
+    assert.equal(listed.get(ownerApproved), null, 'approved on the owner page');
+    assert.equal(listed.size, 5, 'each action listed once');
+
+    // Another human's app decisions never show on this human's list, and that human sees their own.
+    const other = await ownedAgent(h);
+    const otherGrant = await grant(h, other.humanId);
+    const theirs = await propose(h, other.agent);
+    assert.equal((await tool(h, other.humanId, otherGrant, 'reject_action', {actionId: theirs})).status, 200);
+    assert.equal((await recentApps(h, humanId)).has(theirs), false);
+    assert.equal(((await recentApps(h, other.humanId)).get(theirs) as {grantId: string}).grantId, otherGrant);
+}));
+
+test('ownerOverview_RecentActions_AppApprovedThenExpiredUnsent_NamesApp_ExpiredUndecidedNone', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const grantId = await grant(h, humanId);
+    const approved = await propose(h, agent), undecided = await propose(h, agent);
+    assert.equal((await tool(h, humanId, grantId, 'approve_action', {actionId: approved, planDigest: await digestOf(h, humanId, approved)})).status, 200);
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id IN (?,?)').bind(ticks(), approved, undecided).run();
+    const overview = await ownerOverview(environment(h), humanId) as {recentActions: {actionId: string; status: string; decidedByApp: {grantId: string} | null}[]};
+    const byId = new Map(overview.recentActions.map(a => [a.actionId, a]));
+    assert.equal(byId.get(approved)?.status, 'expired');
+    assert.equal(byId.get(approved)?.decidedByApp?.grantId, grantId, 'an app approval that expired unsent');
+    assert.equal(byId.get(undecided)?.status, 'expired');
+    assert.equal(byId.get(undecided)?.decidedByApp, null, 'expired undecided');
+}));
+
+test('ownerOverview_RecentActions_AppApprovedThenRejected_PagesEachOnceNamingTheApp', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const grantId = await grant(h, humanId);
+    const ids: string[] = [];
+    for (let i = 0; i < 25; i++) {
+        const actionId = await propose(h, agent);
+        // Half carry both decision rows (the app approved, then withdrew it): the list's join must still yield one entry each.
+        if (i % 2 === 0) assert.equal((await tool(h, humanId, grantId, 'approve_action', {actionId, planDigest: await digestOf(h, humanId, actionId)})).status, 200);
+        assert.equal((await tool(h, humanId, grantId, 'reject_action', {actionId})).status, 200);
+        ids.push(actionId);
+    }
+    const page = async (before: string | null) => {
+        const overview = await ownerOverview(environment(h), humanId, null, undefined, undefined, before);
+        if (overview.frozen) throw Error('frozen');
+        return overview;
+    };
+    const first = await page(null);
+    assert.equal(first.recentActions.length, 20);
+    assert.equal(first.moreRecentActions, true);
+    const second = await page(first.recentActions.at(-1)!.actionId);
+    assert.equal(second.recentActions.length, 5);
+    assert.equal(second.moreRecentActions, false);
+    const listed = [...first.recentActions, ...second.recentActions];
+    assert.deepEqual(new Set(listed.map(a => a.actionId)), new Set(ids), 'each listed once across the pages');
+    assert.ok(listed.every(a => a.status === 'rejected' && a.decidedByApp?.grantId === grantId), 'each names the app');
+}));

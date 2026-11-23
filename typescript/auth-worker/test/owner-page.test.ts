@@ -405,7 +405,7 @@ test("ownerPage_RecentActions_EachOutcomeLinkedAndEscaped",async()=>{
   const agentId=randomUUID();
   const statuses=["approved","rejected","expired","dispatching","completed","failed","unknown"] as const;
   const recentActions=statuses.map((status,i)=>({actionId:randomUUID(),agentId,agentDisplayName:i===0?"<b>Desk</b>":null,provider:"post<iz>",operation:"publish_post",
-    status,failure:status==="failed"?"provider-refused<script>":null,changedAt:iso(now-i*1000)}));
+    status,failure:status==="failed"?"provider-refused<script>":null,changedAt:iso(now-i*1000),decidedByApp:null}));
   const html=await ownerPage(base({recentActions}),human,new Map(),null,now).text();
   assert.match(html,/<h2>Recent actions<\/h2>/);
   for(const action of recentActions)assert.ok(html.includes('<a href="/account/actions/'+action.actionId+'">'),action.status);
@@ -425,6 +425,23 @@ test("ownerPage_RecentActions_EachOutcomeLinkedAndEscaped",async()=>{
   assert.ok(!quiet.includes("leftover"));
 });
 
+// A recent action an app decided names that app, as the action's own page does; the owner's own decisions, a mailbox that predates
+// the field and malformed values name none.
+test("ownerPage_RecentActions_AppDecided_NamesTheAppEscaped_OthersNone",async()=>{
+  const agentId=randomUUID(),app={grantId:randomUUID(),clientId:"https://office.example/<client>",clientName:"<i>Office</i>"};
+  const action=(decidedByApp:unknown)=>({actionId:randomUUID(),agentId,agentDisplayName:null,provider:"x",operation:"publish_post",status:"rejected" as const,
+    failure:null,changedAt:iso(now),decidedByApp:decidedByApp as never});
+  const list=async(...actions:ReturnType<typeof action>[])=>ownerPage(base({recentActions:actions}),human,new Map(),null,now).text();
+  const named=await list(action(app));
+  assert.ok(named.includes(": rejected; nothing will be sent; decided by an app you let decide: &#60;i&#62;Office&#60;/i&#62; (self-reported, not verified), client ID <code>https://office.example/&#60;client&#62;</code>; "),named);
+  assert.ok(!named.includes("<i>Office</i>")&&!named.includes("<client>"),"escaped");
+  for(const clientName of [null,""])assert.ok((await list(action({...app,clientName}))).includes("decided by an app you let decide: Unnamed client, client ID"),"unnamed: "+clientName);
+  for(const none of [null,undefined,{...app,clientId:""},{...app,clientId:7}]){
+    const body=await list(action(none));
+    assert.ok(body.includes(": rejected; nothing will be sent; ")&&!body.includes("decided by an app"),String(none)+": "+body);
+  }
+});
+
 test("ownerPage_RecentActions_NoneOrUnlistedStatus_NeverGuessed",async()=>{
   const none=await ownerPage(base(),human,new Map(),null,now).text();
   assert.match(none,/None of your agents' actions was decided, sent or expired in the last 7 days\./);
@@ -432,7 +449,7 @@ test("ownerPage_RecentActions_NoneOrUnlistedStatus_NeverGuessed",async()=>{
   const older={...base()} as Record<string,unknown>;delete older.recentActions;
   assert.match(await ownerPage(older as OwnerOverview,human,new Map(),null,now).text(),/None of your agents' actions was decided/);
   const odd=await ownerPage(base({recentActions:[{actionId:randomUUID(),agentId:randomUUID(),agentDisplayName:null,provider:"x",operation:"publish_post",
-    status:"pending" as never,failure:"leftover",changedAt:iso(now)}]}),human,new Map(),null,now).text();
+    status:"pending" as never,failure:"leftover",changedAt:iso(now),decidedByApp:null}]}),human,new Map(),null,now).text();
   assert.match(odd,/: status not shown here; /);
   assert.ok(!odd.includes("leftover"));
 });
@@ -441,7 +458,7 @@ test("ownerPage_RecentActions_NoneOrUnlistedStatus_NeverGuessed",async()=>{
 // the last listed. Otherwise, or from a mailbox that predates the flags, it adds neither.
 test("ownerPage_ListsLeftSomeOut_SaysHowManyWaitingAreShownAndLinksToOlderRecent",async()=>{
   const agentId=randomUUID();
-  const recentActions=[0,1].map(i=>({actionId:randomUUID(),agentId,agentDisplayName:null,provider:"x",operation:"publish_post",status:"rejected" as const,failure:null,changedAt:iso(now-i)}));
+  const recentActions=[0,1].map(i=>({actionId:randomUUID(),agentId,agentDisplayName:null,provider:"x",operation:"publish_post",status:"rejected" as const,failure:null,changedAt:iso(now-i),decidedByApp:null}));
   const olderLink='<p><a href="/account?recent='+recentActions[1]!.actionId+'">Older actions</a></p>';
   const both=await ownerPage(base({recentActions,moreExternalActions:true,moreRecentActions:true}),human,new Map(),null,now).text();
   assert.match(both,/<p>Only the 0 oldest actions waiting for approval are shown\. Approve or reject some to see the rest here; each one's own page, where the app that proposed it links you, also works\.<\/p>/);
@@ -463,7 +480,7 @@ test("ownerPage_ListsLeftSomeOut_SaysHowManyWaitingAreShownAndLinksToOlderRecent
 // no older ones instead of claiming none happened in the last 7 days.
 test("ownerPage_LaterRecentPage_LinksToNewestAndSaysWhenNoneAreOlder",async()=>{
   const agentId=randomUUID(),cursor=randomUUID();
-  const recentActions=[0,1].map(i=>({actionId:randomUUID(),agentId,agentDisplayName:null,provider:"x",operation:"publish_post",status:"rejected" as const,failure:null,changedAt:iso(now-i)}));
+  const recentActions=[0,1].map(i=>({actionId:randomUUID(),agentId,agentDisplayName:null,provider:"x",operation:"publish_post",status:"rejected" as const,failure:null,changedAt:iso(now-i),decidedByApp:null}));
   const middle=await ownerPage(base({recentActions,moreRecentActions:true}),human,new Map(),null,now,null,cursor).text();
   assert.ok(middle.includes('<p><a href="/account">Newest actions</a> · <a href="/account?recent='+recentActions[1]!.actionId+'">Older actions</a></p>'),middle);
   const last=await ownerPage(base({recentActions}),human,new Map(),null,now,null,cursor).text();
