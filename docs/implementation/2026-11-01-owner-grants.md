@@ -367,3 +367,34 @@ link, the empty sentence, and the older-mailbox case. `test/workerd-owner-app-gr
 lists the live callback registered through `register_webhook` and not the revoked one. Mutations caught: the revoked
 condition dropped, callbacks not filtered by grant, the URL unescaped, the list not rendered, and the missing member not
 tolerated. Not run against a deployment.
+
+## Apps that decide for the owner (2026-11-23)
+
+A1, approved by the owner on 2026-11-23: an owner may let the app holding one owner grant approve or reject that
+owner's agents' pending plans. It is off by default, chosen per OAuth client on Weave's own consent page and revocable
+on `/account`; the constraints are in [advance-weave](../../.claude/skills/advance-weave/SKILL.md#project-rules).
+Step 1 of A1-1 adds the table and its release gate; nothing reads or writes the table yet, so no app can decide.
+
+- **Table.** `owner_grant_approvals`: one row per owner grant whose owner chose to let the app decide. `grant_id` is
+  the primary key and references `owner_grants` (`ON DELETE restrict`); `human_id` (required, references `humans`,
+  `ON DELETE restrict`) repeats the grant's human so a decision can check both in one lookup; `created_at`;
+  `revoked_at`, never before `created_at`. Index on `human_id` for `/account`. A grant without a row can never decide,
+  so the permission is off by default; a row has no default, so it exists only when the owner chose it. Rows are never
+  deleted: `revoked_at` records the end, so every decision keeps the permission that allowed it.
+- **Release gate.** `scripts/approved-owner-grant-approvals.ts` is the fifth instance of
+  `scripts/approved-schema-change.ts`, with its own default-off `apply_owner_grant_approvals_schema` input on the
+  manual production dispatch, its own gates before release work and inside protected production, and its own deploy
+  variable (`WEAVE_APPROVED_OWNER_GRANT_APPROVALS_SCHEMA`). An owner comment or a repository-scope release can never
+  opt in.
+- **Owner deploy.** Until production has `owner_grant_approvals`, every completed-only release must be a manual
+  production dispatch with `apply_owner_grant_approvals_schema: true` (with `apply_owner_grants_schema: true` while
+  `owner_grants` is also missing); otherwise it stops before any change.
+
+Verification: `test/approved-owner-grant-approvals.test.ts` pins the statements to the generator and refuses a default
+on `created_at`, a revocation check against a constant, a missing `human_id`, a unique index, a cascading key on either
+reference and the index before the table, and covers the plan combined with `owner_grants`; `test/deploy.test.ts` runs
+opted-in completed-only releases on a real Miniflare D1 (the table alone, with the owner grant and webhook tables in one
+batch, refusals with either opt-in missing, an unapproved index, ambiguous values, maintain mode and the OAuth
+bootstrap); `test/deploy-entry.test.ts` checks the workflow input and gates. Mutations caught: the deploy ignoring the
+opt-in, the live-schema read missing from the completed-only allow list, the input defaulting to true, an owner comment
+able to opt in, and the revocation check dropped. Not run against a deployment.

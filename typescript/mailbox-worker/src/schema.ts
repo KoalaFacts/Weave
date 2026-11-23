@@ -274,6 +274,20 @@ export const ownerGrants = sqliteTable("owner_grants", {
     check("owner_grants_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
 ]);
 
+// The owner's choice, made on Weave's own consent page, that the app holding one owner grant may approve or reject the
+// pending plans of that human's agents (A1, owner-approved 2026-11-23). Off by default: a grant without a row here can
+// never decide. human_id repeats the grant's human so a decision can check both in one lookup. Rows are never deleted:
+// revoked_at records the end, so every decision keeps the permission that allowed it.
+export const ownerGrantApprovals = sqliteTable("owner_grant_approvals", {
+    grant_id: text("grant_id").notNull().primaryKey().references(() => ownerGrants.grant_id, {onDelete:"restrict"}),
+    human_id: text("human_id").notNull().references(() => humans.human_id, {onDelete:"restrict"}),
+    created_at: exactInteger("created_at").notNull(),
+    revoked_at: exactInteger("revoked_at"),
+}, t => [
+    index("owner_grant_approvals_human").on(t.human_id),
+    check("owner_grant_approvals_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
+]);
+
 // An https callback that the app holding one owner grant registers for status changes of the external actions of the
 // agents that grant may act for (push webhook W1, owner-approved 2026-11-23). secret_sealed is the per-webhook HMAC
 // secret, sealed at rest and shown to the app once. Rows are never deleted: revoked_at records the end, so every
