@@ -4,9 +4,10 @@ import { ledgerSql, ledgerTableSql, verifyCompletedMigration } from './completed
 import { approvedPlan, liveSchemaSql, type ApprovedSchemaChange } from './approved-schema-change.ts';
 import { externalActionKeysChange } from './approved-external-action-keys.ts';
 import { ownerGrantsChange } from './approved-owner-grants.ts';
+import { appWebhooksChange } from './approved-app-webhooks.ts';
 
 const migrationGateSql="SELECT 1 found FROM sqlite_master WHERE type='trigger' AND name='data_migration_write_gate'";
-const metadataSql=new Set([ledgerTableSql,ledgerSql,migrationGateSql,...[externalActionKeysChange,ownerGrantsChange].map(change=>change.liveTriggerSql),
+const metadataSql=new Set([ledgerTableSql,ledgerSql,migrationGateSql,...[externalActionKeysChange,ownerGrantsChange,appWebhooksChange].map(change=>change.liveTriggerSql),
     "SELECT name FROM sqlite_master WHERE type='table'",liveSchemaSql]);
 
 // Do not pass the underlying database or statements to schema inspection. Even
