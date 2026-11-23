@@ -200,8 +200,9 @@ test('the owner_grant_decisions schema opt-in is a default-off manual input gate
     const production=workflow.split(/^  deploy-production:/m)[1];
     const gate=/WEAVE_RELEASE_OWNER_GRANT_DECISIONS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_owner_grant_decisions_schema \|\| 'false' \}\}/;
     assert.match(verify,gate);assert.match(production,gate);
-    assert.ok(verify.indexOf('scripts/approved-owner-grant-approvals.ts')<verify.indexOf('require-ci-success.ts'),'gated before other release work');
-    assert.ok(production.indexOf('node scripts/approved-owner-grant-approvals.ts')<production.indexOf('node scripts/deploy.ts'),'revalidated inside production before the deploy');
+    const gated=verify.indexOf('run: node typescript/mailbox-worker/scripts/approved-owner-grant-decisions.ts'),revalidated=production.indexOf('run: node scripts/approved-owner-grant-decisions.ts');
+    assert.ok(gated>=0&&gated<verify.indexOf('require-ci-success.ts'),'gated before other release work');
+    assert.ok(revalidated>=0&&revalidated<production.indexOf('node scripts/deploy.ts'),'revalidated inside production before the deploy');
     assert.match(production,/WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_owner_grant_decisions_schema == true && 'true' \|\| 'false' \}\}/,
         'an owner comment can never opt in');
     assert.doesNotMatch(repository,/OWNER_GRANT_DECISIONS/,'repository-scope and publish/demo releases never opt in');
