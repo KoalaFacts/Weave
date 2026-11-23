@@ -260,7 +260,7 @@ test('ownerPendingAction_AppDecided_NamesTheGrantThatMadeTheDecisionTheStatusRes
     assert.deepEqual(await decidedBy(h, humanId, appWithdrew), app, 'then withdrawn by the app');
 }));
 
-test('ownerPendingAction_OwnerDecidedOrExpiredUndecided_NoAppAppApprovedThenExpired_TheApp', () => scenario(async ({h}) => {
+test('ownerPendingAction_OwnerDecidedOrExpiredUndecided_NoApp_AppApprovedThenExpired_NamesApp', () => scenario(async ({h}) => {
     const {agent, humanId} = await ownedAgent(h);
     const grantId = await grant(h, humanId);
     const ownerRejected = await propose(h, agent);

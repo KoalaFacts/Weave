@@ -335,10 +335,6 @@ function settledPlan(about:SettledPlanView|null|undefined):string{
 const publishedLink=(url:string|null|undefined)=>typeof url==="string"&&url.startsWith("https://")&&URL.canParse(url)?url:null;
 
 /**
- * What the page adds for the owner's sent action: the platform's reference, and for an effect the platform finishes later (a
- * scheduled post) whether it was published, with a link to it, or what the platform reported. All of it is read from the mailbox.
- */
-/**
  * Which app decided, when the owner let one approve or reject for them; a mailbox that predates it, or a malformed value, adds nothing.
  * The name and client ID are the client's own report: escaped text, never a link.
  */
@@ -346,9 +342,13 @@ function decidingApp(app:DecidingAppView|null|undefined):string{
   if(!app||typeof app.clientId!=="string"||!app.clientId)return "";
   const name=typeof app.clientName==="string"&&app.clientName?esc(app.clientName)+unverified:"Unnamed client";
   return "<p>An app made this decision for you: "+name+"; client ID <code>"+esc(app.clientId)+
-    "</code>. You let it approve or reject your agents' actions when you connected it; you can stop that on your account page.</p>";
+    "</code>. You let it approve or reject your agents' actions when you connected it; your account page shows whether it still may.</p>";
 }
 
+/**
+ * What the page adds for the owner's sent action: the platform's reference, and for an effect the platform finishes later (a
+ * scheduled post) whether it was published, with a link to it, or what the platform reported. All of it is read from the mailbox.
+ */
 function sentDetails(settled:SettledActionView):string{
   const parts:string[]=[];
   if(typeof settled.receipt==="string"&&settled.receipt)parts.push("<p>The platform's reference for it: <code>"+esc(settled.receipt)+"</code></p>");
