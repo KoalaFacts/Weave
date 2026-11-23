@@ -380,6 +380,26 @@ test("actionPage_SettledApprovedWithSendBy_SaysWhenItExpires",async()=>{
   }
 });
 
+// An action an app decided for the owner names that app, escaped as the client's own report; the owner's own decision names none.
+test("actionPage_SettledDecidedByApp_NamesTheAppEscaped",async()=>{
+  const actionId=randomUUID(),app={grantId:randomUUID(),clientId:"https://office.example/<client>",clientName:"Office <b>Desk</b>"};
+  const page=async(settled:SettledActionView)=>html(actionPage({frozen:false,action:null,settled},human,actionId,new Map(),now));
+  const approved=await page({status:"approved",failure:null,decidedByApp:app});
+  assert.ok(approved.includes("An app you let decide for you approved this action.")&&!approved.includes("You approved this action."),approved);
+  assert.ok(approved.includes("An app made this decision for you: Office &#60;b&#62;Desk&#60;/b&#62; (self-reported, not verified); client ID <code>https://office.example/&#60;client&#62;</code>."),approved);
+  assert.ok(!approved.includes("<b>Desk</b>")&&!approved.includes("<client>"),"escaped: "+approved);
+  for(const status of ["rejected","expired","dispatching","completed","failed","unknown"]){
+    const body=await page({status,failure:null,decidedByApp:app});
+    assert.ok(body.includes("An app made this decision for you: Office")&&!body.includes("An app you let decide for you approved"),status+": "+body);
+  }
+  assert.ok((await page({status:"rejected",failure:null,decidedByApp:{...app,clientName:null}})).includes("An app made this decision for you: Unnamed client;"),"unnamed");
+  // The owner decided on this page, a mailbox that predates it, or a malformed value: no app named, the owner's wording kept.
+  for(const decidedByApp of [null,undefined,{...app,clientId:""},{...app,clientId:42 as unknown as string}]){
+    const body=await page({status:"approved",failure:null,decidedByApp});
+    assert.ok(body.includes("You approved this action.")&&!body.includes("An app"),String(decidedByApp)+": "+body);
+  }
+});
+
 // The owner page lists what became of the owner's recent actions, each linking to its own page, with every stored value escaped.
 test("ownerPage_RecentActions_EachOutcomeLinkedAndEscaped",async()=>{
   const agentId=randomUUID();
