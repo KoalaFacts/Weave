@@ -21,6 +21,7 @@ import { recoverAgentKey } from './recovery-codes.ts';
 import { beforeParameter, executeExternalAction, getExternalAction, keyCaller, listPastExternalActions, listWaitingExternalActions, ownerActionMedia, ownerPendingAction, proposalKey, proposeExternalAction, waitingParameter, type OwnerActionPageView, type OwnerExternalAction } from './external-actions.ts';
 import { sweepPublications } from './external-publications.ts';
 import { getMedia, importMedia, receiveSignedUpload, sweepMedia, serveSignedMedia, uploadMedia } from './external-media.ts';
+import { sweepWebhooks } from './webhook-sender.ts';
 import { connectAccount, connectExternalCredential, listAgentCredentials, type ConnectAccountInput, type ConnectAccountResult, type ConnectCredentialInput, type ConnectCredentialResult } from './external-credentials.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
 import { recordGrant, recordOwnerGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RecordOwnerGrantInput, type RecordOwnerGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
@@ -61,6 +62,9 @@ export default {
         // Reads only: asks providers how tracked posts turned out.
         await sweepPublications({...env,db:budgetDatabase(env.db)});
         await sweepMedia({...env,db:budgetDatabase(env.db)});
+        // Sends queued app webhook deliveries; never changes an external action.
+        // Budgets each of its two phases itself.
+        await sweepWebhooks(env);
     },
     async fetch(request: Request, env: Env, context: Context): Promise<Response> {
         env = {...env,db:budgetDatabase(env.db)};

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {createHash,randomBytes,randomUUID} from "node:crypto";
+import {createHash,createHmac,randomBytes,randomUUID} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
@@ -13,7 +13,8 @@ const issuer="https://auth.weave.example";
 const resource="https://demo.weave-389.workers.dev/mcp";
 const redirectUri="http://127.0.0.1:53621/callback";
 const agentScope="weave:addresses.read weave:addresses.write weave:contacts.read weave:contacts.write weave:messages.read weave:messages.send weave:messages.ack";
-const ownerScope="weave:agents.manage "+agentScope;
+// The owner app also proposes external actions as its agents, so the push webhook path can be driven end to end.
+const ownerScope="weave:agents.manage weave:actions.read weave:actions.write "+agentScope;
 const githubClientSecret=randomBytes(20).toString("hex");
 const sessionKey=randomBytes(32).toString("base64url");
 const bundled=readFileSync(resolve("dist/index.js"),"utf8");
@@ -42,6 +43,16 @@ async function fakeGithub(request:Request):Promise<Response>{
   return new Response("Outbound denied",{status:403});
 }
 
+// The owner app's fake webhook receiver (push webhook W3); the mailbox reaches nothing else.
+const webhookPosts:{url:string;headers:Headers;body:string}[]=[];
+async function mailboxOutbound(request:Request):Promise<Response>{
+  if(request.method==="POST"&&request.url.startsWith("https://office.example/")){
+    webhookPosts.push({url:request.url,headers:request.headers,body:await request.text()});
+    return new Response(null,{status:204});
+  }
+  return new Response("Outbound denied",{status:403});
+}
+
 function options(storage:string){
   const common={compatibilityDate:"2026-10-13",compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"]};
   return {
@@ -64,6 +75,7 @@ function options(storage:string){
         exports:{ConsentNonce:{type:"durable-object",storage:"sqlite"}}
       }
     },{
+      dev:{outboundService:{type:"fetcher",handler:mailboxOutbound}},
       config:{
         name:mailboxName,...common,
         manifest:{mainModule:"mailbox.js",modules:{"mailbox.js":{type:"esm",contents:mailboxBundle}}},
@@ -78,7 +90,9 @@ function options(storage:string){
           REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"1000"},
           CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
           CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
-          EXTERNAL_CREDENTIAL_KEY:{type:"text",value:randomBytes(32).toString("base64url")}
+          EXTERNAL_CREDENTIAL_KEY:{type:"text",value:randomBytes(32).toString("base64url")},
+          // Registers the test-only provider so a plan can be proposed; nothing is ever executed here.
+          EXTERNAL_ACTION_TEST_ENDPOINT:{type:"text",value:"https://provider.test/post"}
         }
       }
     },{
@@ -213,6 +227,26 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
   assert.deepEqual(await call(mf,token,"revoke_webhook",{webhookId:hook.webhookId}),{webhookId:hook.webhookId,revoked:true});
   assert.deepEqual((await call(mf,token,"list_webhooks")).items,[]);
   const second=await call(mf,token,"register_webhook",{url:"https://office.example/second"});
+
+  // A status change of an agent's action reaches the live webhook, signed with the secret register_webhook returned,
+  // and only the live one: the scheduled sender runs on the mailbox worker.
+  const at=(BigInt(Date.now())*10000n).toString();
+  await db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
+    VALUES(?,'desk','test-http','rev-1','urn:test:desk','Desk',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(created.accountId,at,at).run();
+  const proposed=await call(mf,token,"propose_external_action",{credentialRef:"desk",operation:"publish_text",content:"Doors open at nine."},created.accountId);
+  const sweep=await (await mf.getWorker(mailboxName)).scheduled({cron:"*/5 * * * *",scheduledTime:new Date()});
+  assert.equal(sweep.outcome,"ok");
+  assert.equal(webhookPosts.length,1,"one delivery, to the live webhook only");
+  const [post]=webhookPosts;
+  assert.equal(post.url,"https://office.example/second");
+  const eventId=`${second.webhookId}:${proposed.actionId}:pending`;
+  assert.equal(post.headers.get("weave-event-id"),eventId);
+  const body=JSON.parse(post.body);
+  assert.deepEqual([body.eventId,body.type,body.webhookId,body.actionId,body.status],[eventId,"external_action.status",second.webhookId,proposed.actionId,"pending"]);
+  assert.equal(post.body.includes("Doors open"),false,"never the content");
+  const signed=/^t=(\d+),v1=([0-9a-f]{64})$/.exec(post.headers.get("weave-signature")??"");
+  assert.ok(signed);
+  assert.equal(signed[2],createHmac("sha256",second.secret).update(`${signed[1]}.${post.body}`).digest("hex"));
 
   // An agent the owner gets later is covered without a new consent.
   const later=await call(mf,token,"create_agent",{displayName:"Back office"});
