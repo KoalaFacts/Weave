@@ -295,7 +295,9 @@ sweeps):
 - **Claim before send.** One transaction reads up to 15 due rows (`next_attempt_at` reached) and, for each, counts the
   attempt and schedules its retry before anything is sent: a run that dies mid-send still retries, and the optimistic
   mailbox revision means two runs never claim the same attempt. A second transaction marks the accepted ones
-  (`delivered_at`, `next_attempt_at = NULL`). A run fits the sweep's 48-statement budget (39 at most).
+  (`delivered_at`, `next_attempt_at = NULL`). Each phase has its own 48-statement budget (20 and 19 statements per try);
+  one retried twice after concurrent writes is refused: a refused claim sends nothing, refused marking leaves the sent
+  deliveries due, so they are sent again.
 - **Who still gets it.** The claim re-checks that the webhook and its grant are unrevoked, the human not frozen and the
   action's agent still owned by the grant's human. Otherwise the delivery is finished unsent (`next_attempt_at = NULL`,
   no attempt counted), so a revocation stops queued deliveries too.
@@ -303,10 +305,11 @@ sweeps):
   `Weave-Event-Id`, `Weave-Webhook-Id` and `Weave-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">` under
   the webhook's secret (opened from its sealed copy, bound to the webhook and grant IDs). The body is exactly
   `{eventId, type: "external_action.status", webhookId, actionId, status, occurredAt}`, never content, credentials or
-  tokens. `redirect: 'manual'`, a 5-second timeout, and only a `2xx` counts; a redirect, other status, timeout or network
+  tokens. At most 6 requests are in flight at once (a Worker's connection limit; each timeout starts only when its request
+  does). `redirect: 'manual'`, a 5-second timeout, and only a `2xx` counts; a redirect, other status, timeout or network
   error is a failed attempt. The response body is discarded unread.
-- **Retries.** At most 10 attempts; the retry delay starts at one minute and doubles up to six hours (about 8.5 hours in
-  all; the cron's five-minute period rounds the first ones up). After the tenth failure the delivery is given up
+- **Retries.** At most 10 attempts; the retry delay starts at one minute and doubles, the last one 256 minutes (about 8.5
+  hours in all; the cron's five-minute period rounds the first ones up). After the tenth failure the delivery is given up
   (`next_attempt_at = NULL`, `delivered_at` stays `NULL`). Order between one action's events is not guaranteed; the
   receiver deduplicates on `eventId` and orders by `occurredAt`.
 - **Never the action.** The sender reads the action only to check ownership and writes nothing but delivery rows, so a
@@ -319,11 +322,11 @@ and a fake receiver on the outbound service) covers the signed body checked agai
 per event, a later change with its own event ID, a `503` retried a minute later with the same event ID and the action
 unchanged, a redirect not followed, the give-up after the tenth attempt, a receiver that never answers abandoned at the
 timeout, a revoked webhook, a revoked grant, a frozen human and an agent now owned by someone else finished unsent, 16 due
-deliveries sent as 15 then 1 within the budget, and nothing sent without the key. `test/workerd-owner-app-grant.test.ts`
+deliveries sent as 15 then 1 within the budget, never more than 6 requests in flight, and nothing sent without the key. `test/workerd-owner-app-grant.test.ts`
 (auth-worker, two workers) proposes as an owned agent through the owner app's grant and checks that the mailbox cron
 delivers the event only to the live webhook, signed with the secret `register_webhook` returned. Mutations caught:
 `redirect: 'manual'` removed, the timeout removed, the whole liveness check, the frozen-human and ownership checks each
-dropped, any status counted as accepted, the give-up bound removed, the retry scheduled immediately, 16 per run, the
+dropped, any status counted as accepted, the give-up bound removed, the retry scheduled immediately, 16 per run, 15 requests in flight, the
 signature over the body alone and under the wrong key, and (workerd) the sender left out of the cron. The revoked-webhook
 mutation is not caught by the workerd test, because W2 queues nothing for a revoked webhook; the mailbox test catches it.
 The sender does not resolve the callback's name itself: it relies on registration refusing IP literals and `localhost`

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
 import { sealWebhookSecret } from '../src/credential-vault.ts';
-import { firstRetryMs, maxWebhookAttempts } from '../src/webhook-sender.ts';
+import { concurrentWebhooks, firstRetryMs, maxWebhookAttempts } from '../src/webhook-sender.ts';
 import type { Env } from '../src/database.ts';
 
 // Push webhook W3: the scheduled sender POSTs each queued delivery, signed, at least once with bounded retries, never
@@ -258,3 +258,23 @@ test('sweepWebhooks_NoCredentialKey_SendsNothing', () => scenario(async ({h, rec
     assert.equal(row.attempts, 0);
     assert.notEqual(row.next_attempt_at, null, 'still due once the key is configured');
 }, {}));
+
+test('sweepWebhooks_MoreDueThanConnections_NeverMoreThanSixInFlight', () => scenario(async ({h, receiver}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const grantId = await grant(h, humanId);
+    for (let i = 0; i < concurrentWebhooks + 3; i++) await webhook(h, grantId);
+    await propose(h, agent);
+    let inFlight = 0, most = 0;
+    receiver.respond = async () => {
+        most = Math.max(most, ++inFlight);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        inFlight--;
+        return new Response('ok');
+    };
+
+    await sweep(h);
+
+    assert.equal(concurrentWebhooks, 6);
+    assert.equal(most, concurrentWebhooks, 'requests wait for a free connection before their timeout starts');
+    assert.equal((await deliveries(h)).filter(d => d.delivered_at !== null).length, concurrentWebhooks + 3);
+}));

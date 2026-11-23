@@ -2,23 +2,29 @@
  * Push webhook W3: the scheduled sender of queued `app_webhook_deliveries`. Each run claims the due deliveries in one
  * transaction (counting the attempt and scheduling its retry before anything is sent, so a run that dies mid-send still
  * retries and two runs never claim the same attempt), then POSTs each body, signed with its webhook's secret, and marks the
- * ones the receiver accepted. Delivery is at least once: the receiver deduplicates on the event ID. Nothing here ever
- * reads or writes the external action itself, so a delivery failure can never change it.
+ * ones the receiver accepted. Delivery is at least once: the receiver deduplicates on the event ID. The external action is
+ * read only to check who owns its agent and is never written, so a delivery failure can never change it.
  */
 import { atomic, type Env } from './database.ts';
+import { budgetDatabase } from './budget.ts';
 import { openWebhookSecret } from './credential-vault.ts';
 import { writesRefused } from './humans.ts';
 import { isoUtc } from './time.ts';
 
-/** Attempts per delivery, the first retry delay (doubling up to the cap), the per-request timeout and deliveries per run. */
-export const maxWebhookAttempts = 10, firstRetryMs = 60_000, maxRetryMs = 6 * 3600_000, webhookTimeoutMs = 5_000;
-/** A run must fit the sweep's 48-statement budget: 2 reads and a batch of 3 guards plus one claim per delivery, then
- * 1 read and a batch of 3 guards plus one update per accepted delivery: 2 + 18 + 1 + 18 = 39. */
+/** Attempts per delivery (the retry delay doubles from one minute, so the last one waits 256 minutes, 511 in all), the
+ * per-request timeout, deliveries per run and requests in flight at once. A Worker keeps at most 6 connections open, and
+ * a request's timeout starts when it is made, so no more are started at a time: one slow receiver cannot time out the
+ * others while they wait for a connection. */
+export const maxWebhookAttempts = 10, firstRetryMs = 60_000, webhookTimeoutMs = 5_000, concurrentWebhooks = 6;
+/** Each phase runs on its own 48-statement budget. The claim costs 2 reads and a batch of 3 guards plus one claim per
+ * delivery (20); marking costs 1 read and 3 guards plus one update per accepted delivery (19). A phase retried after a
+ * concurrent write runs out of budget on its third try: a refused claim sends nothing, and refused marking leaves sent
+ * deliveries due, to be sent again (at least once). */
 const duePerRun = 15;
 const ticks = (ms: number) => BigInt(ms) * 10000n;
 
 /** The retry delay after the `attempt`-th attempt (1-based). */
-export const retryDelayMs = (attempt: number) => Math.min(firstRetryMs * 2 ** (attempt - 1), maxRetryMs);
+export const retryDelayMs = (attempt: number) => firstRetryMs * 2 ** (attempt - 1);
 
 type Due = {event_id: string; webhook_id: string; grant_id: string; action_id: string; status: string; occurred_at: string;
     attempts: number; url: string; secret_sealed: ArrayBuffer | number[]; live: number};
@@ -40,7 +46,7 @@ export async function webhookSignature(secret: string, timestamp: number, body: 
  * longer owns is finished unsent. */
 export async function sweepWebhooks(env: Env, now: number = Date.now()): Promise<void> {
     if (writesRefused(env) || !env.EXTERNAL_CREDENTIAL_KEY) return;
-    const claimed = await atomic(env.db, async tx => {
+    const claimed = await atomic(budgetDatabase(env.db), async tx => {
         const rows = (await tx.db.prepare(`SELECT d.event_id,d.webhook_id,w.grant_id,d.action_id,d.status,CAST(d.occurred_at AS TEXT) occurred_at,
                 d.attempts,w.url,w.secret_sealed,
                 (w.revoked_at IS NULL AND g.revoked_at IS NULL AND h.frozen_at IS NULL AND a.human_id IS g.human_id) live
@@ -57,10 +63,16 @@ export async function sweepWebhooks(env: Env, now: number = Date.now()): Promise
         }
         return rows.filter(row => row.live);
     });
-    const accepted = (await Promise.all(claimed.map(async row => await send(env, row, now) ? row.event_id : null)))
-        .filter((id): id is string => id !== null);
+    const accepted: string[] = [];
+    let cursor = 0;
+    await Promise.all(Array.from({length: Math.min(concurrentWebhooks, claimed.length)}, async () => {
+        while (cursor < claimed.length) {
+            const row = claimed[cursor++];
+            if (await send(env, row, now)) accepted.push(row.event_id);
+        }
+    }));
     if (!accepted.length) return;
-    await atomic(env.db, async tx => {
+    await atomic(budgetDatabase(env.db), async tx => {
         for (const eventId of accepted)
             tx.writes.push(tx.db.prepare(`UPDATE app_webhook_deliveries SET delivered_at=MAX(CAST(? AS INTEGER),occurred_at),next_attempt_at=NULL
                 WHERE event_id=? AND delivered_at IS NULL`).bind(tx.store.now.toString(), eventId));

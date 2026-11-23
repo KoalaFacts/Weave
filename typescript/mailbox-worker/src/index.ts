@@ -63,7 +63,8 @@ export default {
         await sweepPublications({...env,db:budgetDatabase(env.db)});
         await sweepMedia({...env,db:budgetDatabase(env.db)});
         // Sends queued app webhook deliveries; never changes an external action.
-        await sweepWebhooks({...env,db:budgetDatabase(env.db)});
+        // Budgets each of its two phases itself.
+        await sweepWebhooks(env);
     },
     async fetch(request: Request, env: Env, context: Context): Promise<Response> {
         env = {...env,db:budgetDatabase(env.db)};
