@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
-import type {OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
+import type {OwnerAppGrant,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import type {HumanSession} from "../src/human-session.ts";
 import {actionPage,ownerFormTokens,ownerPage,ownerResultText,recoveryCodePage,type SettledActionView} from "../src/owner-page.ts";
 import {publishingAdapters} from "../../mailbox-worker/src/external-providers.ts";
@@ -249,8 +249,9 @@ test("ownerPage_ActionOfAnAgentNotOnThisPage_NamedFromTheAction",async()=>{
 test("ownerPage_OwnerAppGrants_EscapedUnverifiedWithRevokeAndTokens",async()=>{
   const hostile=randomUUID(),unnamed=randomUUID(),revoked=randomUUID();
   const overview=base({ownerGrants:[
-    {grantId:hostile,clientId:'https://office.example/"><script>x</script>',clientName:'<script>alert(1)</script>',createdAt:iso(now)},
-    {grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now-1000)}],revokedOwnerGrantIds:[revoked]});
+    {grantId:hostile,clientId:'https://office.example/"><script>x</script>',clientName:'<script>alert(1)</script>',createdAt:iso(now),
+      webhooks:[{webhookId:randomUUID(),url:'https://office.example/hooks?a="><img src=x>',createdAt:iso(now)},{webhookId:randomUUID(),url:"https://office.example/second",createdAt:iso(now+1)}]},
+    {grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now-1000),webhooks:[]}],revokedOwnerGrantIds:[revoked]});
   const tokens=await ownerFormTokens(randomBytes(32).toString("base64url"),human.humanId,overview,now,false);
   assert.deepEqual([...tokens.keys()].sort(),["revoke-grant:"+hostile,"revoke-grant:"+unnamed].sort());
   const body=await html(ownerPage(overview,human,tokens,null,now));
@@ -259,10 +260,17 @@ test("ownerPage_OwnerAppGrants_EscapedUnverifiedWithRevokeAndTokens",async()=>{
   assert.ok(!body.includes("<script>"),"client-supplied text must not become markup");
   assert.ok(body.includes("&#60;script&#62;alert(1)&#60;/script&#62; (self-reported, not verified)"));
   assert.ok(body.includes("Unnamed client"));
+  assert.ok(!body.includes("<img"),"app-supplied webhook URLs must not become markup");
+  assert.ok(body.includes("Weave sends it the status of your agents' actions (never their content) at:</p><ul><li><code>https://office.example/hooks?a=&#34;&#62;&#60;img src=x&#62;</code>; registered "+iso(now)+"</li><li><code>https://office.example/second</code>"),body);
+  assert.equal(body.match(/It receives no status updates from Weave\./g)?.length,1,"the grant without webhooks says so");
+  assert.ok(!/<a [^>]*office\.example\/hooks/.test(body),"a webhook URL is never a link");
   assert.equal(body.match(/<form /g)!.length,tokens.size);
   assert.ok(!body.includes(revoked),"revoked owner grant IDs are for clean-up only");
   const none=await html(ownerPage(base(),human,new Map(),null,now));
   assert.ok(none.includes("No app manages all your agents."));
+  // A mailbox deployed before the list (no `webhooks` member) shows the grant without any webhook sentence.
+  const older=await html(ownerPage(base({ownerGrants:[{grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now)} as OwnerAppGrant]}),human,new Map(),null,now));
+  assert.ok(older.includes("Unnamed client")&&!older.includes("status updates")&&!older.includes("Weave sends it"),older);
 });
 
 // A mailbox that predates `settled`, or a status the page has no text for, reads as the generic sentence, never as text the page

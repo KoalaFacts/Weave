@@ -255,6 +255,10 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
   // The account page lists the app; revoking it ends the very next call, for every agent, and leaves the other human alone.
   const accountPage=await (await mf.dispatchFetch(issuer+"/account",{headers:{Cookie:owner.session}})).text();
   assert.match(accountPage,/Apps that manage all your agents/);
+  // Push webhook W4: the page names the app's live callback (across the two Workers' RPC), never the revoked one or a secret.
+  assert.ok(accountPage.includes("Weave sends it the status of your agents' actions (never their content) at:</p><ul><li><code>https://office.example/second</code>"),accountPage);
+  assert.ok(!accountPage.includes("weave-hook"),"a revoked callback is not listed");
+  assert.ok(!accountPage.includes(second.secret)&&!accountPage.includes(hook.secret),"never a signing secret");
   const grant=await db.prepare("SELECT grant_id,human_id FROM owner_grants WHERE revoked_at IS NULL").first<{grant_id:string;human_id:string}>();
   assert.ok(grant);
   assert.ok(accountPage.includes("revoke-grant:"+grant.grant_id)||accountPage.includes("Revoke access"));
