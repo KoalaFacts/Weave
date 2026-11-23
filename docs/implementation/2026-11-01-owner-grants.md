@@ -350,7 +350,9 @@ a deployment.
 
 W4, step 2 shows the registrations on the owner page. `HumanDirectory.ownerOverview` returns each live owner grant with
 `webhooks`, its live callbacks (`webhookId`, `url`, `createdAt`), oldest first, read by grant ID in the overview's own
-transaction (at most 20 grants of 10 callbacks each; never a secret). Under each app in "Apps that manage all your agents"
+transaction (at most 20 grants of 10 callbacks each; never a secret). The read is one more statement per attempt (17 of
+the 48-statement budget): an overview retried twice after concurrent writes is now refused with `503` instead of fitting
+exactly, which fails closed. Under each app in "Apps that manage all your agents"
 on `/account`, the auth Worker lists the URLs as escaped text, never links ("Weave sends it the status of your agents'
 actions (never their content) at: …"), or says "It receives no status updates from Weave."; revoking the app's access stops
 them all. A mailbox Worker deployed before this field (no `webhooks` member) shows the app without either sentence, so the
