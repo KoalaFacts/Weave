@@ -4,6 +4,7 @@ import { start, type AgentCredential } from './harness.ts';
 import { ownerAction, ownerOverview, type OwnerAction } from '../src/owner-actions.ts';
 import { executeOwnerMcp } from '../src/owner-tools.ts';
 import { type Env } from '../src/database.ts';
+import { ownerPendingAction } from '../src/external-actions.ts';
 
 // A1-2 step 2: an app holding an owner grant approves or rejects its human's agents' pending plans through the owner-grant
 // tools, only while the owner lets it, with the owner page's own rules, and the grant is recorded on each decision.
@@ -220,4 +221,57 @@ test('getPendingAction_TheOwnerPagesPlanForThisHumansPendingActionsOnly', () => 
     assert.equal((await tool(h, mine.humanId, grantId, 'get_pending_action', {actionId})).status, 404, 'once decided');
     await h.db.prepare('UPDATE owner_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind(ticks(), grantId).run();
     assert.equal((await tool(h, mine.humanId, grantId, 'get_pending_action', {actionId: other})).status, 401);
+}));
+
+const decidedBy = async (h: Harness, humanId: string, actionId: string, clock?: () => bigint) => {
+    const view = await ownerPendingAction(environment(h), humanId, actionId, clock);
+    assert.ok(!view.frozen && view.settled, 'the owner page describes the settled action');
+    return view.settled.decidedByApp;
+};
+
+test('ownerPendingAction_AppDecided_NamesTheGrantThatMadeTheDecisionTheStatusRestsOn', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const grantId = await grant(h, humanId);
+    await h.db.prepare("UPDATE owner_grants SET client_name='Office Desk' WHERE grant_id=?").bind(grantId).run();
+    const app = {grantId, clientId: 'https://office.example/client', clientName: 'Office Desk'};
+
+    const approved = await propose(h, agent);
+    assert.equal((await tool(h, humanId, grantId, 'approve_action', {actionId: approved, planDigest: await digestOf(h, humanId, approved)})).status, 200);
+    assert.deepEqual(await decidedBy(h, humanId, approved), app, 'approved by the app');
+    assert.equal((await execute(h, agent, approved)).status, 'completed');
+    assert.deepEqual(await decidedBy(h, humanId, approved), app, 'sent after the app approved');
+
+    const rejected = await propose(h, agent);
+    assert.equal((await tool(h, humanId, grantId, 'reject_action', {actionId: rejected})).status, 200);
+    assert.deepEqual(await decidedBy(h, humanId, rejected), app, 'rejected by the app');
+
+    // The owner withdraws the app's approval on Weave's own page: the rejection the status rests on is the owner's.
+    const withdrawn = await propose(h, agent);
+    assert.equal((await tool(h, humanId, grantId, 'approve_action', {actionId: withdrawn, planDigest: await digestOf(h, humanId, withdrawn)})).status, 200);
+    assert.deepEqual(await ownerAction(environment(h), {kind: 'reject-action', requestId: withdrawn, humanId, authAt: Date.now()} as OwnerAction), {ok: true});
+    assert.equal(await decidedBy(h, humanId, withdrawn), null, 'withdrawn on the owner page');
+
+    // The app withdraws the owner's approval: the rejection is the app's.
+    const appWithdrew = await propose(h, agent);
+    assert.deepEqual(await ownerAction(environment(h), {kind: 'confirm-action', requestId: appWithdrew, planDigest: await digestOf(h, humanId, appWithdrew),
+        humanId, authAt: Date.now()} as OwnerAction), {ok: true});
+    assert.equal(await decidedBy(h, humanId, appWithdrew), null, 'approved on the owner page');
+    assert.equal((await tool(h, humanId, grantId, 'reject_action', {actionId: appWithdrew})).status, 200);
+    assert.deepEqual(await decidedBy(h, humanId, appWithdrew), app, 'then withdrawn by the app');
+}));
+
+test('ownerPendingAction_OwnerDecidedOrExpiredUndecided_NoApp_AppApprovedThenExpired_NamesApp', () => scenario(async ({h}) => {
+    const {agent, humanId} = await ownedAgent(h);
+    const grantId = await grant(h, humanId);
+    const ownerRejected = await propose(h, agent);
+    assert.deepEqual(await ownerAction(environment(h), {kind: 'reject-action', requestId: ownerRejected, humanId, authAt: Date.now()} as OwnerAction), {ok: true});
+    assert.equal(await decidedBy(h, humanId, ownerRejected), null);
+    const later = () => BigInt(ticks()) + 2n * 24n * 60n * 60n * 10_000_000n;
+    const expired = await propose(h, agent);
+    assert.equal(await decidedBy(h, humanId, expired, later), null, 'expired undecided');
+    const approvedThenExpired = await propose(h, agent);
+    assert.equal((await tool(h, humanId, grantId, 'approve_action', {actionId: approvedThenExpired, planDigest: await digestOf(h, humanId, approvedThenExpired)})).status, 200);
+    const view = await ownerPendingAction(environment(h), humanId, approvedThenExpired, later);
+    assert.ok(!view.frozen && view.settled?.status === 'expired');
+    assert.equal(view.settled.decidedByApp?.grantId, grantId, 'an app approval that expired unsent still names the app');
 }));

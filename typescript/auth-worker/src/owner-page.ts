@@ -264,7 +264,9 @@ export type SettledPublicationView={state:string;url:string|null;error:string|nu
  * once sent the platform's receipt, the post's own address when the receipt names one, and tracked publication. A mailbox that
  * predates them omits them, which reads as none.
  */
-export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null;about?:SettledPlanView|null;sendBy?:string|null;postUrl?:string|null};
+export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null;about?:SettledPlanView|null;sendBy?:string|null;postUrl?:string|null;decidedByApp?:DecidingAppView|null};
+/** The app that made the decision the action's status rests on, through the owner's choice to let it approve or reject; null when the owner decided on this page. */
+export type DecidingAppView={grantId:string;clientId:string;clientName:string|null};
 /** What the settled action was: the agent, operation, the account the plan bound (its name while the credential still points there) and the content. */
 export type SettledPlanView={agentId:string;agentDisplayName:string|null;provider:string;operation:string;targetAccount:string;targetDisplay:string|null;content:string};
 /**
@@ -294,6 +296,8 @@ const settledText:Readonly<Record<string,string>>=Object.freeze({
   failed:"This action was not sent.",
   unknown:"Weave sent this action but could not confirm whether the platform accepted it. It will not be sent again; check the platform."
 });
+
+const appApprovedText="An app you let decide for you approved this action. Nothing is sent until the agent sends it, once, before it expires.";
 
 const reconnect="Disconnect the account, connect it again, then have your agent propose it again.";
 /** What a not-sent action's stored failure code means and what the owner can do; the mailbox's re-checks at send time and two platform refusals. */
@@ -329,6 +333,17 @@ function settledPlan(about:SettledPlanView|null|undefined):string{
 
 /** A link the page may show for a published post: an absolute https URL only, so a stored value can never run script. */
 const publishedLink=(url:string|null|undefined)=>typeof url==="string"&&url.startsWith("https://")&&URL.canParse(url)?url:null;
+
+/**
+ * Which app decided, when the owner let one approve or reject for them; a mailbox that predates it, or a malformed value, adds nothing.
+ * The name and client ID are the client's own report: escaped text, never a link.
+ */
+function decidingApp(app:DecidingAppView|null|undefined):string{
+  if(!app||typeof app.clientId!=="string"||!app.clientId)return "";
+  const name=typeof app.clientName==="string"&&app.clientName?esc(app.clientName)+unverified:"Unnamed client";
+  return "<p>An app made this decision for you: "+name+"; client ID <code>"+esc(app.clientId)+
+    "</code>. You let it approve or reject your agents' actions when you connected it; your account page shows whether it still may.</p>";
+}
 
 /**
  * What the page adds for the owner's sent action: the platform's reference, and for an effect the platform finishes later (a
@@ -372,13 +387,16 @@ export function actionPage(view:PendingActionView,human:HumanSession,actionId:st
   if(!action){
     const settled=view.settled&&Object.hasOwn(settledText,view.settled.status)?view.settled:null;
     const failure=settled?.status==="failed"&&settled.failure?settled.failure:null,why=failure===null?null:explainFailure(failure);
-    const text=settled?settledText[settled.status]+(failure===null?"":" Reason: "+esc(failure)+"."+(why===null?"":" "+why)):
+    const byApp=settled?decidingApp(settled.decidedByApp):"";
+    // "You approved" would be untrue when an app approved: the same sentence, naming the app's decision instead.
+    const said=settled?(byApp!==""&&settled.status==="approved"?appApprovedText:settledText[settled.status]):"";
+    const text=settled?said+(failure===null?"":" Reason: "+esc(failure)+"."+(why===null?"":" "+why)):
       "This action is not waiting for your approval. It may already be decided or expired.";
     // An approval the agent has not used yet can still be withdrawn here; the mailbox refuses it once sending has started.
     // When an approval runs out, read from the mailbox; a mailbox that predates `sendBy`, or a malformed one, adds nothing.
     const sendBy=settled?.status==="approved"&&typeof settled.sendBy==="string"&&settled.sendBy?"<p>The agent must send it by "+esc(settled.sendBy)+". After that it expires and is never sent.</p>":"";
     const withdraw=settled?.status==="approved"?form("Withdraw approval","reject-action:"+actionId,tokens,actionPagePath(actionId)):"";
-    return shell("Approve an action",head+"<p>"+text+"</p>"+sendBy+(withdraw===""?"":"<p>Changed your mind? Withdraw the approval and it will never be sent. Once the agent has started sending it, it can no longer be withdrawn.</p>"+withdraw)+
+    return shell("Approve an action",head+"<p>"+text+"</p>"+byApp+sendBy+(withdraw===""?"":"<p>Changed your mind? Withdraw the approval and it will never be sent. Once the agent has started sending it, it can no longer be withdrawn.</p>"+withdraw)+
       (settled?.status==="completed"?sentDetails(settled):"")+(settled?settledPlan(settled.about):"")+all);
   }
   const fresh=freshAuthentication(human,now);

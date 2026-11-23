@@ -486,7 +486,14 @@ export function mediaIdsOf(content: string): string[] {
  * `postUrl` is the platform's own https address of a sent post when its receipt alone determines it (`postUrlOf`), else null.
  */
 export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; receipt: string | null;
-    publication: PublicationView | null; about: OwnerSettledPlan; sendBy: string | null; postUrl: string | null};
+    publication: PublicationView | null; about: OwnerSettledPlan; sendBy: string | null; postUrl: string | null; decidedByApp: OwnerDecidingApp | null};
+/**
+ * The app that made the decision the action's status rests on, through an owner grant whose owner let it approve or reject (A1):
+ * the approval for an action that was approved (sent or not, or expired unsent), the rejection for a rejected one. Null when the owner
+ * decided on Weave's own page, including withdrawing an app's approval, and for a plan that expired undecided. Name and client ID are
+ * the client's own report.
+ */
+export type OwnerDecidingApp = {grantId: string; clientId: string; clientName: string | null};
 /**
  * What the settled action was, so the owner who returns to its page sees which action it is: the agent, the operation, the
  * account the plan bound (`targetDisplay` is the credential's name for it while the credential still points at that account,
@@ -527,8 +534,17 @@ export async function ownerPendingAction(env: Env, humanId: string, actionId: st
             targetAccount: row.target_account, targetDisplay: names?.target_account === row.target_account ? names.target_display : null, content: row.content};
         return {frozen: false as const, action: null, settled: {status, failure: row.failure, receipt: sent ? row.receipt : null,
             publication: sent ? await readPublication(tx, actionId) : null, about, sendBy: status === 'approved' ? apiTime(row.expires_at) : null,
-            postUrl: postUrlOf(env, row, status)}};
+            postUrl: postUrlOf(env, row, status), decidedByApp: await decidingApp(tx, row)}};
     });
+}
+
+/** The app whose grant made the decision `row`'s status rests on (`OwnerDecidingApp`), or null. */
+async function decidingApp(tx: Transaction, row: Row): Promise<OwnerDecidingApp | null> {
+    if (row.decided_at === null) return null;
+    const app = await tx.db.prepare(`SELECT g.grant_id,g.client_id,g.client_name FROM owner_grant_decisions d JOIN owner_grants g ON g.grant_id=d.grant_id
+        WHERE d.action_id=? AND d.decision=?`).bind(row.action_id, row.status === 'rejected' ? 'rejected' : 'approved')
+        .first<{grant_id: string; client_id: string; client_name: string | null}>();
+    return app ? {grantId: app.grant_id, clientId: app.client_id, clientName: app.client_name} : null;
 }
 
 /**

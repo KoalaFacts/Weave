@@ -313,6 +313,9 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
   assert.equal((await db.prepare("SELECT decided_by FROM external_actions WHERE action_id=?").bind(queued.actionId).first<{decided_by:string}>())!.decided_by,grant.human_id);
   assert.equal((await call(mf,decidingToken,"execute_external_action",{actionId:queued.actionId},created.accountId)).status,"completed");
   assert.equal(providerPosts.length,1,"sent once, by the agent's execute");
+  // A1-3: the owner's own page for that action, served across both Workers, says which app made the decision.
+  const decided=await (await mf.dispatchFetch(issuer+"/account/actions/"+queued.actionId,{headers:{Cookie:owner.session}})).text();
+  assert.ok(decided.includes("This action was sent.")&&decided.includes("An app made this decision for you: ")&&decided.includes("; client ID <code>"),decided);
   const unshown=await call(mf,decidingToken,"propose_external_action",{credentialRef:"desk",operation:"publish_text",content:"Dinner at six."},created.accountId);
   const unshownPlan=await call(mf,decidingToken,"get_pending_action",{actionId:unshown.actionId});
   const shown=await (await mf.dispatchFetch(issuer+"/account",{headers:{Cookie:owner.session}})).text();

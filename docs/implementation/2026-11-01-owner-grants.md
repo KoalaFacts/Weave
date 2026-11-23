@@ -374,7 +374,7 @@ A1, approved by the owner on 2026-11-23: an owner may let the app holding one ow
 owner's agents' pending plans. It is off by default, chosen per OAuth client on Weave's own consent page and revocable
 on `/account`; the constraints are in [advance-weave](../../.claude/skills/advance-weave/SKILL.md#project-rules).
 Step 1 of A1-1 adds the table and its release gate; step 2 lets the owner choose it on the consent page and stop it on
-`/account`. A1-2 records which grant decided (step 1) and lets the app decide (step 2); A1-3 will show that grant on the
+`/account`. A1-2 records which grant decided (step 1) and lets the app decide (step 2); A1-3 shows that grant on the
 owner page.
 
 - **Table.** `owner_grant_approvals`: one row per owner grant whose owner chose to let the app decide. `grant_id` is
@@ -436,6 +436,28 @@ owner page.
   nothing: the agent executes. Unlike the owner page there is no fresh-sign-in window: the owner's consent-page choice is
   the authority, and stopping it or revoking the grant ends it on the next call. An agent's own grant never reaches these
   tools (403 at the scope check). The MCP layer names each refusal code with a hint.
+
+- **Showing which app decided (A1-3).** `ownerPendingAction`'s `settled` view carries `decidedByApp` (`grantId`,
+  `clientId`, `clientName`, or null): the grant recorded in `owner_grant_decisions` for the decision the action's status
+  rests on, the rejection for a rejected action and the approval for any other decided one (approved, sending, sent,
+  failed, `unknown`, or approved and expired unsent). The owner withdrawing an app's approval on their own page leaves it
+  null, and an app withdrawing the owner's approval names the app, because the owner page writes no row. A plan that
+  expired undecided is null. The page for one action (`/account/actions/<id>`) then says "An app made this decision for
+  you", with the client's self-reported name (escaped, marked not verified, "Unnamed client" when absent) and client ID,
+  and an approved action reads "An app you let decide for you approved this action" instead of "You approved this
+  action". A mailbox that predates the field, or a malformed value, adds nothing. No schema, API or MCP change; the
+  `/account` recent-actions list is unchanged.
+
+Verification of A1-3: `test/owner-grant-decisions.test.ts` covers an app approval (before and after the agent sends
+it), an app rejection, the owner withdrawing an app's approval (null), the app withdrawing the owner's approval (the
+app), an owner rejection and a plan expired undecided (null), and an app approval that expired unsent (the app);
+auth-worker `test/owner-page.test.ts` checks the wording for every settled status, escaping of name and client ID,
+an unnamed client, and the owner's wording kept for null, absent and malformed values; `test/workerd-owner-app-grant.test.ts`
+opens the owner's page for the action the app approved and the agent sent, across both Workers, and finds the app named.
+Mutations caught: the decision looked up fixed to `approved`, the lookup not limited to its action, the approved wording
+not switched, the client name unescaped, and the client-ID check removed. The `decided_at` null short-cut is an
+equivalent mutant (an undecided action has no decision row); it only saves a read. Not run against a deployment; it
+reads the A1-2 table, so production needs both A1 opt-ins.
 
 Verification of A1-2 step 2: `test/owner-grant-decisions.test.ts` covers approve as the human with the grant recorded and
 one send, no permission and a stopped permission (`decisions-off`, nothing written), a revoked grant and a frozen human
