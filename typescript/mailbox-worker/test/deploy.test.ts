@@ -1044,3 +1044,73 @@ for(const [name,extraEnv,pattern] of [
     const f=fixture({extraEnv});
     await assert.rejects(deploy(f.options),pattern);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);
 });
+
+// Owner-approved owner_grant_decisions (A1-2, 2026-11-23): a sixth approved change with its own opt-in.
+const decisionsOptIn={WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA:'true'};
+async function generatedDecisionsStatements(){
+    const {latestSchemaStatements}=await import('../scripts/latest-schema.ts');
+    return (await latestSchemaStatements()).filter(sql=>/^CREATE (?:TABLE `owner_grant_decisions`|INDEX "owner_grant_decisions_grant")/.test(sql));
+}
+async function withoutDecisionsTable(f){
+    await f.h.db.prepare('DROP INDEX owner_grant_decisions_grant').run();
+    await f.h.db.prepare('DROP TABLE owner_grant_decisions').run();
+}
+const decisionsObjects=f=>f.h.db.prepare("SELECT type,name FROM sqlite_master WHERE tbl_name='owner_grant_decisions' AND sql IS NOT NULL ORDER BY type DESC").all().then(r=>r.results.map(x=>x.type+':'+x.name));
+test('opted-in completed-only release applies exactly the approved owner_grant_decisions table and index on actual D1',async()=>{
+    const f=await completedFixture(),approved=await generatedDecisionsStatements();
+    Object.assign(f.options.env,decisionsOptIn);await withoutDecisionsTable(f);
+    try{
+        const result=await deploy(f.options);
+        assert.deepEqual(result.approvedSchemaApplied,approved);
+        assert.deepEqual(f.writes().slice(1),approved,'the approved statements, and nothing else, are written');
+        assert.deepEqual(await decisionsObjects(f),['table:owner_grant_decisions','index:owner_grant_decisions_grant']);
+        assert.deepEqual((await planLatestSchema(f.h.db)).statements,[]);
+    }finally{await f.h.close();}
+});
+test('all six opt-ins together apply the owner grant, webhook and decision tables in one batch',async()=>{
+    const f=await completedFixture(),grants=await generatedGrantsStatements(),decisions=await generatedDecisionsStatements();
+    Object.assign(f.options.env,grantsOptIn,webhooksOptIn,deliveriesOptIn,approvalsOptIn,decisionsOptIn);
+    await withoutDecisionsTable(f);await withoutApprovalsTable(f);await withoutDeliveriesTable(f);await withoutWebhooksTable(f);await withoutGrantsTable(f);
+    try{
+        const plan=(await planLatestSchema(f.h.db)).statements;
+        assert.deepEqual([...plan].sort(),[...grants,...await generatedWebhooksStatements(),...await generatedDeliveriesStatements(),...await generatedApprovalsStatements(),...decisions].sort());
+        const result=await deploy(f.options);
+        assert.deepEqual(result.approvedSchemaApplied,plan);
+        assert.deepEqual(await grantsObjects(f),['table:owner_grants','index:owner_grants_human']);
+        assert.deepEqual(await decisionsObjects(f),['table:owner_grant_decisions','index:owner_grant_decisions_grant']);
+    }finally{await f.h.close();}
+});
+for(const [name,env,pattern] of [
+    ['only the owner_grant_approvals opt-in while owner_grant_decisions is missing',approvalsOptIn,/approved owner_grant_approvals/i],
+    ['no opt-in while owner_grant_decisions is missing',{},/empty schema plan/i]
+])test('completed-only with '+name+' refuses before any deployment or writes',async()=>{
+    const f=await completedFixture();Object.assign(f.options.env,env);await withoutDecisionsTable(f);
+    try{
+        await assert.rejects(deploy(f.options),pattern);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+test('the owner_grant_decisions opt-in alone refuses while owner_grants is also missing, before any deployment or writes',async()=>{
+    const f=await completedFixture();Object.assign(f.options.env,decisionsOptIn);
+    await withoutDecisionsTable(f);await withoutApprovalsTable(f);await withoutDeliveriesTable(f);await withoutWebhooksTable(f);await withoutGrantsTable(f);
+    try{
+        await assert.rejects(deploy(f.options),/approved owner_grant_decisions/i);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+test('opted-in release refuses an existing owner_grant_decisions table with an extra index before any deployment or writes',async()=>{
+    const f=await completedFixture();Object.assign(f.options.env,decisionsOptIn);
+    try{
+        await f.h.db.prepare('CREATE INDEX "owner_grant_decisions_extra" ON "owner_grant_decisions" ("decided_at")').run();
+        await assert.rejects(deploy(f.options),/existing owner_grant_decisions table has an unapproved index/);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+for(const [name,extraEnv,pattern] of [
+    ['an ambiguous value',{WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA:'yes',WEAVE_DEPLOY_DATABASE_MODE:'completed-only'},/Invalid owner_grant_decisions schema opt-in/],
+    ['maintain mode',{WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'maintain'},/completed-only/i],
+    ['the OAuth bootstrap',{WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'completed-only',WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING:'true'},/OAuth/i]
+])test('owner_grant_decisions opt-in with '+name+' stops before any external operation',async()=>{
+    const f=fixture({extraEnv});
+    await assert.rejects(deploy(f.options),pattern);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);
+});

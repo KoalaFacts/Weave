@@ -19,10 +19,10 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
     const db=await database();
     try {
         const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);
-        assert.deepEqual(tables,['account_addresses','accounts','address_agent_cards','agent_access_tokens','agent_assertions','agent_keys','app_webhook_deliveries','app_webhooks','binding_requests','client_grants','contact_cards','contact_requests','contacts','counters','data_migrations','external_action_keys','external_actions','external_credentials','external_media','external_publications','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','mcp_idempotency','message_delivery','owner_grant_approvals','owner_grants','rate_limits','recovery_codes','stream_cursors','stream_leases']);
+        assert.deepEqual(tables,['account_addresses','accounts','address_agent_cards','agent_access_tokens','agent_assertions','agent_keys','app_webhook_deliveries','app_webhooks','binding_requests','client_grants','contact_cards','contact_requests','contacts','counters','data_migrations','external_action_keys','external_actions','external_credentials','external_media','external_publications','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','mcp_idempotency','message_delivery','owner_grant_approvals','owner_grant_decisions','owner_grants','rate_limits','recovery_codes','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),271);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),275);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
         // The archived legacy rows are never looked up by the removed account credential.
@@ -220,6 +220,24 @@ test('owner_grant_approvals keeps one row per grant and refuses unknown grants o
         assert.throws(()=>db.prepare("INSERT INTO owner_grant_approvals(grant_id,human_id) VALUES('g3','h1')").run(),/constraint/i,'no default time: a row exists only when written on purpose');
         assert.throws(()=>db.prepare("DELETE FROM owner_grants WHERE grant_id='g1'").run(),/constraint/i,'a grant with an approval row is never deleted');
         assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='owner_grant_approvals_human'").get()?.name,'owner_grant_approvals_human');
+    } finally { db.close(); }
+});
+
+test('owner_grant_decisions keeps one approval and one rejection per action and refuses unknown actions or grants and other decisions',async()=>{
+    const db=await database();
+    try {
+        db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES('h1','github','42','2020-01-01T00:00:00Z','alice',0,0)").run();
+        db.prepare("INSERT INTO accounts(account_id,human_id,created_at) VALUES('a1','h1',0)").run();
+        db.prepare("INSERT INTO owner_grants(grant_id,human_id,client_id,created_at) VALUES('g1','h1','client',10)").run();
+        db.prepare("INSERT INTO external_actions(action_id,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,target_account,plan_digest,status,created_at,expires_at,updated_at,decided_at,decided_by) VALUES('x1','a1','p','r','o','{}','c','1','t','d','rejected',1,100,20,20,'h1')").run();
+        const insert=db.prepare('INSERT INTO owner_grant_decisions(action_id,decision,grant_id,decided_at) VALUES(?,?,?,20)');
+        insert.run('x1','approved','g1');insert.run('x1','rejected','g1');
+        for(const row of [['x1','approved','g1'],['missing','approved','g1'],['x1','approved','missing'],['x1','expired','g1'],['x1','approved',null]])
+            assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        assert.throws(()=>db.prepare("INSERT INTO owner_grant_decisions(action_id,decision,grant_id) VALUES('x1','approved','g1')").run(),/constraint/i,'no default time');
+        assert.throws(()=>db.prepare("DELETE FROM owner_grants WHERE grant_id='g1'").run(),/constraint/i,'a grant that decided is never deleted');
+        assert.throws(()=>db.prepare("DELETE FROM external_actions WHERE action_id='x1'").run(),/constraint/i,'a decided action keeps its grant');
+        assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='owner_grant_decisions_grant'").get()?.name,'owner_grant_decisions_grant');
     } finally { db.close(); }
 });
 

@@ -191,3 +191,20 @@ test('the owner_grant_approvals schema opt-in is a default-off manual input gate
     assert.doesNotMatch(repository,/OWNER_GRANT_APPROVALS/,'repository-scope and publish/demo releases never opt in');
     assert.equal((workflow.match(/WEAVE_APPROVED_OWNER_GRANT_APPROVALS_SCHEMA:/g)||[]).length,1);
 });
+
+test('the owner_grant_decisions schema opt-in is a default-off manual input gated twice and passed only to the production deploy',()=>{
+    const workflow=readFileSync(path,'utf8');
+    assert.match(workflow,/apply_owner_grant_decisions_schema:\n(?:\s+\w+:.*\n)*?\s+type: boolean\n\s+default: false/);
+    const verify=workflow.split(/^  verify:/m)[1].split(/^  deploy-repository:/m)[0];
+    const repository=workflow.split(/^  deploy-repository:/m)[1].split(/^  deploy-production:/m)[0];
+    const production=workflow.split(/^  deploy-production:/m)[1];
+    const gate=/WEAVE_RELEASE_OWNER_GRANT_DECISIONS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_owner_grant_decisions_schema \|\| 'false' \}\}/;
+    assert.match(verify,gate);assert.match(production,gate);
+    const gated=verify.indexOf('run: node typescript/mailbox-worker/scripts/approved-owner-grant-decisions.ts'),revalidated=production.indexOf('run: node scripts/approved-owner-grant-decisions.ts');
+    assert.ok(gated>=0&&gated<verify.indexOf('require-ci-success.ts'),'gated before other release work');
+    assert.ok(revalidated>=0&&revalidated<production.indexOf('node scripts/deploy.ts'),'revalidated inside production before the deploy');
+    assert.match(production,/WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_owner_grant_decisions_schema == true && 'true' \|\| 'false' \}\}/,
+        'an owner comment can never opt in');
+    assert.doesNotMatch(repository,/OWNER_GRANT_DECISIONS/,'repository-scope and publish/demo releases never opt in');
+    assert.equal((workflow.match(/WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA:/g)||[]).length,1);
+});
