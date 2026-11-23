@@ -77,7 +77,8 @@ function options(storage:string){
           REGISTRATION_PER_IP_PER_HOUR:{type:"text",value:"1000"},
           REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"1000"},
           CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"}
+          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
+          EXTERNAL_CREDENTIAL_KEY:{type:"text",value:randomBytes(32).toString("base64url")}
         }
       }
     },{
@@ -200,6 +201,19 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
   const manage=await mcp(mf,otherToken,"list_agents");
   assert.equal(manage.status,403,"an agent token never manages agents");
 
+  // Push webhook registrations belong to the owner grant: the secret is returned once, never listed, and an agent token
+  // cannot register one.
+  const hook=await call(mf,token,"register_webhook",{url:"https://office.example/weave-hook"});
+  assert.match(hook.secret,/^[A-Za-z0-9_-]{43}$/);
+  const hooks=await call(mf,token,"list_webhooks");
+  assert.deepEqual(hooks.items,[{webhookId:hook.webhookId,url:"https://office.example/weave-hook",createdAt:hook.createdAt}]);
+  assert.equal(JSON.stringify(hooks).includes(hook.secret),false);
+  assert.match(await refused(mf,token,"register_webhook",{url:"http://office.example/plain"}),/url/);
+  assert.equal((await mcp(mf,otherToken,"register_webhook",{url:"https://other.example/hook"})).status,403,"an agent token never registers webhooks");
+  assert.deepEqual(await call(mf,token,"revoke_webhook",{webhookId:hook.webhookId}),{webhookId:hook.webhookId,revoked:true});
+  assert.deepEqual((await call(mf,token,"list_webhooks")).items,[]);
+  const second=await call(mf,token,"register_webhook",{url:"https://office.example/second"});
+
   // An agent the owner gets later is covered without a new consent.
   const later=await call(mf,token,"create_agent",{displayName:"Back office"});
   assert.equal((await call(mf,token,"get_my_profile",{},later.accountId)).id,later.accountId);
@@ -219,5 +233,7 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
     assert.match(denied.headers.get("www-authenticate")??"",/invalid_token/);
   }
   assert.equal((await mcp(mf,token,"list_agents")).status,401);
+  assert.equal((await mcp(mf,token,"revoke_webhook",{webhookId:second.webhookId})).status,401,"a revoked grant cannot touch its webhooks");
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM app_webhooks WHERE grant_id=?").bind(grant.grant_id).first<{n:number}>())!.n,2,"every registration stays recorded");
   assert.equal((await call(mf,otherToken,"get_my_profile")).id,otherId,"the other human's client still works");
 });

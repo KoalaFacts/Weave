@@ -127,6 +127,8 @@ profile._meta['openai/profile'] = true;
 const agentName = {...str(128, '1 to 128 visible characters; no control, bidi or invisible-only names.'), minLength:1};
 const ownedAgent = out({accountId:id('Agent account ID. Name it in the Weave-Agent header to act as this agent.'),
     displayName:nullable(str(128, 'Display name. Self-reported; not verified.'))}, ['accountId','displayName']);
+const webhookFields = {webhookId:id('Webhook ID.'), url:{...str(2048, 'The normalized https callback.'), format:'uri'}, createdAt:time('Registration time.')};
+const webhook = out(webhookFields, ['webhookId','url','createdAt']);
 const manage = 'An owner grant only: tokens for one agent cannot use it. Do not send the Weave-Agent header.';
 /** Agent management for an owner grant: the human's agents, not one agent's own mailbox. */
 export const ownerMcpTools = [
@@ -136,7 +138,15 @@ export const ownerMcpTools = [
         + 'Refused with agent-limit when the human owns as many agents as this server allows. ' + manage,
         'weave:agents.manage', {displayName:agentName}, ['displayName'], ownedAgent),
     tool('rename_agent', 'Change the display name of an agent your human owns. ' + manage,
-        'weave:agents.manage', {accountId:id('An agent your human owns.'), displayName:agentName}, ['accountId','displayName'], ownedAgent, {idempotent:true})
+        'weave:agents.manage', {accountId:id('An agent your human owns.'), displayName:agentName}, ['accountId','displayName'], ownedAgent, {idempotent:true}),
+    tool('register_webhook', 'Register an https callback for status changes of the external actions of the agents your human owns. Returns the signing secret once: store it, it is never shown again. At most 10 live callbacks per grant; refused with webhook-limit beyond that. Each call registers one callback, so do not repeat a call whose outcome is unknown: list_webhooks first. Deliveries are not sent yet. ' + manage,
+        'weave:agents.manage', {url:{...str(2048, 'Absolute https URL, without user info or fragment.'), format:'uri'}}, ['url'],
+        out({...webhookFields, secret:{...str(64, 'HMAC signing secret, base64url. Shown only in this response.'), minLength:43}}, ['webhookId','url','createdAt','secret'])),
+    tool('list_webhooks', 'List the live callbacks this grant registered, oldest first. Secrets are never listed. ' + manage,
+        'weave:agents.manage', {}, [], pageOf(webhook), {readOnly:true}),
+    tool('revoke_webhook', 'Revoke one callback this grant registered. Repeating it is harmless; the registration stays recorded. ' + manage,
+        'weave:agents.manage', {webhookId:id('A webhook this grant registered.')}, ['webhookId'],
+        out({webhookId:id('The revoked webhook.'), revoked:{type:'boolean', const:true}}, ['webhookId','revoked']), {idempotent:true})
 ];
 
 const channel = out({
