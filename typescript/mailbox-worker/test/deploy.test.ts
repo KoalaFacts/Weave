@@ -906,3 +906,71 @@ for(const [name,extraEnv,pattern] of [
     const f=fixture({extraEnv});
     await assert.rejects(deploy(f.options),pattern);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);
 });
+
+// Owner-approved app_webhook_deliveries (push webhook W2, 2026-11-23): a fourth approved change with its own opt-in.
+const deliveriesOptIn={WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA:'true'};
+async function generatedDeliveriesStatements(){
+    const {latestSchemaStatements}=await import('../scripts/latest-schema.ts');
+    return (await latestSchemaStatements()).filter(sql=>/^CREATE (?:TABLE `app_webhook_deliveries`|INDEX "app_webhook_deliveries_due")/.test(sql));
+}
+async function withoutDeliveriesTable(f){
+    await f.h.db.prepare('DROP INDEX app_webhook_deliveries_due').run();
+    await f.h.db.prepare('DROP TABLE app_webhook_deliveries').run();
+}
+const deliveriesObjects=f=>f.h.db.prepare("SELECT type,name FROM sqlite_master WHERE tbl_name='app_webhook_deliveries' AND sql IS NOT NULL ORDER BY type DESC").all().then(r=>r.results.map(x=>x.type+':'+x.name));
+test('opted-in completed-only release applies exactly the approved app_webhook_deliveries table and index on actual D1',async()=>{
+    const f=await completedFixture(),approved=await generatedDeliveriesStatements();
+    Object.assign(f.options.env,deliveriesOptIn);await withoutDeliveriesTable(f);
+    try{
+        const result=await deploy(f.options);
+        assert.deepEqual(result.approvedSchemaApplied,approved);
+        assert.deepEqual(f.writes().slice(1),approved,'the approved statements, and nothing else, are written');
+        assert.deepEqual(await deliveriesObjects(f),['table:app_webhook_deliveries','index:app_webhook_deliveries_due']);
+        assert.deepEqual((await planLatestSchema(f.h.db)).statements,[]);
+    }finally{await f.h.close();}
+});
+test('the app_webhooks and app_webhook_deliveries opt-ins together apply both tables in one batch',async()=>{
+    const f=await completedFixture(),webhooks=await generatedWebhooksStatements(),deliveries=await generatedDeliveriesStatements();
+    Object.assign(f.options.env,webhooksOptIn,deliveriesOptIn);await withoutDeliveriesTable(f);await withoutWebhooksTable(f);
+    try{
+        const plan=(await planLatestSchema(f.h.db)).statements;
+        assert.deepEqual([...plan].sort(),[...webhooks,...deliveries].sort());
+        const result=await deploy(f.options);
+        assert.deepEqual(result.approvedSchemaApplied,plan);
+        assert.deepEqual(await webhooksObjects(f),['table:app_webhooks','index:app_webhooks_grant']);
+        assert.deepEqual(await deliveriesObjects(f),['table:app_webhook_deliveries','index:app_webhook_deliveries_due']);
+    }finally{await f.h.close();}
+});
+for(const [name,env,pattern] of [
+    ['only the app_webhooks opt-in while app_webhook_deliveries is missing',webhooksOptIn,/approved app_webhooks/i],
+    ['no opt-in while app_webhook_deliveries is missing',{},/empty schema plan/i]
+])test('completed-only with '+name+' refuses before any deployment or writes',async()=>{
+    const f=await completedFixture();Object.assign(f.options.env,env);await withoutDeliveriesTable(f);
+    try{
+        await assert.rejects(deploy(f.options),pattern);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+test('the app_webhook_deliveries opt-in alone refuses while app_webhooks is also missing, before any deployment or writes',async()=>{
+    const f=await completedFixture();Object.assign(f.options.env,deliveriesOptIn);await withoutDeliveriesTable(f);await withoutWebhooksTable(f);
+    try{
+        await assert.rejects(deploy(f.options),/approved app_webhook_deliveries/i);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+test('opted-in release refuses an existing app_webhook_deliveries table with an extra index before any deployment or writes',async()=>{
+    const f=await completedFixture();Object.assign(f.options.env,deliveriesOptIn);
+    try{
+        await f.h.db.prepare('CREATE INDEX "app_webhook_deliveries_extra" ON "app_webhook_deliveries" ("action_id")').run();
+        await assert.rejects(deploy(f.options),/existing app_webhook_deliveries table has an unapproved index/);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+for(const [name,extraEnv,pattern] of [
+    ['an ambiguous value',{WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA:'yes',WEAVE_DEPLOY_DATABASE_MODE:'completed-only'},/Invalid app_webhook_deliveries schema opt-in/],
+    ['maintain mode',{WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'maintain'},/completed-only/i],
+    ['the OAuth bootstrap',{WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'completed-only',WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING:'true'},/OAuth/i]
+])test('app_webhook_deliveries opt-in with '+name+' stops before any external operation',async()=>{
+    const f=fixture({extraEnv});
+    await assert.rejects(deploy(f.options),pattern);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);
+});

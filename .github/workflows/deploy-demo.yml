@@ -34,6 +34,11 @@ on:
         required: true
         type: boolean
         default: false
+      apply_app_webhook_deliveries_schema:
+        description: Owner-approved push webhook (W2) only; applies exactly the app_webhook_deliveries table and its index; needs app_webhooks; production scope, set per run
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
 # All issue comments trigger this workflow, even when its release job skips.
@@ -132,6 +137,13 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
           WEAVE_RELEASE_APP_WEBHOOKS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_app_webhooks_schema || 'false' }}
+      - name: Gate the opt-in app_webhook_deliveries schema before all other release work
+        shell: bash
+        run: node typescript/mailbox-worker/scripts/approved-app-webhook-deliveries.ts
+        env:
+          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
+          WEAVE_RELEASE_APP_WEBHOOK_DELIVERIES_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_app_webhook_deliveries_schema || 'false' }}
       # Full product CI includes the .NET tests and mandatory 90% owner coverage gate.
       # Worker/OAuth suites alone cannot authorize a production release while this CI is pending or red.
       - name: Require passed full CI and coverage on main for this commit
@@ -261,6 +273,13 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
           WEAVE_RELEASE_APP_WEBHOOKS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_app_webhooks_schema || 'false' }}
+      - name: Revalidate the opt-in app_webhook_deliveries schema inside protected production
+        run: node scripts/approved-app-webhook-deliveries.ts
+        working-directory: typescript/mailbox-worker
+        env:
+          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
+          WEAVE_RELEASE_APP_WEBHOOK_DELIVERIES_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_app_webhook_deliveries_schema || 'false' }}
       - name: Verify resources, migrate, confirm, and deploy existing demo
         run: node scripts/deploy.ts
         working-directory: typescript/mailbox-worker
@@ -272,6 +291,7 @@ jobs:
           WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_external_action_keys_schema == true && 'true' || 'false' }}
           WEAVE_APPROVED_OWNER_GRANTS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_owner_grants_schema == true && 'true' || 'false' }}
           WEAVE_APPROVED_APP_WEBHOOKS_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_app_webhooks_schema == true && 'true' || 'false' }}
+          WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_app_webhook_deliveries_schema == true && 'true' || 'false' }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
         working-directory: typescript/mailbox-worker

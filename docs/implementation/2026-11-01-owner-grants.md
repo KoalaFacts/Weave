@@ -234,3 +234,29 @@ registers, lists, refuses `http`, refuses an agent token, revokes, and checks th
 webhooks while every registration stays recorded. Mutations caught: the grant filter dropped from revoke and from list,
 the live limit, the `https`, user, password, fragment and IP-literal checks, and the in-transaction grant re-check removed; the
 `https` mutation was also caught by the workerd test. Not run against a deployment.
+
+W2, step 1 adds the delivery table and its release gate; nothing writes or sends deliveries yet (W2 step 2, W3):
+
+- **Table.** `app_webhook_deliveries`: one row per status change per registered webhook. `event_id` is the stable event
+  ID the receiver deduplicates on; `webhook_id` references `app_webhooks` (`ON DELETE restrict`); `action_id` and
+  `status` (checked against the same seven values as `external_actions.status`) are all the body will name, never
+  content, credentials or tokens; `occurred_at`; `attempts` (0 to 100); `next_attempt_at`, `NULL` once the delivery is
+  finished; `delivered_at`, which requires `next_attempt_at IS NULL` and `delivered_at >= occurred_at`. Index on
+  `next_attempt_at` for the sender. `action_id` has no foreign key, so action retention never waits on a delivery;
+  pruning finished deliveries is W3's.
+- **Release gate.** `scripts/approved-app-webhook-deliveries.ts` is the fourth instance of
+  `scripts/approved-schema-change.ts`, with its own default-off `apply_app_webhook_deliveries_schema` input on the manual
+  production dispatch, its own gates before release work and inside protected production, and its own deploy variable
+  (`WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA`). An owner comment or a repository-scope release can never opt in.
+- **Owner deploy.** Until production has `app_webhook_deliveries`, every completed-only release must be a manual
+  production dispatch with `apply_app_webhook_deliveries_schema: true` (with `apply_app_webhooks_schema: true` and
+  `apply_owner_grants_schema: true` while those tables are also missing); otherwise it stops before any change.
+
+Verification: `test/approved-app-webhook-deliveries.test.ts` pins the statements to the generator and refuses an extra
+status, an unbounded attempt count, a delivered row that is still due, a unique index, a cascading key, a foreign key on
+the action and the index before the table, and covers the plan combined with `app_webhooks`; `test/deploy.test.ts` runs
+opted-in completed-only releases on a real Miniflare D1 (the table alone, with `app_webhooks` in one batch, refusals with
+either opt-in missing, an unapproved index, ambiguous values, maintain mode and the OAuth bootstrap);
+`test/deploy-entry.test.ts` checks the workflow input and gates. Mutations caught: the deploy ignoring the opt-in, the
+live-schema read missing from the completed-only allow list, the production revalidation step removed, an owner comment
+able to opt in, the input defaulting to true, and the attempt bound dropped. Not run against a deployment.

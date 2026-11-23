@@ -159,3 +159,19 @@ test('the app_webhooks schema opt-in is a default-off manual input gated twice a
     assert.doesNotMatch(repository,/APP_WEBHOOKS/,'repository-scope and publish/demo releases never opt in');
     assert.equal((workflow.match(/WEAVE_APPROVED_APP_WEBHOOKS_SCHEMA:/g)||[]).length,1);
 });
+
+test('the app_webhook_deliveries schema opt-in is a default-off manual input gated twice and passed only to the production deploy',()=>{
+    const workflow=readFileSync(path,'utf8');
+    assert.match(workflow,/apply_app_webhook_deliveries_schema:\n(?:\s+\w+:.*\n)*?\s+type: boolean\n\s+default: false/);
+    const verify=workflow.split(/^  verify:/m)[1].split(/^  deploy-repository:/m)[0];
+    const repository=workflow.split(/^  deploy-repository:/m)[1].split(/^  deploy-production:/m)[0];
+    const production=workflow.split(/^  deploy-production:/m)[1];
+    const gate=/WEAVE_RELEASE_APP_WEBHOOK_DELIVERIES_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_app_webhook_deliveries_schema \|\| 'false' \}\}/;
+    assert.match(verify,gate);assert.match(production,gate);
+    assert.ok(verify.indexOf('scripts/approved-app-webhook-deliveries.ts')<verify.indexOf('require-ci-success.ts'),'gated before other release work');
+    assert.ok(production.indexOf('node scripts/approved-app-webhook-deliveries.ts')<production.indexOf('node scripts/deploy.ts'),'revalidated inside production before the deploy');
+    assert.match(production,/WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_app_webhook_deliveries_schema == true && 'true' \|\| 'false' \}\}/,
+        'an owner comment can never opt in');
+    assert.doesNotMatch(repository,/APP_WEBHOOK_DELIVERIES/,'repository-scope and publish/demo releases never opt in');
+    assert.equal((workflow.match(/WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA:/g)||[]).length,1);
+});

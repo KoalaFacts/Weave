@@ -292,6 +292,26 @@ export const appWebhooks = sqliteTable("app_webhooks", {
     check("app_webhooks_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
 ]);
 
+// One delivery of one external-action status change to one registered app webhook (push webhook W2, owner-approved
+// 2026-11-23). event_id is the stable event ID the receiver deduplicates on. The body is built from action_id and
+// status alone, never content, credentials or tokens. action_id has no foreign key, so action retention never waits on
+// a delivery. next_attempt_at is NULL once the delivery is finished (delivered or given up); the sender owns attempts.
+export const appWebhookDeliveries = sqliteTable("app_webhook_deliveries", {
+    event_id: text("event_id").notNull().primaryKey(),
+    webhook_id: text("webhook_id").notNull().references(() => appWebhooks.webhook_id, {onDelete:"restrict"}),
+    action_id: text("action_id").notNull(),
+    status: text("status").notNull(),
+    occurred_at: exactInteger("occurred_at").notNull(),
+    attempts: exactInteger("attempts").notNull().default(sql`0`),
+    next_attempt_at: exactInteger("next_attempt_at"),
+    delivered_at: exactInteger("delivered_at"),
+}, t => [
+    index("app_webhook_deliveries_due").on(t.next_attempt_at),
+    check("app_webhook_deliveries_status",sql`status IN ('pending','approved','rejected','dispatching','completed','failed','unknown')`),
+    check("app_webhook_deliveries_attempts",sql`attempts BETWEEN 0 AND 100`),
+    check("app_webhook_deliveries_finish",sql`delivered_at IS NULL OR (next_attempt_at IS NULL AND delivered_at>=occurred_at)`)
+]);
+
 // Private MCP write idempotency keys, per account and retained 24 hours. result_id names the stored message or request.
 export const mcpIdempotency = sqliteTable("mcp_idempotency", {
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
