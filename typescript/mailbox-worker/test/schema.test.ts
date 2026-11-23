@@ -207,6 +207,22 @@ test('client_grants refuses unknown humans or accounts, empty or oversized clien
     } finally { db.close(); }
 });
 
+test('owner_grant_approvals keeps one row per grant and refuses unknown grants or humans and a revocation before creation',async()=>{
+    const db=await database();
+    try {
+        db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES('h1','github','42','2020-01-01T00:00:00Z','alice',0,0)").run();
+        db.prepare("INSERT INTO owner_grants(grant_id,human_id,client_id,created_at) VALUES('g1','h1','client',10),('g2','h1','client',10),('g3','h1','client',10)").run();
+        const insert=db.prepare('INSERT INTO owner_grant_approvals(grant_id,human_id,created_at,revoked_at) VALUES(?,?,10,?)');
+        insert.run('g1','h1',null);
+        for(const row of [['g1','h1',null],['missing','h1',null],['g2','missing',null],['g2',null,null],['g2','h1',9]])
+            assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        insert.run('g2','h1',10);
+        assert.throws(()=>db.prepare("INSERT INTO owner_grant_approvals(grant_id,human_id) VALUES('g3','h1')").run(),/constraint/i,'no default time: a row exists only when written on purpose');
+        assert.throws(()=>db.prepare("DELETE FROM owner_grants WHERE grant_id='g1'").run(),/constraint/i,'a grant with an approval row is never deleted');
+        assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='owner_grant_approvals_human'").get()?.name,'owner_grant_approvals_human');
+    } finally { db.close(); }
+});
+
 test('mcp_idempotency keeps one key per account and refuses unknown accounts, malformed keys, tools or hashes',async()=>{
     const db=await database();
     try {
