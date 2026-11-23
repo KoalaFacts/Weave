@@ -274,4 +274,30 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
   assert.equal((await mcp(mf,token,"revoke_webhook",{webhookId:second.webhookId})).status,401,"a revoked grant cannot touch its webhooks");
   assert.equal((await db.prepare("SELECT count(*) AS n FROM app_webhooks WHERE grant_id=?").bind(grant.grant_id).first<{n:number}>())!.n,2,"every registration stays recorded");
   assert.equal((await call(mf,otherToken,"get_my_profile")).id,otherId,"the other human's client still works");
+
+  // A1-1: letting the app approve or reject is a box on the owner consent only, recorded with the grant, shown on /account
+  // and stopped there without ending the app's other access.
+  const agentWithBox=await consent(mf,8202,agentScope);
+  assert.equal((await approve(mf,agentWithBox,{agent:"new",agentName:"Boxed",appDecides:"yes"})).status,400,"an agent's own grant can never decide");
+  const deciding=await consent(mf,8201,ownerScope);
+  assert.match(deciding.page,/<input type="checkbox" name="appDecides" value="yes">/);
+  const decidingToken=await exchange(mf,deciding,await approve(mf,deciding,{agent:"all",appDecides:"yes"}));
+  const live=await db.prepare("SELECT g.grant_id,a.human_id,a.revoked_at FROM owner_grants g JOIN owner_grant_approvals a ON a.grant_id=g.grant_id WHERE g.revoked_at IS NULL")
+    .all<{grant_id:string;human_id:string;revoked_at:number|null}>();
+  assert.equal(live.results.length,1);
+  assert.equal(live.results[0]!.human_id,grant.human_id);
+  assert.equal(live.results[0]!.revoked_at,null);
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM owner_grant_approvals").first<{n:number}>())!.n,1,"neither the first owner grant nor the agent's grant was given it");
+  const shown=await (await mf.dispatchFetch(issuer+"/account",{headers:{Cookie:owner.session}})).text();
+  assert.ok(shown.includes("<strong>It may approve or reject your agents' pending external actions for you.</strong>"),shown);
+  const stop=/name="action" value="([^"]+)"><button type="submit">Stop it approving<\/button>/.exec(shown)?.[1];
+  assert.ok(stop,"the account page offers to stop it");
+  const stopped=await mf.dispatchFetch(issuer+"/account",{method:"POST",redirect:"manual",headers:{"Content-Type":"application/x-www-form-urlencoded",
+    Origin:issuer,Cookie:owner.session},body:new URLSearchParams({action:stop}).toString()});
+  assert.equal(stopped.status,303,await stopped.clone().text());
+  assert.match(stopped.headers.get("location")??"",/result=done/);
+  assert.notEqual((await db.prepare("SELECT revoked_at FROM owner_grant_approvals WHERE grant_id=?").bind(live.results[0]!.grant_id).first<{revoked_at:number|null}>())!.revoked_at,null);
+  assert.ok(Array.isArray((await call(mf,decidingToken,"list_agents")).items),"stopping it keeps the app's other access");
+  const after=await (await mf.dispatchFetch(issuer+"/account",{headers:{Cookie:owner.session}})).text();
+  assert.ok(after.includes("It cannot approve or reject your agents' external actions")&&!after.includes("Stop it approving"),after);
 });

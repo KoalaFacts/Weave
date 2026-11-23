@@ -15,8 +15,10 @@ export type RecordGrantInput = GrantRow & { clientName?: string | null };
 export type RecordGrantResult = { ok: true } | { ok: false; reason: 'not-found' | 'frozen' | 'unavailable' };
 export type RevokeGrantInput = { humanId: string; grantId: string };
 export type RevokeGrantResult = { ok: true } | { ok: false; reason: 'not-found' | 'unavailable' };
-/** An owner grant lets one client manage every agent its human owns, including agents the human owns later. */
-export type RecordOwnerGrantInput = { grantId: string; humanId: string; clientId: string; clientName?: string | null };
+/** An owner grant lets one client manage every agent its human owns, including agents the human owns later. `appDecides`
+ * is the owner's choice, made on Weave's consent page and off unless given as true, to also let that client approve or
+ * reject the pending plans of those agents (A1); it is recorded in `owner_grant_approvals` in the same transaction. */
+export type RecordOwnerGrantInput = { grantId: string; humanId: string; clientId: string; clientName?: string | null; appDecides?: boolean };
 export type RecordOwnerGrantResult = { ok: true } | { ok: false; reason: 'not-found' | 'frozen' | 'grant-limit' | 'unavailable' };
 export type OwnerGrantRow = { grantId: string; humanId: string; clientId: string };
 /** Live owner grants one human may hold at once; the owner page lists every one of them. */
@@ -60,7 +62,8 @@ export async function recordGrant(env: Env, input: RecordGrantInput, clock: () =
 export async function recordOwnerGrant(env: Env, input: RecordOwnerGrantInput, clock: () => bigint = nowUtc): Promise<RecordOwnerGrantResult> {
     if (writesRefused(env)) return { ok: false, reason: 'unavailable' };
     if (!uuid(input?.grantId) || !uuid(input.humanId) || typeof input.clientId !== 'string'
-        || input.clientId.length < 1 || input.clientId.length > 2048 || controlCharacters.test(input.clientId)) fail();
+        || input.clientId.length < 1 || input.clientId.length > 2048 || controlCharacters.test(input.clientId)
+        || (input.appDecides !== undefined && typeof input.appDecides !== 'boolean')) fail();
     const clientName = boundedClientName(input.clientName);
     return atomic(env.db, async tx => {
         const human = await tx.db.prepare('SELECT frozen_at,(SELECT count(*) FROM owner_grants WHERE human_id=humans.human_id AND revoked_at IS NULL) live FROM humans WHERE human_id=?')
@@ -71,6 +74,9 @@ export async function recordOwnerGrant(env: Env, input: RecordOwnerGrantInput, c
         if (human.live >= maxLiveOwnerGrants) return { ok: false as const, reason: 'grant-limit' as const };
         tx.writes.push(tx.db.prepare('INSERT INTO owner_grants(grant_id,human_id,client_id,client_name,created_at,revoked_at) VALUES(?,?,?,?,CAST(? AS INTEGER),NULL)')
             .bind(input.grantId, input.humanId, input.clientId, clientName, tx.store.now.toString()));
+        if (input.appDecides === true)
+            tx.writes.push(tx.db.prepare('INSERT INTO owner_grant_approvals(grant_id,human_id,created_at,revoked_at) VALUES(?,?,CAST(? AS INTEGER),NULL)')
+                .bind(input.grantId, input.humanId, tx.store.now.toString()));
         return { ok: true as const };
     }, clock);
 }
@@ -95,9 +101,24 @@ export async function revokeGrantIn(tx: Transaction, humanId: string, grantId: s
         if (grant.revoked_at === null)
             tx.writes.push(tx.db.prepare(`UPDATE ${table} SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=? AND revoked_at IS NULL`)
                 .bind(tx.store.now.toString(), grantId));
+        // Revoking an owner grant also ends its permission to decide, so the record never shows a live permission on a dead grant.
+        if (table === 'owner_grants') tx.writes.push(stopDecisionsWrite(tx, grantId));
         return { ok: true };
     }
     return { ok: false, reason: 'not-found' };
+}
+
+const stopDecisionsWrite = (tx: Transaction, grantId: string) =>
+    tx.db.prepare('UPDATE owner_grant_approvals SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=? AND revoked_at IS NULL').bind(tx.store.now.toString(), grantId);
+
+/** Ends the owner grant's permission to approve or reject (A1), keeping the grant itself, inside the caller's transaction.
+ * Idempotent; a grant of another human, or one that never had the permission, is not-found. The row is kept: `revoked_at`
+ * records the end, so every decision keeps the permission that allowed it. */
+export async function stopAppDecisionsIn(tx: Transaction, humanId: string, grantId: string): Promise<RevokeGrantResult> {
+    const row = await tx.db.prepare('SELECT human_id FROM owner_grant_approvals WHERE grant_id=?').bind(grantId).first<{ human_id: string }>();
+    if (!row || row.human_id !== humanId) return { ok: false, reason: 'not-found' };
+    tx.writes.push(stopDecisionsWrite(tx, grantId));
+    return { ok: true };
 }
 
 /** The live grant only while it is not revoked, its human still owns the agent and is not frozen; null otherwise.
