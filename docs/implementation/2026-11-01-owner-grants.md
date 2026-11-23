@@ -403,6 +403,10 @@ Step 1 of A1-1 adds the table and its release gate; step 2 lets the owner choose
   `revoked_at` once (idempotent), keeps the grant's other access, and answers not-found for another human's grant or a
   grant without the permission. Revoking the owner grant sets the row's `revoked_at` in the same transaction. A mailbox
   that predates the field shows no sentence.
+- **Limits.** An auth-worker deployed ahead of the mailbox sends `appDecides` to a mailbox that ignores it: the grant
+  is recorded without the permission (fails safe; the release gate already requires the table). Stopping does not
+  re-check that the grant is live, so A1-2's decision must itself refuse revoked grants and frozen humans, not rely on
+  the row alone.
 
 Verification of step 2: `test/owner-grants.test.ts` (`recordOwnerGrant_AppDecides_RecordedOnlyWhenChosenShownAndStoppable`)
 covers off-by-default, a non-boolean refused, the overview flag, stop (old sign-in, idempotent, first time kept, grant

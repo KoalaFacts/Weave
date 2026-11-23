@@ -277,8 +277,14 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
 
   // A1-1: letting the app approve or reject is a box on the owner consent only, recorded with the grant, shown on /account
   // and stopped there without ending the app's other access.
+  const counts=async()=>Promise.all(["accounts","client_grants","owner_grants","owner_grant_approvals"].map(async table=>
+    (await db.prepare("SELECT count(*) AS n FROM "+table).first<{n:number}>())!.n));
+  const before=await counts();
   const agentWithBox=await consent(mf,8202,agentScope);
   assert.equal((await approve(mf,agentWithBox,{agent:"new",agentName:"Boxed",appDecides:"yes"})).status,400,"an agent's own grant can never decide");
+  const agentAllWithBox=await consent(mf,8202,agentScope);
+  assert.equal((await approve(mf,agentAllWithBox,{agent:"all",appDecides:"yes"})).status,400,"nor can an agent request approved for all agents");
+  assert.deepEqual(await counts(),before,"a refused box creates no agent, grant or permission");
   const deciding=await consent(mf,8201,ownerScope);
   assert.match(deciding.page,/<input type="checkbox" name="appDecides" value="yes">/);
   const decidingToken=await exchange(mf,deciding,await approve(mf,deciding,{agent:"all",appDecides:"yes"}));
