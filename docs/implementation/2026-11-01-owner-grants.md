@@ -295,7 +295,7 @@ sweeps):
 - **Claim before send.** One transaction reads up to 15 due rows (`next_attempt_at` reached) and, for each, counts the
   attempt and schedules its retry before anything is sent: a run that dies mid-send still retries, and the optimistic
   mailbox revision means two runs never claim the same attempt. A second transaction marks the accepted ones
-  (`delivered_at`, `next_attempt_at = NULL`). Each phase has its own 48-statement budget (20 and 19 statements per try);
+  (`delivered_at`, `next_attempt_at = NULL`). Each phase has its own 48-statement budget (21 with W4's pruning delete, and 19 statements per try);
   one retried twice after concurrent writes is refused: a refused claim sends nothing, refused marking leaves the sent
   deliveries due, so they are sent again.
 - **Who still gets it.** The claim re-checks that the webhook and its grant are unrevoked, the human not frozen and the
@@ -333,3 +333,17 @@ The sender does not resolve the callback's name itself: it relies on registratio
 and on a Worker's outbound `fetch` leaving through
 Cloudflare's public network (the mailbox Worker does not set `global_fetch_strictly_public`); pruning finished deliveries is left to W4. Not run
 against a deployment.
+
+W4, step 1 prunes finished deliveries (`src/webhook-sender.ts`, in the sender's claim transaction, so each cron run that
+sends also prunes). A delivery with `next_attempt_at = NULL` (delivered, given up, or finished unsent) is deleted once its
+status change (`occurred_at`) is more than 7 days old, at most 64 a run, oldest first. A delivery still due is never
+deleted: every one finishes within about 8.5 hours of its change. The registrations in `app_webhooks` are kept, revoked
+ones included, as the record of who registered what. A pruned event is not queued again: its ID is unique per webhook,
+action and status, and an action reaches each status once. No schema change and no owner deploy beyond W3's. Like
+sending, pruning does not run without `EXTERNAL_CREDENTIAL_KEY` or in maintenance or recovery read-only mode.
+
+Verification: `test/app-webhook-sender.test.ts` (mailbox, real Miniflare D1 through the scheduled handler) ages a delivered,
+a given-up, a recent and a still-due delivery and checks that only the first two are deleted, with the action and the four
+registrations unchanged, and that 69 old finished rows are pruned as 64 then 5. Mutations caught: the delete removed, the
+`next_attempt_at IS NULL` guard dropped, the retention period set to zero, and the per-run bound removed. Not run against
+a deployment. W4 step 2 (the owner page and Agent Start list the registrations) is still to do.
