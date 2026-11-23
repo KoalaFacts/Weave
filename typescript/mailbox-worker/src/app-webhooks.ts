@@ -76,3 +76,22 @@ export async function revokeWebhook(env: Env, input: {grantId: string; webhookId
         return {ok: true as const};
     });
 }
+
+/**
+ * Push webhook W2 step 2: queues one delivery of an external action's status change to every live webhook of every live
+ * owner grant of the action's agent's human, in the transaction that writes the change. Staged right after the status
+ * write, it inserts only if that write took effect (the action now has `status`, changed at `stamp`), so a guarded update
+ * that matched nothing queues nothing. A revoked webhook or grant, a frozen human and an ownerless agent get none. The
+ * event ID is stable and unique per webhook, action and status (an action reaches each status at most once), so the
+ * receiver deduplicates on it and a repeated insert is a no-op. Only the action ID and status are stored for the body.
+ * Delivery is due at once; sending is W3's.
+ */
+export function stageWebhookDeliveries(tx: Transaction, actionId: string, status: string, stamp: string): void {
+    tx.writes.push(tx.db.prepare(`INSERT INTO app_webhook_deliveries(event_id,webhook_id,action_id,status,occurred_at,next_attempt_at)
+        SELECT w.webhook_id||':'||x.action_id||':'||x.status,w.webhook_id,x.action_id,x.status,x.updated_at,x.updated_at
+        FROM external_actions x JOIN accounts a ON a.account_id=x.account_id JOIN humans h ON h.human_id=a.human_id
+        JOIN owner_grants g ON g.human_id=h.human_id JOIN app_webhooks w ON w.grant_id=g.grant_id
+        WHERE x.action_id=?1 AND x.status=?2 AND x.updated_at=CAST(?3 AS INTEGER)
+            AND h.frozen_at IS NULL AND g.revoked_at IS NULL AND w.revoked_at IS NULL
+        ON CONFLICT(event_id) DO NOTHING`).bind(actionId, status, stamp));
+}

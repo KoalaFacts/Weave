@@ -17,6 +17,7 @@ import { openSecret } from './credential-vault.ts';
 import { openMedia, readMediaRecord } from './external-media.ts';
 import { Problem, fail, hash, invalidField, object } from './wire.ts';
 import { readPublication, trackPublication, type PublicationView } from './external-publications.ts';
+import { stageWebhookDeliveries } from './app-webhooks.ts';
 
 export const actionLifetimeTicks = 36_000_000_000n; // 1 h to approve and execute
 export const pendingActionsPerAgent = 20;
@@ -190,6 +191,7 @@ export async function proposeExternalAction(env: Env, caller: ActionCaller, inpu
             created_at: at, expires_at: at + actionLifetimeTicks, updated_at: at}));
         if (key !== null) tx.store.stage(tx.store.orm.insert(schema.externalActionKeys).values({account_id: caller.accountId, idempotency_key: key,
             request_hash: requestHash!, action_id: plan.action_id, created_at: at}));
+        stageWebhookDeliveries(tx, plan.action_id, 'pending', at.toString());
         return view(env, {...plan, plan_digest: digest, status: 'pending', created_at: at.toString(), decided_at: null, decided_by: null,
             dispatched_at: null, completed_at: null, receipt: null, failure: null}, at);
     }, clock);
@@ -288,6 +290,7 @@ async function claim(env: Env, caller: ActionCaller, actionId: string, clock: ()
         const refuse = (reason: string): Claim => {
             tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='failed',failure=?,completed_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
                 WHERE action_id=? AND status='approved'`).bind(reason, stamp, stamp, actionId));
+            stageWebhookDeliveries(tx, actionId, 'failed', stamp);
             return {row: {...row, status: 'failed', failure: reason, completed_at: stamp}, dispatch: false};
         };
         const owner = await tx.db.prepare('SELECT a.human_id,CAST(h.frozen_at AS TEXT) frozen_at FROM accounts a LEFT JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=?')
@@ -309,6 +312,7 @@ async function claim(env: Env, caller: ActionCaller, actionId: string, clock: ()
         }
         tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='dispatching',dispatched_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
             WHERE action_id=? AND status='approved'`).bind(stamp, stamp, actionId));
+        stageWebhookDeliveries(tx, actionId, 'dispatching', stamp);
         return {row: {...row, status: 'dispatching', dispatched_at: stamp}, dispatch: true, secret};
     }, clock);
 }
@@ -336,6 +340,7 @@ export async function executeExternalAction(env: Env, caller: ActionCaller, acti
             const stamp = tx.store.now.toString();
             tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status=?,receipt=?,failure=?,completed_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
                 WHERE action_id=? AND status='dispatching'`).bind(status, receipt, failure, stamp, stamp, actionId));
+            stageWebhookDeliveries(tx, actionId, status, stamp);
             if (trackFrom !== null) trackPublication(tx, actionId, row.account_id, trackFrom);
             return view(env, {...row, status, receipt, failure, completed_at: stamp}, tx.store.now,
                 trackFrom === null ? null : {state: 'queued', url: null, error: null, checkedAt: null});
@@ -440,6 +445,7 @@ export async function confirmExternalAction(env: Env, tx: Transaction, human: Ow
     const stamp = at.toString();
     tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='approved',decided_at=CAST(? AS INTEGER),decided_by=?,updated_at=CAST(? AS INTEGER)
         WHERE action_id=? AND status='pending'`).bind(stamp, human.humanId, stamp, actionId));
+    stageWebhookDeliveries(tx, actionId, 'approved', stamp);
     return {ok: true};
 }
 
@@ -458,6 +464,7 @@ export async function rejectExternalAction(tx: Transaction, human: OwnerHuman, a
     const stamp = at.toString();
     tx.writes.push(tx.db.prepare(`UPDATE external_actions SET status='rejected',decided_at=CAST(? AS INTEGER),decided_by=?,updated_at=CAST(? AS INTEGER)
         WHERE action_id=? AND status=?`).bind(stamp, human.humanId, stamp, actionId, row.status));
+    stageWebhookDeliveries(tx, actionId, 'rejected', stamp);
     return {ok: true};
 }
 
