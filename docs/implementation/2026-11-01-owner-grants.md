@@ -286,5 +286,5 @@ once, each at its change's time, nothing more on a repeated execute), only live 
 (two webhooks on one grant, a second grant, a revoked webhook, a webhook of a revoked grant, another human's grant),
 revocation midway, rejection and a refused second decision, provider rejection and unknown outcome, a pre-dispatch refusal,
 a frozen owner, five concurrent executes (each change queued once), a staged change that did not happen, and no webhooks.
-Mutations caught: each of the seven staging calls removed, the frozen, grant-revoked, webhook-revoked, owner, status and
+Mutations caught: each of the six staging calls removed, the frozen, grant-revoked, webhook-revoked, owner, status and
 change-time conditions dropped, `next_attempt_at` left `NULL`, and the conflict clause removed. Not run against a deployment.

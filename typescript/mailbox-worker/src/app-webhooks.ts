@@ -7,6 +7,7 @@ import { atomic, type Env, type Transaction } from './database.ts';
 import { writesRefused } from './humans.ts';
 import { base64url } from './jose.ts';
 import { isoUtc } from './time.ts';
+import type { ActionStatus } from './external-actions.ts';
 
 /** Live (unrevoked) callbacks one owner grant may hold at once. */
 export const maxLiveWebhooks = 10;
@@ -86,7 +87,7 @@ export async function revokeWebhook(env: Env, input: {grantId: string; webhookId
  * receiver deduplicates on it and a repeated insert is a no-op. Only the action ID and status are stored for the body.
  * Delivery is due at once; sending is W3's.
  */
-export function stageWebhookDeliveries(tx: Transaction, actionId: string, status: string, stamp: string): void {
+export function stageWebhookDeliveries(tx: Transaction, actionId: string, status: ActionStatus, stamp: string): void {
     tx.writes.push(tx.db.prepare(`INSERT INTO app_webhook_deliveries(event_id,webhook_id,action_id,status,occurred_at,next_attempt_at)
         SELECT w.webhook_id||':'||x.action_id||':'||x.status,w.webhook_id,x.action_id,x.status,x.updated_at,x.updated_at
         FROM external_actions x JOIN accounts a ON a.account_id=x.account_id JOIN humans h ON h.human_id=a.human_id
