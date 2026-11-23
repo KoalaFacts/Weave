@@ -129,6 +129,14 @@ const ownedAgent = out({accountId:id('Agent account ID. Name it in the Weave-Age
     displayName:nullable(str(128, 'Display name. Self-reported; not verified.'))}, ['accountId','displayName']);
 const webhookFields = {webhookId:id('Webhook ID.'), url:{...str(2048, 'The normalized https callback.'), format:'uri'}, createdAt:time('Registration time.')};
 const webhook = out(webhookFields, ['webhookId','url','createdAt']);
+const pendingPlan = out({actionId:id('Action ID.'), agentId:id('The proposing agent, owned by your human.'), agentDisplayName:nullable(str(128, 'Display name. Self-reported; not verified.')),
+    provider:str(64), operation:str(64), content:{type:'string', description:'The exact content the provider receives.'}, credentialRef:str(320),
+    credentialRevision:str(320), targetAccount:str(320, 'The platform account the plan binds.'), targetDisplay:str(320, "The credential's current name for that account."),
+    planDigest:{...str(43, 'Pass to approve_action.'), pattern:'^[A-Za-z0-9_-]{43}$'}, createdAt:time('Proposal time.'), expiresAt:time('After this the plan can no longer be approved.'),
+    media:{type:'array', items:out({mediaId:id('Media ID.'), contentType:str(64)}, ['mediaId','contentType'])},
+    accountChanged:{type:'boolean', description:'The credential changed since the proposal: approve_action answers account-changed, so only rejecting remains.'}},
+    ['actionId','agentId','agentDisplayName','provider','operation','content','credentialRef','credentialRevision','targetAccount','targetDisplay','planDigest','createdAt','expiresAt','media','accountChanged']);
+const decided = out({actionId:id('The decided action.'), status:{type:'string', enum:['approved','rejected']}}, ['actionId','status']);
 const manage = 'An owner grant only: tokens for one agent cannot use it. Do not send the Weave-Agent header.';
 /** Agent management for an owner grant: the human's agents, not one agent's own mailbox. */
 export const ownerMcpTools = [
@@ -146,7 +154,19 @@ export const ownerMcpTools = [
         'weave:agents.manage', {}, [], pageOf(webhook), {readOnly:true}),
     tool('revoke_webhook', 'Revoke one callback this grant registered. Repeating it is harmless; the registration stays recorded. ' + manage,
         'weave:agents.manage', {webhookId:id('A webhook this grant registered.')}, ['webhookId'],
-        out({webhookId:id('The revoked webhook.'), revoked:{type:'boolean', const:true}}, ['webhookId','revoked']), {idempotent:true})
+        out({webhookId:id('The revoked webhook.'), revoked:{type:'boolean', const:true}}, ['webhookId','revoked']), {idempotent:true}),
+    tool('get_pending_action', 'Read one pending external action of an agent your human owns exactly as Weave\'s approval page shows it, with the planDigest that approve_action names. '
+        + 'Not found once it is decided or expired, or for an agent your human does not own; learn what became of it with get_external_action as that agent. ' + manage,
+        'weave:agents.manage', {actionId:id('A pending external action of an agent your human owns.')}, ['actionId'], pendingPlan, {readOnly:true}),
+    tool('approve_action', 'Approve one pending external action of an agent your human owns, on the exact plan: pass the planDigest of the plan you showed your human. '
+        + 'Allowed only while your human chose on Weave\'s consent page to let this app approve or reject; refused with decisions-off otherwise (your human can stop it on their Weave account page at any time). '
+        + 'Weave re-checks the plan as on its own approval page: refused with plan-changed or account-changed when the plan or its account changed, expired after its hour, not-pending once decided. '
+        + 'Approving sends nothing: the agent still executes it once. The decision is recorded with this grant; your human sees it on their Weave account page. ' + manage,
+        'weave:agents.manage', {actionId:id('A pending external action of an agent your human owns.'), planDigest:{...str(43, 'The plan digest the action was proposed with.'), pattern:'^[A-Za-z0-9_-]{43}$'}},
+        ['actionId','planDigest'], decided),
+    tool('reject_action', 'Reject one pending external action of an agent your human owns, or withdraw an approval the agent has not used yet, so it is never sent. '
+        + 'Allowed only while your human lets this app approve or reject (decisions-off otherwise); not-pending once it was sent or settled. The decision is recorded with this grant; your human sees it on their Weave account page. ' + manage,
+        'weave:agents.manage', {actionId:id('An external action of an agent your human owns.')}, ['actionId'], decided)
 ];
 
 const channel = out({
