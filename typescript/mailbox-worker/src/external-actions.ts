@@ -382,11 +382,12 @@ export const recentActionWindowTicks = 7n * 24n * 60n * 60n * 10_000_000n;
 export const recentActionsShownToOwner = 20;
 /** An action of the human's own agent that no longer waits for a decision, as the owner page lists it: what it was and what became of it. */
 export type OwnerRecentAction = {actionId: string; agentId: string; agentDisplayName: string | null; provider: string; operation: string;
-    status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; changedAt: string};
+    status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; changedAt: string; decidedByApp: OwnerDecidingApp | null};
 
 /**
  * The human's agents' actions that stopped waiting in the last 7 days, newest change first, at most 20: decided, sent, failed or
  * unknown by their last change, and a plan left pending or approved past its expiry (expired) by that expiry. Only agents the human owns now.
+ * `decidedByApp` is the app whose owner grant made the decision the status rests on, as on the action's own page (`OwnerDecidingApp`).
  * `limit` lets the overview read one more to tell whether any were left out. `before` names the last action of the previous page
  * and lists those after it in the same order; a cursor that is not one of this human's listed actions lists none.
  */
@@ -402,19 +403,23 @@ export async function recentForOwner(tx: Transaction, humanId: string, now: bigi
         if (!row) return [];
         cursor = {changed: row.changed, actionId: before};
     }
-    const rows = (await tx.db.prepare(`SELECT action_id,account_id,provider,operation,status,failure,expires_at,CAST(changed AS TEXT) changed_at,display_name FROM (SELECT x.action_id,x.account_id,x.provider,x.operation,x.status,x.failure,CAST(x.expires_at AS TEXT) expires_at,
-        CASE WHEN x.status IN ('pending','approved') AND x.expires_at<=CAST(? AS INTEGER) THEN x.expires_at ELSE x.updated_at END changed,a.display_name
+    const rows = (await tx.db.prepare(`SELECT action_id,account_id,provider,operation,status,failure,expires_at,CAST(changed AS TEXT) changed_at,display_name,grant_id,client_id,client_name FROM (SELECT x.action_id,x.account_id,x.provider,x.operation,x.status,x.failure,CAST(x.expires_at AS TEXT) expires_at,
+        CASE WHEN x.status IN ('pending','approved') AND x.expires_at<=CAST(? AS INTEGER) THEN x.expires_at ELSE x.updated_at END changed,a.display_name,g.grant_id,g.client_id,g.client_name
         FROM external_actions x JOIN accounts a ON a.account_id=x.account_id
+        LEFT JOIN owner_grant_decisions d ON x.decided_at IS NOT NULL AND d.action_id=x.action_id AND d.decision=CASE WHEN x.status='rejected' THEN 'rejected' ELSE 'approved' END
+        LEFT JOIN owner_grants g ON g.grant_id=d.grant_id
         WHERE a.human_id=? AND (x.status<>'pending' OR x.expires_at<=CAST(? AS INTEGER)))
         WHERE changed>CAST(? AS INTEGER) AND changed<=CAST(? AS INTEGER)${cursor === null ? '' : ' AND (changed<CAST(? AS INTEGER) OR (changed=CAST(? AS INTEGER) AND action_id>?))'}
         ORDER BY changed DESC,action_id LIMIT ?`)
         .bind(at, humanId, at, since, at, ...(cursor === null ? [] : [cursor.changed, cursor.changed, cursor.actionId]), limit)
-        .all<{action_id: string; account_id: string; provider: string; operation: string; status: string; failure: string | null; expires_at: string; changed_at: string; display_name: string | null}>()).results;
+        .all<{action_id: string; account_id: string; provider: string; operation: string; status: string; failure: string | null; expires_at: string; changed_at: string; display_name: string | null;
+            grant_id: string | null; client_id: string | null; client_name: string | null}>()).results;
     return rows.map(row => {
         const status = effectiveStatus(row.status, row.expires_at, now);
         // The query admits a pending plan only from its expiry, so it never reads pending here.
         return {actionId: row.action_id, agentId: row.account_id, agentDisplayName: row.display_name, provider: row.provider, operation: row.operation,
-            status: status as OwnerRecentAction['status'], failure: row.failure, changedAt: apiTime(row.changed_at)!};
+            status: status as OwnerRecentAction['status'], failure: row.failure, changedAt: apiTime(row.changed_at)!,
+            decidedByApp: row.grant_id !== null && row.client_id !== null ? {grantId: row.grant_id, clientId: row.client_id, clientName: row.client_name} : null};
     });
 }
 

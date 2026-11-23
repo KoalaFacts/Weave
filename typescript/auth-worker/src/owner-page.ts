@@ -109,19 +109,27 @@ const recentText:Readonly<Record<string,string>>=Object.freeze({
 
 /** The owner page listing the recent actions after the action `before` names; null is the first page. */
 export const recentPagePath=(before:string|null)=>before===null?"/account":"/account?recent="+encodeURIComponent(before);
+/** A recent action as the mailbox lists it; one that predates `decidedByApp` omits it, which reads as no app. */
+type RecentActionView=Omit<OwnerRecentAction,"decidedByApp">&{decidedByApp?:DecidingAppView|null};
+/** Which app decided a recent action, in the list's own words; nothing for the owner's own decisions or a malformed value. */
+function recentDecidingApp(app:DecidingAppView|null|undefined):string{
+  if(!app||typeof app.clientId!=="string"||!app.clientId)return "";
+  return "; decided by an app you let decide: "+(typeof app.clientName==="string"&&app.clientName?esc(app.clientName)+unverified:"Unnamed client")+
+    ", client ID <code>"+esc(app.clientId)+"</code>";
+}
 /**
  * The owner's agents' actions that stopped waiting in the last 7 days, newest first, each linking to its own page, which says
  * the rest (the platform's reference, the publication). A mailbox that predates the list omits it, which reads as none. A later
  * page (`before` set) with none left says so and links back to the newest.
  */
-function recentSection(actions:readonly OwnerRecentAction[]|undefined,before:string|null):string{
+function recentSection(actions:readonly RecentActionView[]|undefined,before:string|null):string{
   if(!actions||actions.length===0)return before===null?"<p>None of your agents' actions was decided, sent or expired in the last 7 days.</p>":
     "<p>No older actions from the last 7 days.</p><p><a href=\""+esc(recentPagePath(null))+"\">Newest actions</a></p>";
   return "<ul>"+actions.map(action=>{
     const outcome=Object.hasOwn(recentText,action.status)?recentText[action.status]!:"status not shown here";
     const failure=action.status==="failed"&&action.failure?" (<code>"+esc(action.failure)+"</code>)":"";
     return '<li><a href="'+esc(actionPagePath(encodeURIComponent(action.actionId)))+'">'+agentName(action.agentId,action.agentDisplayName)+": "+
-      esc(action.operation)+" on "+esc(action.provider)+"</a>: "+esc(outcome)+failure+"; "+esc(action.changedAt)+"</li>";
+      esc(action.operation)+" on "+esc(action.provider)+"</a>: "+esc(outcome)+failure+recentDecidingApp(action.decidedByApp)+"; "+esc(action.changedAt)+"</li>";
   }).join("")+"</ul>";
 }
 
@@ -225,7 +233,7 @@ function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:Read
  * Links between pages of recent actions: back to the newest when this is a later page, and on to the older ones when the mailbox
  * left some out. A mailbox that predates the list or its flag omits it, which reads as nothing left out.
  */
-function recentPaging(actions:readonly OwnerRecentAction[]|undefined,more:boolean|undefined,before:string|null):string{
+function recentPaging(actions:readonly RecentActionView[]|undefined,more:boolean|undefined,before:string|null):string{
   const last=actions?.at(-1);
   const paging=[before===null||last===undefined?"":'<a href="'+esc(recentPagePath(null))+'">Newest actions</a>',
     more!==true||last===undefined?"":'<a href="'+esc(recentPagePath(last.actionId))+'">Older actions</a>'].filter(Boolean).join(" · ");

@@ -445,8 +445,12 @@ owner page.
   expired undecided is null. The page for one action (`/account/actions/<id>`) then says "An app made this decision for
   you", with the client's self-reported name (escaped, marked not verified, "Unnamed client" when absent) and client ID,
   and an approved action reads "An app you let decide for you approved this action" instead of "You approved this
-  action". A mailbox that predates the field, or a malformed value, adds nothing. No schema, API or MCP change; the
-  `/account` recent-actions list is unchanged.
+  action". A mailbox that predates the field, or a malformed value, adds nothing. No schema, API or MCP change.
+- **In the recent-actions list (2026-11-24).** Each `/account` "Recent actions" entry (`recentForOwner`) carries the
+  same `decidedByApp`, from the same `owner_grant_decisions` row joined in the list's one query, and an entry an app
+  decided adds "decided by an app you let decide:" with the client's self-reported name (escaped, marked not verified,
+  "Unnamed client" when absent or empty) and client ID. The owner's own decisions, a plan expired undecided, a mailbox
+  that predates the field and a malformed value add nothing. No schema, API or MCP change.
 
 Verification of A1-3: `test/owner-grant-decisions.test.ts` covers an app approval (before and after the agent sends
 it), an app rejection, the owner withdrawing an app's approval (null), the app withdrawing the owner's approval (the
@@ -458,6 +462,18 @@ Mutations caught: the decision looked up fixed to `approved`, the lookup not lim
 not switched, the client name unescaped, and the client-ID check removed. The `decided_at` null short-cut is an
 equivalent mutant (an undecided action has no decision row); it only saves a read. Not run against a deployment; it
 reads the A1-2 table, so production needs both A1 opt-ins.
+
+Verification of the recent-actions list: `test/owner-grant-decisions.test.ts` covers, through `ownerOverview`, an app
+approval that was sent, an app rejection, the owner withdrawing an app's approval and an owner approval (null), the app
+withdrawing the owner's approval (the app), each action listed once, another human's app decision absent from this list
+and named on that human's own, and an app approval that expired unsent (the app) beside a plan expired undecided (null);
+auth-worker `test/owner-page.test.ts` checks the entry's wording, escaping of name and client ID, a null or empty name,
+and nothing added for null, absent and malformed values; `test/workerd-owner-app-grant.test.ts` reads `/account` across
+both Workers and finds the app named on the entry of the action the app approved and the agent sent. Mutations caught:
+the decision joined fixed to `approved`, the join not limited to its action, the field always null, the client name
+dropped (mailbox); the name unescaped, the client ID unescaped, the client-ID check removed, the entry not showing the
+app (also caught by the workerd test), and an empty name shown as a name (auth-worker). The `decided_at` condition in
+the join is equivalent, as above.
 
 Verification of A1-2 step 2: `test/owner-grant-decisions.test.ts` covers approve as the human with the grant recorded and
 one send, no permission and a stopped permission (`decisions-off`, nothing written), a revoked grant and a frozen human
