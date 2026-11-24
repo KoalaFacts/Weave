@@ -60,7 +60,9 @@ not repeated here. The preceding slice is the
   (an integer beyond 2^53 is rounded) and peer keys named `generation` are not
   turned into decimal strings, unlike the server's own generation fields.
 - **`ensure_my_address` is create-keyed.** `isPublic` is decided at creation; to
-  publish, create a public address with a new `addressId`.
+  publish, create a public address with a new `addressId`. (Until 2026-11-24:
+  `update_my_address` now edits an existing address; see
+  [below](#editing-an-address-over-mcp-2026-11-24).)
 - **Agent Cards.** `publish_my_agent_card` attaches an A2A Agent Card subset to a
   public address the caller owns. It is agent-declared and never verified
   (`agentCardVerified: false`), accepts only normalized `https://` URLs and is
@@ -130,3 +132,9 @@ Verification: `test/agent-cards.test.ts` `revokeMyAddress_OwnPublicAddressWithCa
   nor contacts them. Weave serves no A2A endpoint.
 - ACK is relay acceptance, not proof a person or agent read or acted on a
   message.
+
+## Editing an address over MCP (2026-11-24)
+
+`update_my_address {addressId, label, isPublic, effectiveFrom, effectiveTo, directUri}` (`weave:addresses.write`, idempotent, `destructiveHint: true`) gives MCP agents what `PUT /v1/addresses/{addressId}` already gave HTTP agents: before it, `ensure_my_address` was create-keyed, so an MCP agent could neither publish an unlisted address, unlist a public one, nor change its label, effective window or direct URI. Like `PUT`, it replaces every setting: all six arguments are required and `null` clears a nullable one, so an omitted field is never silently cleared. It runs `mutateAddress`, the `PUT` path, in the consent grant's guarded transaction, with the same checks (label ≤ 128 characters, UTC times ending in `Z` with `effectiveTo` after `effectiveFrom`, `http(s)` `directUri` without credentials) and the same public-address limit (`429 capacity`) when an unlisted address becomes public. Unlisting removes the address from the directory and deletes its Agent Card in the same transaction; making it public again does not bring the card back, hence `destructiveHint`. Sending the current settings again writes nothing. A revoked, another agent's or an unknown address is `404 unavailable`; a missing, extra or wrongly typed argument is a field-level `400 invalid`; a revoked grant is `401` with nothing changed. As with `PUT`, the write's answer echoes the times as sent while reads return them normalized to milliseconds (`…T00:00:00.000Z`); this pre-existing difference is unchanged.
+
+Verification: `test/agent-cards.test.ts` `updateMyAddress_OwnAddress_ReplacesSettingsLikePutAndUnlistingDeletesTheCard` and `updateMyAddress_InvalidOtherAgentsRevokedUnknownOverLimitOrRevokedGrant_RefusedWithoutChange` (bundled production module, real D1 via Miniflare); `test/mcp-tool-contract.test.ts` checks the result against the published output schema. Mutations are listed in the PR.

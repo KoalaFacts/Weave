@@ -433,3 +433,88 @@ test('revokeMyAddress_InvalidOtherAgentsUnknownOrRevokedGrant_RefusedWithoutChan
         assert.equal((await h.request('/v1/directory/address?addressId='+addressId)).status,200,'still listed');
     }finally{await h.close();}
 });
+
+test('updateMyAddress_OwnAddress_ReplacesSettingsLikePutAndUnlistingDeletesTheCard',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a,'Before');
+        await ok(h,a,'publish_my_agent_card',{addressId,card:card()});
+        // Times in the form the address read returns them, so the write's answer and the read compare equal.
+        const settings={label:'After',isPublic:true,effectiveFrom:'2026-01-01T00:00:00.000Z',effectiveTo:'2099-01-01T00:00:00.000Z',directUri:'https://agent.example/direct'};
+        const updated=await ok(h,a,'update_my_address',{addressId,...settings});
+        assert.deepEqual(updated,{addressId,accountId:a.accountId,...settings});
+        // The tool and PUT see the same address.
+        assert.deepEqual(await (await h.request('/v1/addresses/'+addressId,a)).json(),updated);
+        assert.equal((await h.request('/v1/directory/address?addressId='+addressId)).status,200,'still listed');
+        assert.equal(await cards(h),1,'a public edit keeps the card');
+        // The same settings again change nothing.
+        const revision=()=>h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
+        const before=await revision();
+        assert.deepEqual(await ok(h,a,'update_my_address',{addressId,...settings}),updated);
+        assert.equal(await revision(),before,'an unchanged replacement writes nothing');
+        // Null clears a field; unlisting leaves the directory and deletes the card.
+        const unlisted=await ok(h,a,'update_my_address',{addressId,label:null,isPublic:false,effectiveFrom:null,effectiveTo:null,directUri:null});
+        assert.deepEqual(unlisted,{addressId,accountId:a.accountId,label:null,isPublic:false,effectiveFrom:null,effectiveTo:null,directUri:null});
+        assert.equal((await h.request('/v1/directory/address?addressId='+addressId)).status,404);
+        assert.equal(await cards(h),0,'the card goes in the same transaction');
+        // Making it public again does not bring the old card back.
+        await ok(h,a,'update_my_address',{addressId,label:'Again',isPublic:true,effectiveFrom:null,effectiveTo:null,directUri:null});
+        assert.equal((await h.request('/v1/directory/address?addressId='+addressId)).status,200);
+        assert.equal(await cards(h),0);
+        // An unlisted address may become public through the tool.
+        const created=await ok(h,a,'ensure_my_address',{addressId:crypto.randomUUID(),label:'Quiet'});
+        assert.equal((await ok(h,a,'update_my_address',{addressId:created.addressId,label:'Loud',isPublic:true,effectiveFrom:null,effectiveTo:null,directUri:null})).isPublic,true);
+        assert.equal((await h.request('/v1/directory/address?addressId='+created.addressId)).status,200);
+    }finally{await h.close();}
+});
+
+test('updateMyAddress_InvalidOtherAgentsRevokedUnknownOverLimitOrRevokedGrant_RefusedWithoutChange',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),b=await h.register(),addressId=await publicAddress(h,a,'Kept');
+        assert.equal(privateScope('update_my_address'),'weave:addresses.write','editing is an addresses write, never granted by read consent');
+        assert.equal(privateMcpTools.find(t=>t.name==='update_my_address')?.annotations.destructiveHint,true,'unlisting deletes the Agent Card for good');
+        const full={label:'Changed',isPublic:true,effectiveFrom:null,effectiveTo:null,directUri:null};
+        const revision=()=>h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
+        const before=await revision();
+        for(const [args,field] of [
+            [{...full},'addressId'],
+            [{addressId:'not-a-uuid',...full},'addressId'],
+            [{addressId,label:'Changed',isPublic:true,effectiveFrom:null,effectiveTo:null},'directUri'],
+            [{addressId,...full,label:7},'label'],
+            [{addressId,...full,isPublic:'yes'},'isPublic'],
+            [{addressId,...full,effectiveTo:42},'effectiveTo'],
+            [{addressId,...full,extra:true},'extra']
+        ] as [Record<string,unknown>,string][]){
+            const answer=await call(h,a,'update_my_address',args);
+            assert.equal(answer.status,400,JSON.stringify(args));
+            assert.equal(answer.body.field,field,JSON.stringify(answer.body));
+        }
+        // An omitted field is named as required, never read as null (which would clear it).
+        assert.equal((await call(h,a,'update_my_address',{addressId,label:'Changed',isPublic:true,effectiveFrom:null,effectiveTo:null})).body.reason,'is required');
+        // The deeper checks PUT applies hold here too.
+        for(const bad of [{directUri:'ftp://agent.example'},{effectiveFrom:'2026-01-01T00:00:00+01:00'},
+            {effectiveFrom:'2026-02-01T00:00:00Z',effectiveTo:'2026-01-01T00:00:00Z'},{label:'x'.repeat(129)}])
+            assert.equal((await call(h,a,'update_my_address',{addressId,...full,...bad})).status,400,JSON.stringify(bad));
+        assert.equal((await call(h,b,'update_my_address',{addressId,...full})).status,404,"another agent's address is not found");
+        assert.equal((await call(h,a,'update_my_address',{addressId:crypto.randomUUID(),...full})).status,404,'an unknown address is not found');
+        assert.equal(await revision(),before,'nothing changed');
+        assert.equal((await ok(h,a,'list_my_addresses',{})).items[0].label,'Kept');
+        // The public-address limit applies to an unlisted address becoming public.
+        for(let i=1;i<agentLimits.claimed.publicAddresses;i++)await publicAddress(h,a,'Extra '+i);
+        const quiet=await ok(h,a,'ensure_my_address',{addressId:crypto.randomUUID(),label:'Quiet'});
+        const beforeLimit=await revision();
+        assert.equal((await call(h,a,'update_my_address',{addressId:quiet.addressId,...full})).status,429);
+        assert.equal(await revision(),beforeLimit,'the refused address stays unlisted');
+        assert.equal((await h.request('/v1/directory/address?addressId='+quiet.addressId)).status,404);
+        // A revoked address cannot be edited.
+        await ok(h,a,'revoke_my_address',{addressId});
+        assert.equal((await call(h,a,'update_my_address',{addressId,...full})).status,404,'a revoked address is not found');
+        // A revoked grant is refused before any change (last: it also stops this agent's test grant).
+        const live=await ok(h,a,'ensure_my_address',{addressId:crypto.randomUUID(),label:'Live'}),afterRevoke=await revision();
+        const grantId=await testGrant(h.db,a.accountId);
+        await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now())*10000n).toString(),grantId).run();
+        assert.equal((await executeWithGrant(environment(h),origin,a.accountId,'update_my_address',{addressId:live.addressId,label:'Changed',isPublic:false,effectiveFrom:null,effectiveTo:null,directUri:null},grantId)).status,401);
+        assert.equal(await revision(),afterRevoke,'nothing changed');
+    }finally{await h.close();}
+});

@@ -108,6 +108,7 @@ test('real D1 results of every private tool conform to their published output sc
         await run(a.accountId,'publish_my_agent_card',{addressId:publicId,card:{name:'A',description:'Agent A.',version:'1',
             supportedInterfaces:[{url:'https://a.example/a2a',protocolBinding:'JSONRPC',protocolVersion:'1.0'}],skills:[],
             defaultInputModes:['text/plain'],defaultOutputModes:['text/plain'],capabilities:{}}});
+        await run(a.accountId,'update_my_address',{addressId:'0199aaaa-0000-4000-8000-000000000001',label:'Contract',isPublic:true,effectiveFrom:null,effectiveTo:null,directUri:'https://a.example/direct'});
         await run(a.accountId,'revoke_my_address',{addressId:'0199aaaa-0000-4000-8000-000000000001'});
         const requested=await run(a.accountId,'request_contact',{requesterAddressId:a.cardId,recipientAccountId:b.accountId,
             recipientAddressId:b.cardId,message:{parts:[{text:'contract-introduction'}]},idempotencyKey:'contract-intro'});

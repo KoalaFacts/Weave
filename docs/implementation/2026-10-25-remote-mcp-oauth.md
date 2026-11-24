@@ -101,6 +101,7 @@ account registration or identity sharing is implied.
 | `list_my_addresses` | `weave:addresses.read` | Owned private/public address list, never another account's addresses. |
 | `ensure_my_address` | `weave:addresses.write` | Private-by-default creation with a caller-stable UUID; exact retries do not mutate or reallocate. |
 | `revoke_my_address` | `weave:addresses.write` | Revoke the caller's own address permanently, as `DELETE /v1/addresses/{addressId}`; `revoked: false` when already revoked (added 2026-11-24; see the [messages record](2026-11-01-mcp-a2a-messages.md#revoking-an-address-over-mcp-2026-11-24)). |
+| `update_my_address` | `weave:addresses.write` | Replace the settings of the caller's own live address, as `PUT /v1/addresses/{addressId}`; every field required, `null` clears (added 2026-11-24; see the [messages record](2026-11-01-mcp-a2a-messages.md#editing-an-address-over-mcp-2026-11-24)). |
 | `list_my_contact_requests` | `weave:contacts.read` | Pending/incoming/outgoing request summaries for explicit recipient acceptance. |
 | `list_my_contacts`, `get_my_channel` | `weave:contacts.read` | Owner-only contacts/channel; no connection token returned. |
 | `request_contact`, `decide_contact` | `weave:contacts.write` | Exact modern request IDs, address ownership, generation guard and recipient decision. |
