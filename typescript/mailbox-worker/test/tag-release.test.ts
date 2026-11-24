@@ -71,6 +71,13 @@ test('tagRelease_NoSuccessfulProductionDeployment_RecordsNothing', async () => {
     }
 });
 
+test('tagRelease_IfDeployedWithoutProductionDeployment_SkipsButStillRefusesAFailedOne', async () => {
+    const skipped = github({...deployed('success', [{id: 7, sha, ref: 'weave/feature'}]), ...created});
+    assert.equal(await tagRelease({...skipped.options, ifDeployed: true}), '');
+    assert.equal(skipped.calls.some(call => call.method === 'POST'), false);
+    await assert.rejects(tagRelease({...github({...deployed('failure'), ...created}).options, ifDeployed: true}), /is failure, not success/);
+});
+
 test('tagRelease_TagOnAnotherCommit_RefusesToReuseTheVersion', async () => {
     for (const tagAnswers of [
         {'GET /git/ref/tags/v0.2.0': {status: 200, body: {object: {type: 'commit', sha: other}}}},

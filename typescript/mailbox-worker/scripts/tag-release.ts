@@ -21,10 +21,11 @@ export function releaseNotes(changelog: string, version: string): string {
 }
 
 export type TagRelease = {repository: string; sha: string; token: string; version: string; notes: string;
-    fetchImpl?: typeof fetch; log?: (line: string) => void};
+    /** Skip quietly (resolve with '') when the commit has no production deployment from main at all. */
+    ifDeployed?: boolean; fetchImpl?: typeof fetch; log?: (line: string) => void};
 
 /** Resolves with the release URL (created or already present for this commit); throws with the reason nothing was recorded. */
-export async function tagRelease({repository, sha, token, version, notes, fetchImpl = fetch, log = console.log}: TagRelease): Promise<string> {
+export async function tagRelease({repository, sha, token, version, notes, ifDeployed = false, fetchImpl = fetch, log = console.log}: TagRelease): Promise<string> {
     if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !/^[0-9a-f]{40}$/.test(sha) || !token || !semver.test(version) || !notes)
         throw Error('Repository, commit SHA, token, SemVer version and notes are required.');
     const api = `https://api.github.com/repos/${repository}`;
@@ -47,6 +48,7 @@ export async function tagRelease({repository, sha, token, version, notes, fetchI
     const own = Array.isArray(deployments.body)
         ? (deployments.body as {id?: unknown; sha?: unknown; ref?: unknown}[]).filter(d => d.sha === sha && d.ref === 'main' && Number.isSafeInteger(d.id))
         : [];
+    if (own.length === 0 && ifDeployed) { log('No production deployment of this commit from main; nothing to release.'); return ''; }
     if (own.length === 0) throw Error('No production deployment of this commit from main; deploy it before recording a release.');
     const newest = own.reduce((a, b) => (b.id as number) > (a.id as number) ? b : a);
     const statuses = await call(`/deployments/${newest.id as number}/statuses?per_page=1`);
@@ -95,6 +97,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const version = await workersVersion(root);
     const notes = releaseNotes(await readFile(resolve(root, 'CHANGELOG.md'), 'utf8'), version);
     const url = await tagRelease({repository: process.env.GITHUB_REPOSITORY ?? '', sha: process.env.WEAVE_RELEASE_SHA ?? '', token: process.env.GITHUB_TOKEN ?? '',
-        version, notes});
-    console.log(`Released v${version}: ${url}`);
+        version, notes, ifDeployed: process.env.WEAVE_RELEASE_IF_DEPLOYED === 'true'});
+    if (url) console.log(`Released v${version}: ${url}`);
 }
