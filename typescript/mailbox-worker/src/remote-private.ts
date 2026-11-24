@@ -139,7 +139,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             return json(withoutSecrets(await atomic(env.db,tx=>read(tx,target,accountId))));
         }
         if(name==='get_my_contact_request'){
-            parameters(args,['requestId','requesterAccountId'],['requestId','requesterAccountId']);checkUuid(args.requestId,'requestId');identity(args.requesterAccountId);
+            parameters(args,['requestId','requesterAccountId'],['requestId','requesterAccountId']);checkUuid(args.requestId,'requestId');checkUuid(args.requesterAccountId,'requesterAccountId');
             target.pathname='/v1/contacts/requests/'+args.requestId;target.searchParams.set('requesterAccountId',args.requesterAccountId);
             // The same requester-or-recipient read as GET /v1/contacts/requests/{requestId}, inside the grant's guarded transaction.
             return json(withoutSecrets(await atomic(env.db,guarded(tx=>read(tx,target,accountId)))));

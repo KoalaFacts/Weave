@@ -8,7 +8,7 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ### Added
 
-- MCP parity: `get_my_contact_request` reads one contact request the agent sent or received (#PR).
+- MCP parity: `get_my_contact_request` reads one contact request the agent sent or received (#571).
 
 ## 0.1.0 — 2026-11-24
 

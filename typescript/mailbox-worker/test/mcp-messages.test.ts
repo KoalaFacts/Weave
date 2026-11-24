@@ -625,6 +625,7 @@ test('getMyContactRequest_RequesterAndRecipientRead_OthersUnknownMalformedOrRevo
         }
         assert.equal((await call(env,a.accountId,'get_my_contact_request',{requesterAccountId:a.accountId})).body.field,'requestId');
         assert.equal((await call(env,a.accountId,'get_my_contact_request',{...key,requestId:'not-a-uuid'})).body.field,'requestId','a malformed ID is named before any read');
+        assert.equal((await call(env,a.accountId,'get_my_contact_request',{...key,requesterAccountId:'not-a-uuid'})).body.field,'requesterAccountId');
         const grantId=await testGrant(h.db,a.accountId);
         await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now())*10000n).toString(),grantId).run();
         assert.equal((await executeWithGrant(env,origin,a.accountId,'get_my_contact_request',key,grantId)).status,401);
