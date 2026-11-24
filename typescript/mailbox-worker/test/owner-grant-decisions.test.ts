@@ -420,4 +420,7 @@ test('listPendingActions_OldestTwentyOfAllThisHumansAgents_MoreWhenOthersWait', 
     assert.equal((await tool(h, mine.humanId, grantId, 'list_pending_actions', {agentId: mine.agent.accountId})).status, 400, 'takes only after');
     await h.db.prepare('UPDATE owner_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind(ticks(), grantId).run();
     assert.equal((await tool(h, mine.humanId, grantId, 'list_pending_actions', {})).status, 401, 'a revoked grant');
+    // The grant is checked before the cursor is read, so a revoked grant cannot tell this human's action IDs from unknown ones.
+    assert.equal((await page(proposed[5])).status, 401, 'a revoked grant, after one of this human\'s actions');
+    assert.equal((await page(crypto.randomUUID())).status, 401, 'a revoked grant, after an unknown action');
 }));
