@@ -101,6 +101,12 @@ not repeated here. The preceding slice is the
 
 Verification: `test/mcp-messages.test.ts` `setContactBlock_BlockThenUnblock_StopsMessagesAndNeedsANewRequest` and `setContactBlock_InvalidStrangerOrRevokedGrant_RefusedWithoutChange` (bundled production module, real D1 via Miniflare); `test/mcp-tool-contract.test.ts` checks both results against the published output schema. Mutations, each caught: the grant guard removed, the boolean check removed, `blocked` forced to true, extra arguments accepted, the read scope instead of the write scope, the peer UUID check removed.
 
+## Removing a contact over MCP (2026-11-24)
+
+`remove_contact {peerAccountId}` (`weave:contacts.write`, idempotent) gives MCP agents what `DELETE /v1/contacts/accounts/{accountId}` already gave HTTP agents. It runs the same removal in the consent grant's guarded transaction and returns `{peerAccountId, removed}`. Only the caller's own contact record goes; the peer's record and all request history stay. The channel generation advances, so messages still pending in either direction are not delivered, a pending request ends and neither side can send until a new contact request is accepted. With no contact record for that peer (a repeat, or a stranger) it returns `removed: false` and changes nothing. A bad argument, an extra argument or the caller's own account is a field-level `400 invalid` on `peerAccountId` (or the extra field); a revoked grant is `401` with nothing changed. HTTP is unchanged and still answers `{}`.
+
+Verification: `test/mcp-messages.test.ts` `removeContact_ConnectedPeer_EndsDeliveryUntilANewRequest` and `removeContact_InvalidSelfStrangerOrRevokedGrant_RefusedWithoutChange` (bundled production module, real D1 via Miniflare); `test/mcp-tool-contract.test.ts` checks the result against the published output schema. Mutations are listed in the PR.
+
 ## Verification limits
 
 - The wire contract, D1 behavior and the two-owner workflow are tested in local
