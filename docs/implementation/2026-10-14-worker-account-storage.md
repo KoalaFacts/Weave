@@ -31,7 +31,8 @@ Before active cutover, deployment retains a separate schema-aware recovery versi
 Storage failures stay fail-closed: an error that is not an expected `Problem` answers `503 {"code":"storage"}`. Since
 2026-11-24 (after a demo outage whose cause the Worker never recorded) `problem()` in `src/wire.ts` also writes one
 `storage-unavailable` log line with the error class and, only for messages that start with `D1_…:`, the first 300
-characters of the D1 message. Other messages are not logged, because some quote request input (JSON parse errors do).
+characters of the D1 message (also when it is the direct `cause` of a wrapping error). Other messages are not logged,
+because some quote request input (JSON parse errors do), and neither is `D1_TYPE_ERROR`, which can quote a bound value.
 `test/storage-problem.test.ts` pins the format, the bound, the message filter and that expected problems are not logged.
 
 ## Verification boundaries

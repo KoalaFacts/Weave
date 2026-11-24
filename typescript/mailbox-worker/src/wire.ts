@@ -47,8 +47,13 @@ export function accountNames(value:any):any {
 }
 // An unexpected error still answers 503 storage, but is logged so the cause can be found. Only the error class and a
 // D1 error message are logged; other messages can quote request input (for example JSON parse errors), so they are not.
+// D1_TYPE_ERROR can quote a bound value, so it is logged by class only. A wrapped error (for example Drizzle's) is checked
+// through its direct cause, whose own message is the D1 one.
+const ownD1Message = (error: unknown): string | null =>
+    error instanceof Error && /^D1_(?!TYPE_ERROR)[A-Z_]+:/.test(error.message) ? error.message.slice(0, 300) : null;
+const d1Message = (error: unknown): string | null => ownD1Message(error) ?? (error instanceof Error ? ownD1Message(error.cause) : null);
 function logUnexpected(error: unknown): void {
-    const message = error instanceof Error && /^D1_[A-Z_]+:/.test(error.message) ? error.message.slice(0, 300) : null;
+    const message = d1Message(error);
     console.error(JSON.stringify({event: 'storage-unavailable', errorClass: error instanceof Error ? error.name : typeof error, message}));
 }
 export function problem(error: unknown): Response {

@@ -41,3 +41,22 @@ test('problem_ExpectedProblem_IsNotLogged', t => {
     assert.equal(problem(thrown).status, 404);
     assert.equal(log.mock.callCount(), 0);
 });
+
+test('problem_D1PrefixInsideAnotherMessage_NotLogged', t => {
+    const log = logged(t);
+    problem(new SyntaxError('Unexpected token in "D1_ERROR: secret-body-marker"'));
+    assert.deepEqual(JSON.parse(text(log)), {event: 'storage-unavailable', errorClass: 'SyntaxError', message: null});
+});
+
+test('problem_D1TypeError_LogsClassOnly', t => {
+    const log = logged(t);
+    problem(new Error("D1_TYPE_ERROR: Type 'bigint' not supported for value 'secret-value-marker'"));
+    assert.deepEqual(JSON.parse(text(log)), {event: 'storage-unavailable', errorClass: 'Error', message: null});
+});
+
+test('problem_WrappedD1Error_LogsTheCauseMessageOnly', t => {
+    const log = logged(t);
+    problem(new Error('Failed query: select ... params: secret-param-marker', {cause: new Error('D1_ERROR: no such table: x')}));
+    assert.deepEqual(JSON.parse(text(log)), {event: 'storage-unavailable', errorClass: 'Error', message: 'D1_ERROR: no such table: x'});
+    assert.equal(text(log).includes('secret-param-marker'), false);
+});

@@ -13,8 +13,9 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 ### Fixed
 
 - An unexpected error behind a `503 storage` answer is now logged (`storage-unavailable`, with the error class and, for
-  D1 errors only, the D1 message), so the cause of a storage outage can be read from the Worker's logs. Answers are
-  unchanged and no request data is logged.
+  D1 errors only, the first 300 characters of the D1 message), so the cause of a storage outage can be read from the
+  Worker's logs. Answers are unchanged. Other error messages, and `D1_TYPE_ERROR` (which can quote a bound value), are
+  not logged.
 
 ## 0.1.0 — 2026-11-24
 
