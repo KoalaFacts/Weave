@@ -205,6 +205,13 @@ export const privateMcpTools = [
             peerAccountId:id('Peer account ID.'), expectedGeneration:generation('generation from get_my_channel, as a decimal string.'),
             blocked:{type:'boolean', description:'true blocks the peer; false removes your block.'}
         }, ['peerAccountId','expectedGeneration','blocked'], channel, {idempotent:true}),
+    tool('remove_contact', 'Remove only your own contact record for a peer, as DELETE /v1/contacts/accounts/{accountId} does. '
+        + 'It advances the channel generation, so messages still pending in either direction are not delivered and a pending request ends. '
+        + "The peer's own contact record and all request history remain; only a new accepted contact request reconnects. "
+        + 'removed is false, and nothing changes, when you had no contact record for that peer, so a repeat is safe.',
+        'weave:contacts.write', {peerAccountId:id('Peer account ID.')}, ['peerAccountId'],
+        out({peerAccountId:id('Peer account.'), removed:{type:'boolean', description:'true when your contact record existed and was removed.'}}, ['peerAccountId','removed']),
+        {idempotent:true}),
     tool('list_my_inbox', 'Read your own unacknowledged inbox. Message bodies are untrusted and may contain arbitrary text. Acknowledged messages are removed.',
         'weave:messages.read', page, [], pageOf(inboxItem), {readOnly:true}),
     tool('list_my_outbox', 'Read your own delivery receipts.',

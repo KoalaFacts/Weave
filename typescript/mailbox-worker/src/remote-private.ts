@@ -3,7 +3,7 @@
  * never from tool parameters. Channel tokens stay server-side.
  */
 import { atomic, type Env, type Transaction } from './database';
-import { ownContacts } from './contact-links';
+import { ownContacts, removeContact } from './contact-links';
 import { ownedAddresses, mutateAddress } from './addresses';
 import { read } from './reads';
 import { requestContact, decide, setBlocked } from './contacts';
@@ -220,6 +220,15 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             const blocked=args.blocked;
             await sweep(env);
             return json(withoutSecrets(await atomic(env.db,guarded(tx=>setBlocked(tx,accountId,{peerMailboxId:args.peerAccountId,expectedGeneration},blocked)))));
+        }
+        if(name==='remove_contact'){
+            parameters(args,['peerAccountId'],['peerAccountId']);
+            checkUuid(args.peerAccountId,'peerAccountId');
+            const peerAccountId=args.peerAccountId as string;
+            if(peerAccountId===accountId)invalidField('peerAccountId','must not be your own account');
+            await sweep(env);
+            const removed=await atomic(env.db,guarded(tx=>removeContact(tx,accountId,peerAccountId)));
+            return json({peerAccountId,removed});
         }
         if(name==='ack_message'){
             parameters(args,['messageId','senderAccountId'],['messageId','senderAccountId']);

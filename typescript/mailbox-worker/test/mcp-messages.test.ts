@@ -500,3 +500,65 @@ test('setContactBlock_InvalidStrangerOrRevokedGrant_RefusedWithoutChange',async(
         assert.deepEqual(await ok(env,b.accountId,'get_my_channel',{peerAccountId:a.accountId}),channel,'nothing changed');
     }finally{await h.close();}
 });
+
+test('removeContact_ConnectedPeer_EndsDeliveryUntilANewRequest',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),{a,b}=await pair(h,env);
+        const before=await ok(env,a.accountId,'get_my_channel',{peerAccountId:b.accountId});
+        const pending=await ok(env,b.accountId,'send_message',{recipientAccountId:a.accountId,message:text('sent before the removal')});
+        assert.equal((await ok(env,a.accountId,'list_my_inbox',{})).items.some((item:{message?:{messageId:string}})=>item.message?.messageId===pending.messageId),true,'positive control: delivered before');
+        assert.deepEqual(await ok(env,a.accountId,'remove_contact',{peerAccountId:b.accountId}),{peerAccountId:b.accountId,removed:true});
+        // Only a's own record goes; b's record and the request history stay, as on HTTP.
+        assert.deepEqual((await h.db.prepare('SELECT owner_account_id o,to_account_id t FROM contacts').all()).results,[{o:b.accountId,t:a.accountId}]);
+        assert.equal((await ok(env,a.accountId,'list_my_contacts',{})).items.length,0);
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM contact_requests').first('n'),1);
+        const after=await ok(env,a.accountId,'get_my_channel',{peerAccountId:b.accountId});
+        assert.equal(BigInt(after.generation),BigInt(before.generation)+1n);
+        assert.equal(after.currentRequest,null);
+        // The message pending on the old generation is not delivered, and neither side can send.
+        assert.equal((await ok(env,a.accountId,'list_my_inbox',{})).items.some((item:{message?:{messageId:string}})=>item.message?.messageId===pending.messageId),false);
+        for(const [from,to] of [[a,b],[b,a]]){
+            const refused=await call(env,from.accountId,'send_message',{recipientAccountId:to.accountId,message:text('after')});
+            assert.equal(refused.status,409);
+            assert.equal(refused.body.code,'not-connected');
+        }
+        // A repeat changes nothing.
+        assert.deepEqual(await ok(env,a.accountId,'remove_contact',{peerAccountId:b.accountId}),{peerAccountId:b.accountId,removed:false});
+        assert.deepEqual(await ok(env,a.accountId,'get_my_channel',{peerAccountId:b.accountId}),after);
+        // A new accepted request reconnects.
+        const requested=await ok(env,b.accountId,'request_contact',{requesterAddressId:b.cardId,recipientAccountId:a.accountId,
+            recipientAddressId:a.cardId,message:text('again?')});
+        await ok(env,a.accountId,'decide_contact',{requestId:requested.request.requestId,requesterAccountId:b.accountId,
+            expectedGeneration:String(requested.generation),status:'accepted'});
+        await ok(env,b.accountId,'send_message',{recipientAccountId:a.accountId,message:text('welcome back')});
+    }finally{await h.close();}
+});
+
+test('removeContact_InvalidSelfStrangerOrRevokedGrant_RefusedWithoutChange',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),{a,b}=await pair(h,env),stranger=await h.participant();
+        assert.equal(privateScope('remove_contact'),'weave:contacts.write','removing is a contacts write, never granted by read consent');
+        const contacts=async()=>(await h.db.prepare('SELECT owner_account_id o,to_account_id t FROM contacts ORDER BY o').all()).results;
+        const channel=await ok(env,a.accountId,'get_my_channel',{peerAccountId:b.accountId}),rows=await contacts();
+        for(const [args,field] of [
+            [{},'peerAccountId'],
+            [{peerAccountId:'not-a-uuid'},'peerAccountId'],
+            [{peerAccountId:a.accountId},'peerAccountId'],
+            [{peerAccountId:b.accountId,expectedGeneration:String(channel.generation)},'expectedGeneration']
+        ] as [Record<string,unknown>,string][]){
+            const answer=await call(env,a.accountId,'remove_contact',args);
+            assert.equal(answer.status,400,JSON.stringify(args));
+            assert.equal(answer.body.field,field,JSON.stringify(answer.body));
+        }
+        // No contact record with that peer: nothing to remove.
+        assert.deepEqual(await ok(env,a.accountId,'remove_contact',{peerAccountId:stranger.accountId}),{peerAccountId:stranger.accountId,removed:false});
+        // A revoked consent grant is refused inside the write's transaction.
+        const grantId=await testGrant(h.db,a.accountId);
+        await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now())*10000n).toString(),grantId).run();
+        assert.equal((await executeWithGrant(env,origin,a.accountId,'remove_contact',{peerAccountId:b.accountId},grantId)).status,401);
+        assert.deepEqual(await contacts(),rows,'nothing removed');
+        assert.deepEqual(await ok(env,a.accountId,'get_my_channel',{peerAccountId:b.accountId}),channel,'nothing changed');
+    }finally{await h.close();}
+});

@@ -125,6 +125,7 @@ test('real D1 results of every private tool conform to their published output sc
         const blocked=await run(a.accountId,'set_contact_block',{peerAccountId:b.accountId,expectedGeneration:channel.generation,blocked:true});
         assert.equal(blocked.isBlockedByAccount,true,'positive control: the block reaches the schema check');
         await run(a.accountId,'set_contact_block',{peerAccountId:b.accountId,expectedGeneration:blocked.generation,blocked:false});
+        await run(a.accountId,'remove_contact',{peerAccountId:b.accountId});
         const at=(BigInt(Date.now())*10000n).toString();
         await h.db.prepare(`INSERT INTO external_credentials(account_id,credential_ref,provider,revision,target_account,target_display,created_at,updated_at)
             VALUES(?,'linkedin-main','test-http','rev-1','urn:li:person:contract','Contract desk',CAST(? AS INTEGER),CAST(? AS INTEGER))`).bind(a.accountId,at,at).run();

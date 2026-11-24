@@ -18,15 +18,19 @@ export function establish(tx:Transaction,a:string,b:string,now:string):string {
     return token;
 }
 export async function deleteContact(tx:Transaction,owner:string,peer:string):Promise<any>{
+    await removeContact(tx,owner,peer);return {};
+}
+/** Removes only the owner's contact row; false when there was none, so a repeat changes nothing. */
+export async function removeContact(tx:Transaction,owner:string,peer:string):Promise<boolean>{
     identity(peer);if(peer===owner)fail();
     const existing=await tx.db.prepare('SELECT 1 found FROM contacts WHERE owner_account_id=? AND to_account_id=?').bind(owner,peer).first();
-    if(!existing)return {};
+    if(!existing)return false;
     const c=await readChannel(tx,owner,peer);if(!c)fail(503,'storage');
     if(c.generation===MAX_GENERATION)fail(429,'capacity');
     const now=nowText(tx);await invalidate(tx,c,now);
     tx.writes.push(tx.db.prepare('DELETE FROM contacts WHERE owner_account_id=? AND to_account_id=?').bind(owner,peer));
     writeChannel(tx,{...c,generation:c.generation+1n,currentRequest:null,updatedAt:now});
-    return {};
+    return true;
 }
 export async function ownContacts(tx:Transaction,owner:string,url:URL,peer?:string):Promise<any>{
     const n=limit(url),prefix='contacts-owned:'+btoa(owner)+':',cursor=query(url,'afterCursor');

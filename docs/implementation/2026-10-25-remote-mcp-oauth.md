@@ -104,6 +104,7 @@ account registration or identity sharing is implied.
 | `list_my_contacts`, `get_my_channel` | `weave:contacts.read` | Owner-only contacts/channel; no connection token returned. |
 | `request_contact`, `decide_contact` | `weave:contacts.write` | Exact modern request IDs, address ownership, generation guard and recipient decision. |
 | `set_contact_block` | `weave:contacts.write` | Block or unblock a peer on an existing channel with the generation guard, as `PUT`/`DELETE /v1/contacts/blocks` (added 2026-11-22; see the [messages record](2026-11-01-mcp-a2a-messages.md#blocking-over-mcp-2026-11-22)). |
+| `remove_contact` | `weave:contacts.write` | Remove only the caller's own contact record, as `DELETE /v1/contacts/accounts/{accountId}`; `removed: false` when there was none (added 2026-11-24; see the [messages record](2026-11-01-mcp-a2a-messages.md#removing-a-contact-over-mcp-2026-11-24)). |
 | `list_my_inbox`, `list_my_outbox` | `weave:messages.read` | Owner-scoped inbox/outbox; opaque payload text is untrusted. |
 | `send_message` | `weave:messages.send` | Accepted peer, current generation and stable payload ID; server resolves channel token in the guarded transaction. |
 | `ack_message` | `weave:messages.ack` | Recipient-only ACK for sender/message ID, no automatic retry. |
