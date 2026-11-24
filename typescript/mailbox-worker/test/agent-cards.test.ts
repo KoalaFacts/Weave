@@ -5,6 +5,7 @@ import {withTestGrant,testGrant,start,type AgentCredential} from './harness.ts';
 import type {Env} from '../src/database.ts';
 import {agentLimits} from '../src/agent-limits.ts';
 import {remoteMcp} from '../src/remote-mcp.ts';
+import {privateMcpTools} from '../src/private-mcp-tools.ts';
 
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
 const {executePrivateMcp:executeWithGrant,privateScope}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
@@ -389,7 +390,7 @@ test('revokeMyAddress_OwnPublicAddressWithCard_LeavesDirectoryForGoodAndRepeatCh
         assert.equal((await h.request('/v1/directory/address?addressId='+kept)).status,200,'only the named address is revoked');
         // The ID and history stay, as on HTTP, and the address cannot be brought back.
         assert.equal(await count(h,"SELECT count(*) n FROM account_addresses WHERE address_id=? AND revoked_at IS NOT NULL",addressId),1);
-        assert.notEqual((await call(h,a,'ensure_my_address',{addressId,label:'Leaving',isPublic:true})).status,200,'a revoked address is not recreated');
+        assert.equal((await call(h,a,'ensure_my_address',{addressId,label:'Leaving',isPublic:true})).status,404,'a revoked address is not recreated');
         assert.equal((await call(h,a,'publish_my_agent_card',{addressId,card:card()})).status,404);
         // A repeat (for example after a lost answer) changes nothing.
         const revokedAt=()=>h.db.prepare('SELECT CAST(revoked_at AS TEXT) at FROM account_addresses WHERE address_id=?').bind(addressId).first('at');
@@ -397,6 +398,9 @@ test('revokeMyAddress_OwnPublicAddressWithCard_LeavesDirectoryForGoodAndRepeatCh
         assert.deepEqual(await ok(h,a,'revoke_my_address',{addressId}),{addressId,revoked:false});
         assert.equal(await revokedAt(),firstRevokedAt,'the first revocation time stays');
         assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),revision);
+        // Another agent learns nothing about a revoked address: 404, never revoked:false (review).
+        const b=await h.register();
+        assert.equal((await call(h,b,'revoke_my_address',{addressId})).status,404);
         // HTTP is unchanged: a second DELETE of a revoked address is still 404.
         assert.equal((await h.request('/v1/addresses/'+addressId,a,'DELETE')).status,404);
     }finally{await h.close();}
@@ -407,6 +411,8 @@ test('revokeMyAddress_InvalidOtherAgentsUnknownOrRevokedGrant_RefusedWithoutChan
     try{
         const a=await h.register(),b=await h.register(),addressId=await publicAddress(h,a);
         assert.equal(privateScope('revoke_my_address'),'weave:addresses.write','revoking is an addresses write, never granted by read consent');
+        assert.equal(privateMcpTools.find(t=>t.name==='revoke_my_address')?.annotations.destructiveHint,true,'clients are told revocation cannot be undone');
+        assert.equal(privateMcpTools.find(t=>t.name==='ensure_my_address')?.annotations.destructiveHint,false);
         const revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
         for(const [args,field] of [
             [{},'addressId'],
