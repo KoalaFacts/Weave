@@ -346,3 +346,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  # After a successful production deploy, tag v<version> at this commit and publish its GitHub Release.
+  release-workers:
+    needs: deploy-production
+    if: needs.deploy-production.result == 'success'
+    permissions:
+      contents: write
+      deployments: read
+    uses: ./.github/workflows/release-workers.yml
+    with:
+      commit: ${{ github.sha }}
