@@ -1,5 +1,5 @@
 /**
- * Release record: after a production deploy, tag the deployed commit `v<version>` and publish a GitHub Release whose
+ * Release record: after a production deploy, tag the deployed commit `workers-v<version>` and publish a GitHub Release whose
  * notes are that version's CHANGELOG section. It runs only for a commit whose newest production deployment from main
  * succeeded (Actions does not mark older deployments inactive, so this proves it deployed, not that it is still
  * served), and never moves an existing tag: a tag that names another commit means the version was not bumped.
@@ -57,7 +57,8 @@ export async function tagRelease({repository, sha, token, version, notes, ifDepl
     const state = Array.isArray(statuses.body) ? (statuses.body[0] as {state?: unknown} | undefined)?.state : undefined;
     if (state !== 'success') throw Error(`This commit's newest production deployment is ${String(state ?? 'without status')}, not success; no release recorded.`);
 
-    const tag = `v${version}`;
+    // The .NET tool's releases use plain v<version> tags; the Workers' own prefix keeps the two version lines apart.
+    const tag = `workers-v${version}`;
     const ref = await call(`/git/ref/tags/${tag}`);
     if (ref.status === 200) {
         let target = ref.body as {object?: {type?: unknown; sha?: unknown}} | null;
@@ -78,7 +79,7 @@ export async function tagRelease({repository, sha, token, version, notes, ifDepl
     } else if (ref.status !== 404) ok(ref, '/git/ref/tags');
 
     const created = await call('/releases', {method: 'POST',
-        body: JSON.stringify({tag_name: tag, target_commitish: sha, name: tag, body: notes, draft: false, prerelease: version.includes('-'), make_latest: 'legacy'})});
+        body: JSON.stringify({tag_name: tag, target_commitish: sha, name: tag, body: notes, draft: false, prerelease: version.includes('-'), make_latest: 'false'})});
     ok(created, '/releases');
     const url = (created.body as {html_url?: unknown} | null)?.html_url;
     return typeof url === 'string' ? url : '';
@@ -99,5 +100,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const notes = releaseNotes(await readFile(resolve(root, 'CHANGELOG.md'), 'utf8'), version);
     const url = await tagRelease({repository: process.env.GITHUB_REPOSITORY ?? '', sha: process.env.WEAVE_RELEASE_SHA ?? '', token: process.env.GITHUB_TOKEN ?? '',
         version, notes, ifDeployed: process.env.WEAVE_RELEASE_IF_DEPLOYED === 'true'});
-    if (url) console.log(`Released v${version}: ${url}`);
+    if (url) console.log(`Released workers-v${version}: ${url}`);
 }

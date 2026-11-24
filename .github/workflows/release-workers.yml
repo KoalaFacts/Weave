@@ -1,5 +1,5 @@
 name: Release / Workers
-# Records a Workers release after its production deploy: tag v<version> at the deployed commit and publish a GitHub
+# Records a Workers release after its production deploy: tag workers-v<version> at the deployed commit and publish a GitHub
 # Release from that version's CHANGELOG.md section. It follows every successful dispatched run of deploy-demo.yml (which keeps a
 # read-only token) and records a release only for a commit with a successful production deployment from main; a
 # repository-scope deploy has none and is skipped. A manual run on main records a release whose deploy already
