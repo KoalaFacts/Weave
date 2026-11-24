@@ -394,7 +394,33 @@ test('listPendingActions_OldestTwentyOfAllThisHumansAgents_MoreWhenOthersWait', 
     listed = await list();
     assert.deepEqual(listed.items.map(item => item.actionId), proposed.slice(1, 21), 'deciding one brings the next forward');
     assert.equal(listed.more, false, 'exactly 20 wait');
-    assert.equal((await tool(h, mine.humanId, grantId, 'list_pending_actions', {agentId: mine.agent.accountId})).status, 400, 'takes no arguments');
+    // after: the plans proposed after a given action of this human's, so an app that leaves some to the owner reaches the rest.
+    const page = async (after: unknown) => tool(h, mine.humanId, grantId, 'list_pending_actions', {after});
+    let paged = (await page(proposed[5])).body as typeof listed;
+    assert.deepEqual(paged.items.map(item => item.actionId), proposed.slice(6, 21), 'after an item: the ones behind it');
+    assert.equal(paged.more, false);
+    paged = (await page(proposed[0])).body as typeof listed;
+    assert.deepEqual(paged.items.map(item => item.actionId), proposed.slice(1, 21), 'after a decided action still pages');
+    assert.equal(paged.more, false, 'exactly 20 behind it');
+    paged = (await page(expiring)).body as typeof listed;
+    assert.deepEqual(paged.items.map(item => item.actionId), proposed.slice(3, 21), 'after an expired action');
+    paged = (await page(proposed[20])).body as typeof listed;
+    assert.deepEqual(paged, {items: [], more: false}, 'after the newest: nothing');
+    // Same proposal time: the action ID breaks the tie, so no plan is skipped or repeated.
+    const tied = [proposed[18]!, proposed[19]!].sort();
+    await h.db.prepare('UPDATE external_actions SET created_at=(SELECT created_at FROM external_actions WHERE action_id=?) WHERE action_id=?').bind(tied[0], tied[1]).run();
+    assert.deepEqual(((await page(tied[0])).body as typeof listed).items.map(item => item.actionId).slice(0, 1), [tied[1]], 'the tie after the lower ID');
+    assert.ok(!((await page(tied[1])).body as typeof listed).items.some(item => item.actionId === tied[0]), 'not the lower ID again');
+    const notFound = await page(other);
+    assert.equal(notFound.status, 404, 'another human\'s action');
+    assert.equal(codeOf(notFound), 'action-not-found');
+    assert.equal((await page(crypto.randomUUID())).status, 404, 'an unknown action');
+    assert.equal((await page('not-a-uuid')).status, 400, 'a malformed after');
+    assert.equal((await page(7)).status, 400, 'after must be a string');
+    assert.equal((await tool(h, mine.humanId, grantId, 'list_pending_actions', {agentId: mine.agent.accountId})).status, 400, 'takes only after');
     await h.db.prepare('UPDATE owner_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind(ticks(), grantId).run();
     assert.equal((await tool(h, mine.humanId, grantId, 'list_pending_actions', {})).status, 401, 'a revoked grant');
+    // The grant is checked before the cursor is read, so a revoked grant cannot tell this human's action IDs from unknown ones.
+    assert.equal((await page(proposed[5])).status, 401, 'a revoked grant, after one of this human\'s actions');
+    assert.equal((await page(crypto.randomUUID())).status, 401, 'a revoked grant, after an unknown action');
 }));
