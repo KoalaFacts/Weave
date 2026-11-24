@@ -1,9 +1,10 @@
 name: Release / Workers
 # Records a Workers release after its production deploy: tag v<version> at the deployed commit and publish a GitHub
-# Release from that version's CHANGELOG.md section. It follows every successful run of deploy-demo.yml (which keeps a
+# Release from that version's CHANGELOG.md section. It follows every successful dispatched run of deploy-demo.yml (which keeps a
 # read-only token) and records a release only for a commit with a successful production deployment from main; a
 # repository-scope deploy has none and is skipped. A manual run on main records a release whose deploy already
-# succeeded. It never moves a tag that already names another commit.
+# succeeded (also for a deploy started by the owner's #236 comment, since every issue comment runs deploy-demo.yml
+# with skipped jobs). It never moves a tag that already names another commit.
 on:
   workflow_run:
     workflows: ['Deploy / demo Workers']
@@ -24,7 +25,8 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'workflow_dispatch' ||
-       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'))
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.event == 'workflow_dispatch'))
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -1,7 +1,8 @@
 /**
  * Release record: after a production deploy, tag the deployed commit `v<version>` and publish a GitHub Release whose
  * notes are that version's CHANGELOG section. It runs only for a commit whose newest production deployment from main
- * succeeded (Actions does not mark older deployments inactive, so this proves it deployed, not that it is still served), and never moves an existing tag: a tag that names another commit means the version was not bumped.
+ * succeeded (Actions does not mark older deployments inactive, so this proves it deployed, not that it is still
+ * served), and never moves an existing tag: a tag that names another commit means the version was not bumped.
  */
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
