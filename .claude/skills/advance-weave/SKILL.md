@@ -1,6 +1,7 @@
 ---
 name: advance-weave
 description: How the scheduled task advances Weave — goal, headline metric, gate, work order, scope and project rules. Read with agent-harness/autonomous-dev at the start of every run.
+ledger: docs/implementation/README.md
 ---
 
 # Advance Weave
