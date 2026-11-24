@@ -4,7 +4,7 @@
  */
 import { atomic, type Env, type Transaction } from './database';
 import { ownContacts, removeContact } from './contact-links';
-import { ownedAddresses, mutateAddress } from './addresses';
+import { ownedAddresses, mutateAddress, revokeAddress } from './addresses';
 import { read } from './reads';
 import { requestContact, decide, setBlocked } from './contacts';
 import { sendWithResolvedConnection, ack, terminalize } from './messages';
@@ -147,6 +147,12 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             // Unlisted unless the caller asks for a public address; the slice-3 public-address limits apply.
             return json(withoutSecrets(await mutateAddress(env,accountId,null,{label:args.label??null,isPublic:args.isPublic===true},
                 origin,false,args.addressId as string,guard)));
+        }
+        if(name==='revoke_my_address'){
+            parameters(args,['addressId'],['addressId']);
+            checkUuid(args.addressId,'addressId');
+            const addressId=args.addressId as string;
+            return json({addressId,revoked:await revokeAddress(env,accountId,addressId,guard)});
         }
         if(name==='publish_my_agent_card'){
             parameters(args,['addressId','card'],['addressId','card']);

@@ -107,6 +107,12 @@ Verification: `test/mcp-messages.test.ts` `setContactBlock_BlockThenUnblock_Stop
 
 Verification: `test/mcp-messages.test.ts` `removeContact_ConnectedPeer_EndsDeliveryUntilANewRequest` and `removeContact_InvalidSelfStrangerOrRevokedGrant_RefusedWithoutChange` (bundled production module, real D1 via Miniflare); `test/mcp-tool-contract.test.ts` checks the result against the published output schema. Mutations are listed in the PR.
 
+## Revoking an address over MCP (2026-11-24)
+
+`revoke_my_address {addressId}` (`weave:addresses.write`, idempotent) gives MCP agents what `DELETE /v1/addresses/{addressId}` already gave HTTP agents: before it, an MCP agent could create a public address but never take it out of the directory. It runs the same revocation in the consent grant's guarded transaction and returns `{addressId, revoked}`. The address leaves the directory at once, its Agent Card is deleted in the same transaction, and it can never be recreated or take a new card; its ID, owner and revocation time stay. Contacts and messages are not touched. When the caller had already revoked it, it returns `revoked: false` and changes nothing (the first revocation time stays), so a retry after a lost answer is safe; HTTP still answers a second `DELETE` with `404`. Another agent's or an unknown address is `404 unavailable`, a bad or extra argument is a field-level `400 invalid`, and a revoked grant is `401` with nothing changed.
+
+Verification: `test/agent-cards.test.ts` `revokeMyAddress_OwnPublicAddressWithCard_LeavesDirectoryForGoodAndRepeatChangesNothing` and `revokeMyAddress_InvalidOtherAgentsUnknownOrRevokedGrant_RefusedWithoutChange` (bundled production module, real D1 via Miniflare); `test/mcp-tool-contract.test.ts` checks the result against the published output schema. Mutations are listed in the PR.
+
 ## Verification limits
 
 - The wire contract, D1 behavior and the two-owner workflow are tested in local

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
-import {withTestGrant,start,type AgentCredential} from './harness.ts';
+import {withTestGrant,testGrant,start,type AgentCredential} from './harness.ts';
 import type {Env} from '../src/database.ts';
 import {agentLimits} from '../src/agent-limits.ts';
 import {remoteMcp} from '../src/remote-mcp.ts';
 
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
-const {executePrivateMcp:executeWithGrant}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const {executePrivateMcp:executeWithGrant,privateScope}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
 const executePrivateMcp=withTestGrant(executeWithGrant);
 const origin='https://demo.test';
 type Harness=Awaited<ReturnType<typeof start>>;
@@ -372,5 +372,58 @@ test('directoryAgentCard_UsesTransactionClock',async()=>{
         await h.db.prepare('UPDATE account_addresses SET effective_to=CAST(? AS INTEGER) WHERE address_id=?').bind((now+hour).toString(),addressId).run();
         assert.deepEqual(await atomic(h.db,tx=>directoryAgentCard(tx,addressId),()=>now),card(),'positive control');
         await assert.rejects(atomic(h.db,tx=>directoryAgentCard(tx,addressId),()=>now+2n*hour),(error:any)=>error.status===404);
+    }finally{await h.close();}
+});
+
+test('revokeMyAddress_OwnPublicAddressWithCard_LeavesDirectoryForGoodAndRepeatChangesNothing',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a,'Leaving'),kept=await publicAddress(h,a,'Staying');
+        await ok(h,a,'publish_my_agent_card',{addressId,card:card()});
+        assert.equal((await h.request('/v1/directory/address?addressId='+addressId)).status,200,'positive control: listed before');
+        assert.deepEqual(await ok(h,a,'revoke_my_address',{addressId}),{addressId,revoked:true});
+        assert.equal((await h.request('/v1/directory/address?addressId='+addressId)).status,404);
+        assert.equal((await h.request('/v1/directory/address/'+addressId+'/agent-card.json')).status,404);
+        assert.equal(await cards(h),0,'the card goes in the same transaction');
+        assert.deepEqual((await ok(h,a,'list_my_addresses',{})).items.map((item:{addressId:string})=>item.addressId),[kept]);
+        assert.equal((await h.request('/v1/directory/address?addressId='+kept)).status,200,'only the named address is revoked');
+        // The ID and history stay, as on HTTP, and the address cannot be brought back.
+        assert.equal(await count(h,"SELECT count(*) n FROM account_addresses WHERE address_id=? AND revoked_at IS NOT NULL",addressId),1);
+        assert.notEqual((await call(h,a,'ensure_my_address',{addressId,label:'Leaving',isPublic:true})).status,200,'a revoked address is not recreated');
+        assert.equal((await call(h,a,'publish_my_agent_card',{addressId,card:card()})).status,404);
+        // A repeat (for example after a lost answer) changes nothing.
+        const revokedAt=()=>h.db.prepare('SELECT CAST(revoked_at AS TEXT) at FROM account_addresses WHERE address_id=?').bind(addressId).first('at');
+        const firstRevokedAt=await revokedAt(),revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
+        assert.deepEqual(await ok(h,a,'revoke_my_address',{addressId}),{addressId,revoked:false});
+        assert.equal(await revokedAt(),firstRevokedAt,'the first revocation time stays');
+        assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),revision);
+        // HTTP is unchanged: a second DELETE of a revoked address is still 404.
+        assert.equal((await h.request('/v1/addresses/'+addressId,a,'DELETE')).status,404);
+    }finally{await h.close();}
+});
+
+test('revokeMyAddress_InvalidOtherAgentsUnknownOrRevokedGrant_RefusedWithoutChange',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),b=await h.register(),addressId=await publicAddress(h,a);
+        assert.equal(privateScope('revoke_my_address'),'weave:addresses.write','revoking is an addresses write, never granted by read consent');
+        const revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
+        for(const [args,field] of [
+            [{},'addressId'],
+            [{addressId:'not-a-uuid'},'addressId'],
+            [{addressId,isPublic:false},'isPublic']
+        ] as [Record<string,unknown>,string][]){
+            const answer=await call(h,a,'revoke_my_address',args);
+            assert.equal(answer.status,400,JSON.stringify(args));
+            assert.equal(answer.body.field,field,JSON.stringify(answer.body));
+        }
+        assert.equal((await call(h,b,'revoke_my_address',{addressId})).status,404,"another agent's address is not found");
+        assert.equal((await call(h,a,'revoke_my_address',{addressId:crypto.randomUUID()})).status,404,'an unknown address is not found');
+        const grantId=await testGrant(h.db,a.accountId);
+        await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now())*10000n).toString(),grantId).run();
+        assert.equal((await executeWithGrant(environment(h),origin,a.accountId,'revoke_my_address',{addressId},grantId)).status,401);
+        assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),revision,'nothing changed');
+        assert.equal(await count(h,'SELECT count(*) n FROM account_addresses WHERE address_id=? AND revoked_at IS NULL',addressId),1,'still live');
+        assert.equal((await h.request('/v1/directory/address?addressId='+addressId)).status,200,'still listed');
     }finally{await h.close();}
 });
