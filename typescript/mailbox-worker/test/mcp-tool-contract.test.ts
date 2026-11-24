@@ -160,6 +160,7 @@ test('real D1 results of every private tool conform to their published output sc
         // Agent management runs for the human behind an owner grant; this one may also decide (A1).
         ownerGrant=crypto.randomUUID();
         assert.deepEqual(await recordOwnerGrant(env,{grantId:ownerGrant,humanId,clientId:'https://office.example/client.json',appDecides:true}),{ok:true});
+        assert.deepEqual((await run(humanId,'list_pending_actions')).items.map((item:{actionId:string})=>item.actionId),[toApprove.actionId,toReject.actionId]);
         const plan=await run(humanId,'get_pending_action',{actionId:toApprove.actionId});
         assert.equal(plan.content,'contract-app-approves');
         assert.equal((await run(humanId,'approve_action',{actionId:toApprove.actionId,planDigest:plan.planDigest})).status,'approved');

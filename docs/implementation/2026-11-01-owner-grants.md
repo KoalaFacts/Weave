@@ -451,6 +451,13 @@ owner page.
   decided adds "decided by an app you let decide:" with the client's self-reported name (escaped, marked not verified,
   "Unnamed client" when absent or empty) and client ID. The owner's own decisions, a plan expired undecided, a mailbox
   that predates the field and a malformed value add nothing. No schema, API or MCP change.
+- **Listing what waits (2026-11-24).** An app that decides learned of a pending plan only from a webhook or by listing
+  each agent's plans as that agent, one agent at a time. The owner-grant MCP tool `list_pending_actions {}` (same
+  scope, no `Weave-Agent` header, no permission to decide needed, like `get_pending_action`) returns
+  `{items, more}`: the 20 oldest pending, unexpired plans across all the human's agents, each exactly as
+  `get_pending_action` returns it (the owner page's `pendingForOwner`, in its order), and `more` true when others wait
+  behind them; deciding these, or letting them expire, brings the next forward. A revoked grant or frozen human is 401
+  `grant-revoked`; it takes no arguments. No schema or HTTP API change.
 
 Verification of A1-3: `test/owner-grant-decisions.test.ts` covers an app approval (before and after the agent sends
 it), an app rejection, the owner withdrawing an app's approval (null), the app withdrawing the owner's approval (the
@@ -475,6 +482,14 @@ the decision joined fixed to `approved`, the join not limited to its decision or
 dropped (mailbox); the name unescaped, the client ID unescaped, the client-ID check removed, the entry not showing the
 app (also caught by the workerd test), and an empty name shown as a name (auth-worker). The `decided_at` condition in
 the join is equivalent, as above.
+
+Verification of the pending list: `test/owner-grant-decisions.test.ts` covers an empty list, plans of two agents of
+the human oldest first with another human's and an expired plan left out, each item equal to `get_pending_action`'s
+view, 21 waiting (the oldest 20, `more` true), one decided (the next brought forward, `more` false), an argument
+refused (400) and a revoked grant (401); `test/mcp-tool-contract.test.ts` checks the result against its output schema;
+auth-worker `test/workerd-owner-app-grant.test.ts` lists the queued plan through both Workers. Mutations caught: the
+look-ahead row dropped (`more` always false), the page not cut at 20, the grant check removed, and the argument check
+removed. Not run against a deployment.
 
 Verification of A1-2 step 2: `test/owner-grant-decisions.test.ts` covers approve as the human with the grant recorded and
 one send, no permission and a stopped permission (`decisions-off`, nothing written), a revoked grant and a frozen human

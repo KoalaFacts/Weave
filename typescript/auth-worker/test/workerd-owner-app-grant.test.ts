@@ -305,6 +305,10 @@ test("ownerGrant_ConsentCreateActAsRevoke_EndToEnd",{timeout:240_000},async t=>{
   const queued=await call(mf,decidingToken,"propose_external_action",{credentialRef:"desk",operation:"publish_text",content:"Lunch is served."},created.accountId);
   const plan=await call(mf,decidingToken,"get_pending_action",{actionId:queued.actionId});
   assert.equal(plan.content,"Lunch is served.");
+  const waiting=await call(mf,decidingToken,"list_pending_actions",{});
+  assert.deepEqual(waiting.items.find((item:{actionId:string})=>item.actionId===queued.actionId),plan,"the app lists what waits across the human's agents");
+  assert.equal(waiting.more,false);
+  assert.equal((await mcp(mf,otherToken,"list_pending_actions",{})).status,403,"an agent's own grant never lists them");
   assert.match(await refused(mf,decidingToken,"approve_action",{actionId:queued.actionId,planDigest:"A".repeat(43)}),/plan-changed/);
   assert.equal((await mcp(mf,otherToken,"approve_action",{actionId:queued.actionId,planDigest:plan.planDigest})).status,403,"an agent's own grant never approves");
   assert.deepEqual(await call(mf,decidingToken,"approve_action",{actionId:queued.actionId,planDigest:plan.planDigest}),{actionId:queued.actionId,status:"approved"});
