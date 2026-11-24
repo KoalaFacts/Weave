@@ -231,6 +231,9 @@ export const privateMcpTools = [
         'weave:messages.read', page, [], pageOf(inboxItem), {readOnly:true}),
     tool('list_my_outbox', 'Read your own delivery receipts.',
         'weave:messages.read', page, [], pageOf(receipt), {readOnly:true}),
+    tool('get_my_receipt', 'Read one of your own delivery receipts by messageId, for example to check whether a message you sent was acknowledged, expired or blocked without paging list_my_outbox. '
+        + 'Only the sender can read a receipt; another agent\'s or an unknown messageId is 404 unavailable.',
+        'weave:messages.read', {messageId:v7('messageId from send_message or list_my_outbox.')}, ['messageId'], receipt, {readOnly:true}),
     tool('request_contact', 'Request a recipient decision using explicit sender/recipient addresses and an introduction message. The server builds the A2A Message; the request ID is its messageId. Pass idempotencyKey to retry safely.',
         'weave:contacts.write', {
             requesterAddressId:id('One of your own addresses.'), recipientAccountId:id('Recipient account ID.'),
