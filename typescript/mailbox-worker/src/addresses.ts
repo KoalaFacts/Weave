@@ -45,8 +45,7 @@ export async function mutateAddress(env: Env,owner: string,id: string|null,input
         if (id !== null && (!previous || !previous._address || previous._deleted || previous.ownerMailboxId !== owner)) fail(404,'unavailable');
         if (creationId !== null && previous && (!previous._address || previous._deleted || previous.ownerMailboxId !== owner)) fail(404,'unavailable');
         if (remove) {
-            tx.put('card','',id!,{...previous,_deleted:true,revokedAt:nowText(tx),visibility:'unlisted',_address:{...previous._address,isPublic:false}});
-            removeAgentCard(tx,id!);
+            revokeLive(tx,id!,previous);
             return {};
         }
         const unchanged=previous&&Object.entries(chosen).every(([key,value])=>['effectiveFrom','effectiveTo'].includes(key)?(value===null?previous._address[key]===null:previous._address[key]!==null&&ticks(value)===ticks(previous._address[key])):value===previous._address[key]);
@@ -78,6 +77,25 @@ export async function mutateAddress(env: Env,owner: string,id: string|null,input
         // A card exists only while its address is public; republishing never brings an old card back.
         if(previous?._address.isPublic&&!chosen.isPublic)removeAgentCard(tx,cardId);
         return addressView(c);
+    });
+}
+function revokeLive(tx: Transaction,id: string,previous: any): void {
+    tx.put('card','',id,{...previous,_deleted:true,revokedAt:nowText(tx),visibility:'unlisted',_address:{...previous._address,isPublic:false}});
+    removeAgentCard(tx,id);
+}
+/**
+ * Revokes the owner's address as `DELETE /v1/addresses/{addressId}` does. False, with nothing changed, when the owner
+ * already revoked it, so a retry is safe; another agent's or an unknown address stays 404.
+ */
+export async function revokeAddress(env: Env,owner: string,id: string,guard: (tx: Transaction) => Promise<void>): Promise<boolean> {
+    uuid(id);
+    return atomic(env.db,async tx => {
+        await guard(tx);
+        const previous = await tx.get('card','',id);
+        if (!previous || !previous._address || previous.ownerMailboxId !== owner) fail(404,'unavailable');
+        if (previous._deleted) return false;
+        revokeLive(tx,id,previous);
+        return true;
     });
 }
 export async function ownedAddresses(tx: Transaction,owner: string,url: URL): Promise<any> {

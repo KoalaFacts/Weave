@@ -108,13 +108,13 @@ const externalAction = out({
 const media = out({mediaId:id('Media ID.'), contentType:str(64), bytes:{type:'integer', minimum:1}, sha256:{...str(64), pattern:'^[0-9a-f]{64}$'},
     createdAt:time('Upload time.')}, ['mediaId','contentType','bytes','sha256','createdAt']);
 
-/** `openWorld` marks a tool whose effect reaches a service outside Weave. */
-type Annotations = {readOnly?: boolean; idempotent?: boolean; openWorld?: boolean};
+/** `openWorld` marks a tool whose effect reaches a service outside Weave; `destructive` one whose effect cannot be undone. */
+type Annotations = {readOnly?: boolean; idempotent?: boolean; openWorld?: boolean; destructive?: boolean};
 const tool = (name: string, description: string, scope: string, properties: Record<string, unknown>,
-    required: string[], outputSchema: Record<string, unknown>, {readOnly = false, idempotent = readOnly, openWorld = false}: Annotations = {}) => ({
+    required: string[], outputSchema: Record<string, unknown>, {readOnly = false, idempotent = readOnly, openWorld = false, destructive = false}: Annotations = {}) => ({
     name, description, inputSchema:{type:'object', properties, required, additionalProperties:false},
     outputSchema:{$schema:'https://json-schema.org/draft/2020-12/schema', ...outputSchema},
-    annotations:{readOnlyHint:readOnly, destructiveHint:false, idempotentHint:idempotent, openWorldHint:openWorld},
+    annotations:{readOnlyHint:readOnly, destructiveHint:destructive, idempotentHint:idempotent, openWorldHint:openWorld},
     securitySchemes:[{type:'oauth2', scopes:[scope]}], _meta:{securitySchemes:[{type:'oauth2', scopes:[scope]}]} as Record<string, unknown>
 });
 
@@ -188,6 +188,12 @@ export const privateMcpTools = [
         'weave:addresses.write', {addressId:id('Client-chosen stable address UUID; reuse it to retry.'), label:str(128, 'Optional label; public when isPublic is true.'),
             isPublic:{type:'boolean', description:'Default false. True lists the address in the public directory, where anyone can read it; discovery grants no messaging permission.'}},
         ['addressId'], address, {idempotent:true}),
+    tool('revoke_my_address', 'Revoke one of your own addresses permanently, as DELETE /v1/addresses/{addressId} does. '
+        + 'It leaves the public directory at once, its Agent Card is deleted, and it can never be used again or brought back; its ID and history are kept. '
+        + 'Existing contacts and messages are not affected. revoked is false, and nothing changes, when you had already revoked it, so a repeat is safe.',
+        'weave:addresses.write', {addressId:id('Your own address.')}, ['addressId'],
+        out({addressId:id('Address ID.'), revoked:{type:'boolean', description:'true when this call revoked a live address.'}}, ['addressId','revoked']),
+        {idempotent:true, destructive:true}),
     tool('publish_my_agent_card', 'Attach an A2A v1.0.0 Agent Card to one of your own public addresses, replacing any earlier card, or remove it with card:null. '
         + 'The card is what you declare: Weave stores and shows it as unverified and does not check that the declared endpoints exist. It is deleted when the address is revoked or made private, and is served only while the address is public and inside its effective window. Weave never fetches the card URLs.',
         'weave:addresses.write', {addressId:id('Your own public address.'), card:nullable(agentCard)}, ['addressId','card'],
