@@ -48,6 +48,12 @@ test('problem_D1PrefixInsideAnotherMessage_NotLogged', t => {
     assert.deepEqual(JSON.parse(text(log)), {event: 'storage-unavailable', errorClass: 'SyntaxError', message: null});
 });
 
+test('problem_D1PrefixWithoutColon_NotLogged', t => {
+    const log = logged(t);
+    problem(new Error('D1_ERRORX secret-body-marker'));
+    assert.deepEqual(JSON.parse(text(log)), {event: 'storage-unavailable', errorClass: 'Error', message: null});
+});
+
 test('problem_D1TypeError_LogsClassOnly', t => {
     const log = logged(t);
     problem(new Error("D1_TYPE_ERROR: Type 'bigint' not supported for value 'secret-value-marker'"));
