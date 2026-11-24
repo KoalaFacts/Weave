@@ -352,16 +352,20 @@ export async function executeExternalAction(env: Env, caller: ActionCaller, acti
     }
 }
 
-/** Pending actions of the human's agents, for the owner page: the oldest `limit`, or only `actionId` when it is given. */
-export async function pendingForOwner(tx: Transaction, humanId: string, now: bigint, actionId: string | null = null, limit = pendingActionsShownToOwner): Promise<OwnerExternalAction[]> {
+/** Pending actions of the human's agents, for the owner page: the oldest `limit`, or only `actionId` when it is given. With
+ * `after` (an action's proposal time and ID) only those proposed after it in that order. */
+export async function pendingForOwner(tx: Transaction, humanId: string, now: bigint, actionId: string | null = null, limit = pendingActionsShownToOwner,
+    after: {createdAt: string; actionId: string} | null = null): Promise<OwnerExternalAction[]> {
     // The display name is the credential's current one; accountChanged says whether that credential still matches the plan, as the confirmation re-checks.
     const rows = (await tx.db.prepare(`SELECT x.action_id,x.account_id,x.provider,x.operation,x.content,x.credential_ref,x.credential_revision,
         x.target_account,x.plan_digest,CAST(x.created_at AS TEXT) created_at,CAST(x.expires_at AS TEXT) expires_at,c.target_display,
         c.provider c_provider,c.revision c_revision,c.target_account c_target_account,CAST(c.revoked_at AS TEXT) c_revoked_at,a.display_name
         FROM external_actions x JOIN accounts a ON a.account_id=x.account_id JOIN external_credentials c ON c.account_id=x.account_id AND c.credential_ref=x.credential_ref
         WHERE a.human_id=? AND x.status='pending' AND x.expires_at>CAST(? AS INTEGER)${actionId === null ? '' : ' AND x.action_id=?'}
+        ${after === null ? '' : 'AND (x.created_at>CAST(? AS INTEGER) OR (x.created_at=CAST(? AS INTEGER) AND x.action_id>?))'}
         ORDER BY x.created_at,x.action_id LIMIT ?`)
-        .bind(humanId, now.toString(), ...(actionId === null ? [] : [actionId]), limit).all<Row & {target_display: string; c_provider: string; c_revision: string; c_target_account: string; c_revoked_at: string | null; display_name: string | null}>()).results;
+        .bind(humanId, now.toString(), ...(actionId === null ? [] : [actionId]),
+            ...(after === null ? [] : [after.createdAt, after.createdAt, after.actionId]), limit).all<Row & {target_display: string; c_provider: string; c_revision: string; c_target_account: string; c_revoked_at: string | null; display_name: string | null}>()).results;
     const actions: OwnerExternalAction[] = [];
     for (const row of rows) {
         const media: OwnerExternalAction['media'] = [];

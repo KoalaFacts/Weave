@@ -78,8 +78,11 @@ export async function executeOwnerMcp(env: Env, humanId: string, name: string, a
             fail(503, 'unavailable');
         }
         if (name === 'list_pending_actions') {
-            only([], []);
-            return json(await appPendingActions(env, humanId, check));
+            only(['after'], []);
+            if (args.after !== undefined && (typeof args.after !== 'string' || !uuid.test(args.after))) invalidField('after', 'must be a lowercase UUID');
+            const listed = await appPendingActions(env, humanId, (args.after as string | undefined) ?? null, check);
+            if (!listed) fail(404, 'action-not-found');
+            return json(listed);
         }
         if (name === 'get_pending_action') {
             only(['actionId'], ['actionId']);

@@ -51,13 +51,20 @@ export async function appPendingAction(env: Env, humanId: string, actionId: stri
 export const pendingActionsListedToApp = 20;
 
 /** The oldest pending, unexpired plans of the grant's human's agents, as Weave's owner page lists them, at most
- * `pendingActionsListedToApp`; `more` says whether others wait behind them (deciding these brings them forward). Reading needs
- * no permission to decide, as for `appPendingAction`. */
-export async function appPendingActions(env: Env, humanId: string, check: (tx: Transaction) => Promise<void>,
-    clock: () => bigint = nowUtc): Promise<{items: OwnerExternalAction[]; more: boolean}> {
+ * `pendingActionsListedToApp`; `more` says whether others wait behind them. With `after` (the actionId of the last item of
+ * the previous page, an action of one of this human's agents in any status) it lists the plans proposed after that one, so an
+ * app that leaves some plans to the owner still reaches the ones behind them; null when `after` is not such an action.
+ * Reading needs no permission to decide, as for `appPendingAction`. */
+export async function appPendingActions(env: Env, humanId: string, after: string | null, check: (tx: Transaction) => Promise<void>,
+    clock: () => bigint = nowUtc): Promise<{items: OwnerExternalAction[]; more: boolean} | null> {
     return atomic(env.db, async tx => {
         await check(tx);
-        const rows = await pendingForOwner(tx, humanId, tx.store.now, null, pendingActionsListedToApp + 1);
+        const cursor = after === null ? null : await tx.db.prepare(`SELECT CAST(x.created_at AS TEXT) created_at,x.action_id
+            FROM external_actions x JOIN accounts a ON a.account_id=x.account_id WHERE x.action_id=? AND a.human_id=?`)
+            .bind(after, humanId).first<{created_at: string; action_id: string}>();
+        if (after !== null && !cursor) return null;
+        const rows = await pendingForOwner(tx, humanId, tx.store.now, null, pendingActionsListedToApp + 1,
+            cursor ? {createdAt: cursor.created_at, actionId: cursor.action_id} : null);
         return {items: rows.slice(0, pendingActionsListedToApp), more: rows.length > pendingActionsListedToApp};
     }, clock);
 }

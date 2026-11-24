@@ -156,8 +156,8 @@ export const ownerMcpTools = [
         'weave:agents.manage', {webhookId:id('A webhook this grant registered.')}, ['webhookId'],
         out({webhookId:id('The revoked webhook.'), revoked:{type:'boolean', const:true}}, ['webhookId','revoked']), {idempotent:true}),
     tool('list_pending_actions', 'List the pending, unexpired external actions of all agents your human owns, oldest first, at most 20, each exactly as get_pending_action returns it. '
-        + 'more is true when others wait behind these: deciding or letting these expire brings them forward. ' + manage,
-        'weave:agents.manage', {}, [], out({items:{type:'array', items:pendingPlan, maxItems:20},
+        + 'more is true when others wait behind these: deciding or letting these expire brings them forward, and passing the last item\'s actionId as after lists the ones behind it. ' + manage,
+        'weave:agents.manage', {after:id('The actionId of the last item of the previous page; an action of an agent your human owns, in any status. Not found otherwise.')}, [], out({items:{type:'array', items:pendingPlan, maxItems:20},
             more:{type:'boolean', description:'Other pending actions wait behind these.'}}, ['items','more']), {readOnly:true}),
     tool('get_pending_action', 'Read one pending external action of an agent your human owns exactly as Weave\'s approval page shows it, with the planDigest that approve_action names. '
         + 'Not found once it is decided or expired, or for an agent your human does not own; learn what became of it with get_external_action as that agent. ' + manage,

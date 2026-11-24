@@ -458,6 +458,18 @@ owner page.
   `get_pending_action` returns it (the owner page's `pendingForOwner`, in its order), and `more` true when others wait
   behind them; deciding these, or letting them expire, brings the next forward. A revoked grant or frozen human is 401
   `grant-revoked`; it takes no arguments. No schema or HTTP API change.
+- **Paging what waits (2026-11-24).** An app that leaves some plans to the owner could never see past the 20 oldest:
+  only deciding them brought the next forward. `list_pending_actions` now takes an optional `after`, the `actionId` of the
+  last item of the previous page: an action of one of the human's agents in any status (decided or expired cursors
+  still page), else 404 `action-not-found`, the same as for another human's or an unknown action; a malformed value is
+  400. It lists the pending, unexpired plans proposed after that action in the same order (proposal time, then action
+  ID for a tie), at most 20, with `more`. No schema or HTTP API change.
+
+Verification of paging: `test/owner-grant-decisions.test.ts` pages after a pending, a decided, an expired and the newest
+action, after both actions of a proposal-time tie, and checks 404 for another human's and an unknown action and 400 for a
+malformed or non-string `after` and an unknown argument. Mutations caught: the tie clause dropped, `>=` in the tie or in
+the time comparison, the not-found return removed, the cursor lookup not limited to the human, and the `after`
+validation removed. Not run against a deployment.
 
 Verification of A1-3: `test/owner-grant-decisions.test.ts` covers an app approval (before and after the agent sends
 it), an app rejection, the owner withdrawing an app's approval (null), the app withdrawing the owner's approval (the
