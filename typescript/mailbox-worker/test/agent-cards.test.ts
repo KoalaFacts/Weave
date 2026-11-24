@@ -490,6 +490,8 @@ test('updateMyAddress_InvalidOtherAgentsRevokedUnknownOverLimitOrRevokedGrant_Re
             assert.equal(answer.status,400,JSON.stringify(args));
             assert.equal(answer.body.field,field,JSON.stringify(answer.body));
         }
+        // An omitted field is named as required, never read as null (which would clear it).
+        assert.equal((await call(h,a,'update_my_address',{addressId,label:'Changed',isPublic:true,effectiveFrom:null,effectiveTo:null})).body.reason,'is required');
         // The deeper checks PUT applies hold here too.
         for(const bad of [{directUri:'ftp://agent.example'},{effectiveFrom:'2026-01-01T00:00:00+01:00'},
             {effectiveFrom:'2026-02-01T00:00:00Z',effectiveTo:'2026-01-01T00:00:00Z'},{label:'x'.repeat(129)}])
