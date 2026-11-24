@@ -362,3 +362,39 @@ test('ownerOverview_RecentActions_AppApprovedThenRejected_PagesEachOnceNamingThe
     assert.deepEqual(new Set(listed.map(a => a.actionId)), new Set(ids), 'each listed once across the pages');
     assert.ok(listed.every(a => a.status === 'rejected' && a.decidedByApp?.grantId === grantId), 'each names the app');
 }));
+
+test('listPendingActions_OldestTwentyOfAllThisHumansAgents_MoreWhenOthersWait', () => scenario(async ({h}) => {
+    const mine = await ownedAgent(h), theirs = await ownedAgent(h);
+    const second = await h.register();
+    await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(mine.humanId, second.accountId).run();
+    await setCredential(h, second.accountId);
+    // Listing needs no permission to decide, like get_pending_action.
+    const grantId = await grant(h, mine.humanId, false);
+    const list = async () => {
+        const result = await tool(h, mine.humanId, grantId, 'list_pending_actions', {});
+        assert.equal(result.status, 200, JSON.stringify(result.body));
+        return result.body as {items: {actionId: string; agentId: string; planDigest: string}[]; more: boolean};
+    };
+    assert.deepEqual(await list(), {items: [], more: false});
+    const other = await propose(h, theirs.agent);
+    const proposed: string[] = [];
+    for (let i = 0; i < 11; i++) proposed.push(await propose(h, i % 2 ? second : mine.agent));
+    const expiring = proposed.splice(3, 1)[0]!;
+    await h.db.prepare('UPDATE external_actions SET expires_at=CAST(? AS INTEGER) WHERE action_id=?').bind(ticks(), expiring).run();
+    let listed = await list();
+    assert.deepEqual(listed.items.map(item => item.actionId), proposed, 'oldest first, both agents, not expired, not another human\'s');
+    assert.equal(listed.more, false);
+    assert.ok(!listed.items.some(item => item.actionId === other));
+    assert.deepEqual(listed.items[0], (await tool(h, mine.humanId, grantId, 'get_pending_action', {actionId: proposed[0]!})).body, 'each item is get_pending_action\'s view');
+    for (let i = 0; i < 11; i++) proposed.push(await propose(h, i % 2 ? mine.agent : second));
+    listed = await list();
+    assert.deepEqual(listed.items.map(item => item.actionId), proposed.slice(0, 20), 'the oldest 20');
+    assert.equal(listed.more, true, '21 wait');
+    await ownerAction(environment(h), {kind: 'reject-action', requestId: proposed[0]!, humanId: mine.humanId, authAt: Date.now()} as OwnerAction);
+    listed = await list();
+    assert.deepEqual(listed.items.map(item => item.actionId), proposed.slice(1, 21), 'deciding one brings the next forward');
+    assert.equal(listed.more, false, 'exactly 20 wait');
+    assert.equal((await tool(h, mine.humanId, grantId, 'list_pending_actions', {agentId: mine.agent.accountId})).status, 400, 'takes no arguments');
+    await h.db.prepare('UPDATE owner_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind(ticks(), grantId).run();
+    assert.equal((await tool(h, mine.humanId, grantId, 'list_pending_actions', {})).status, 401, 'a revoked grant');
+}));

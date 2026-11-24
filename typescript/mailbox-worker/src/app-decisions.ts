@@ -46,3 +46,18 @@ export async function appPendingAction(env: Env, humanId: string, actionId: stri
         return (await pendingForOwner(tx, humanId, tx.store.now, actionId))[0] ?? null;
     }, clock);
 }
+
+/** How many of the human's agents' pending plans one `list_pending_actions` call returns. */
+export const pendingActionsListedToApp = 20;
+
+/** The oldest pending, unexpired plans of the grant's human's agents, as Weave's owner page lists them, at most
+ * `pendingActionsListedToApp`; `more` says whether others wait behind them (deciding these brings them forward). Reading needs
+ * no permission to decide, as for `appPendingAction`. */
+export async function appPendingActions(env: Env, humanId: string, check: (tx: Transaction) => Promise<void>,
+    clock: () => bigint = nowUtc): Promise<{items: OwnerExternalAction[]; more: boolean}> {
+    return atomic(env.db, async tx => {
+        await check(tx);
+        const rows = await pendingForOwner(tx, humanId, tx.store.now, null, pendingActionsListedToApp + 1);
+        return {items: rows.slice(0, pendingActionsListedToApp), more: rows.length > pendingActionsListedToApp};
+    }, clock);
+}

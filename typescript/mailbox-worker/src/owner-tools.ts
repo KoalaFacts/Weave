@@ -3,7 +3,7 @@
  * The human comes from the verified grant, never from tool arguments, and every write re-checks the grant inside its own
  * transaction.
  */
-import { appDecideExternalAction, appPendingAction } from './app-decisions.ts';
+import { appDecideExternalAction, appPendingAction, appPendingActions } from './app-decisions.ts';
 import { listWebhooks, registerWebhook, revokeWebhook } from './app-webhooks.ts';
 import { createOwnedAgent, listHumanAgents, renameOwnedAgent } from './humans.ts';
 import { ownerGrantCheck } from './client-grants.ts';
@@ -76,6 +76,10 @@ export async function executeOwnerMcp(env: Env, humanId: string, name: string, a
             if (revoked.ok) return json({webhookId: args.webhookId as string, revoked: true});
             if (revoked.reason === 'not-found') fail(404, 'webhook-not-found');
             fail(503, 'unavailable');
+        }
+        if (name === 'list_pending_actions') {
+            only([], []);
+            return json(await appPendingActions(env, humanId, check));
         }
         if (name === 'get_pending_action') {
             only(['actionId'], ['actionId']);
