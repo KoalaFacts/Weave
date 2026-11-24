@@ -518,6 +518,9 @@ test('removeContact_ConnectedPeer_EndsDeliveryUntilANewRequest',async()=>{
         assert.equal(after.currentRequest,null);
         // The message pending on the old generation is not delivered, and neither side can send.
         assert.equal((await ok(env,a.accountId,'list_my_inbox',{})).items.some((item:{message?:{messageId:string}})=>item.message?.messageId===pending.messageId),false);
+        // The pending delivery ends blocked and its stored payload is cleared, not merely hidden by the generation filter (review).
+        assert.equal((await ok(env,b.accountId,'list_my_outbox',{})).items.find((item:{messageId:string})=>item.messageId===pending.messageId).state,'blocked');
+        assert.equal(await h.db.prepare('SELECT payload IS NULL cleared FROM mailbox_records WHERE message_id=?').bind(pending.messageId).first('cleared'),1);
         for(const [from,to] of [[a,b],[b,a]]){
             const refused=await call(env,from.accountId,'send_message',{recipientAccountId:to.accountId,message:text('after')});
             assert.equal(refused.status,409);
