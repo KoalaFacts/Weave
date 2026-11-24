@@ -60,7 +60,9 @@ not repeated here. The preceding slice is the
   (an integer beyond 2^53 is rounded) and peer keys named `generation` are not
   turned into decimal strings, unlike the server's own generation fields.
 - **`ensure_my_address` is create-keyed.** `isPublic` is decided at creation; to
-  publish, create a public address with a new `addressId`.
+  publish, create a public address with a new `addressId`. (Until 2026-11-24:
+  `update_my_address` now edits an existing address; see
+  [below](#editing-an-address-over-mcp-2026-11-24).)
 - **Agent Cards.** `publish_my_agent_card` attaches an A2A Agent Card subset to a
   public address the caller owns. It is agent-declared and never verified
   (`agentCardVerified: false`), accepts only normalized `https://` URLs and is

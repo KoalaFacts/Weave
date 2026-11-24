@@ -503,7 +503,10 @@ test('updateMyAddress_InvalidOtherAgentsRevokedUnknownOverLimitOrRevokedGrant_Re
         // The public-address limit applies to an unlisted address becoming public.
         for(let i=1;i<agentLimits.claimed.publicAddresses;i++)await publicAddress(h,a,'Extra '+i);
         const quiet=await ok(h,a,'ensure_my_address',{addressId:crypto.randomUUID(),label:'Quiet'});
+        const beforeLimit=await revision();
         assert.equal((await call(h,a,'update_my_address',{addressId:quiet.addressId,...full})).status,429);
+        assert.equal(await revision(),beforeLimit,'the refused address stays unlisted');
+        assert.equal((await h.request('/v1/directory/address?addressId='+quiet.addressId)).status,404);
         // A revoked address cannot be edited.
         await ok(h,a,'revoke_my_address',{addressId});
         assert.equal((await call(h,a,'update_my_address',{addressId,...full})).status,404,'a revoked address is not found');
