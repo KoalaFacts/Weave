@@ -616,6 +616,10 @@ test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeou
     await privateCall(mf,tokenB,"decide_contact",{
       requestId,requesterAccountId:account,
       expectedGeneration:String(requested.generation),status:"accepted"});
+    const decided=await privateCall(mf,token,"get_my_contact_request",{requestId,requesterAccountId:account});
+    assert.equal(decided.status,"accepted","the requester reads one request through the real consent token");
+    const swapped=await (await mcpCall(mf,token,"get_my_contact_request",{requestId,requesterAccountId:accountB})).json() as {result?:{isError?:boolean}};
+    assert.equal(swapped.result?.isError,true,"request IDs are requester-scoped: naming the wrong requester reads nothing");
     const deliveries:{token:string;receiverToken:string;sender:string;recipient:string;
       input:Record<string,unknown>;messageId:string}[]=[];
     async function sendMessage(index:number):Promise<void>{

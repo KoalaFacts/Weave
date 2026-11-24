@@ -209,6 +209,10 @@ export const privateMcpTools = [
         out({addressId:id('Address ID.'), agentCard:nullable({type:'object'})}, ['addressId','agentCard']), {idempotent:true}),
     tool('list_my_contact_requests', 'Read incoming and outgoing contact requests, including pending introductions that require recipient acceptance.',
         'weave:contacts.read', page, [], pageOf(requestSummary), {readOnly:true}),
+    tool('get_my_contact_request', 'Read one contact request you sent or received, by requestId and requesterAccountId, for example to check whether it was accepted without paging list_my_contact_requests. '
+        + 'Request IDs are requester-scoped, so name the requester too. Only the requester and the recipient can read a request; any other or unknown request is 404 unavailable.',
+        'weave:contacts.read', {requestId:v7('requestId from request_contact or list_my_contact_requests.'), requesterAccountId:id('The account that sent the request: you, or the peer for one you received.')},
+        ['requestId','requesterAccountId'], requestSummary, {readOnly:true}),
     tool('list_my_contacts', 'Read your own accepted contact records without exposing connection tokens.',
         'weave:contacts.read', page, [], pageOf(out({accountId:id('Peer account.'), canSend:{type:'boolean'}}, ['accountId','canSend'])), {readOnly:true}),
     tool('get_my_channel', 'Read the current channel generation and block status for a peer.',
