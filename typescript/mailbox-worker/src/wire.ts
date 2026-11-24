@@ -45,8 +45,15 @@ export function accountNames(value:any):any {
     }
     return value;
 }
+// An unexpected error still answers 503 storage, but is logged so the cause can be found. Only the error class and a
+// D1 error message are logged; other messages can quote request input (for example JSON parse errors), so they are not.
+function logUnexpected(error: unknown): void {
+    const message = error instanceof Error && /^D1_[A-Z_]+:/.test(error.message) ? error.message.slice(0, 300) : null;
+    console.error(JSON.stringify({event: 'storage-unavailable', errorClass: error instanceof Error ? error.name : typeof error, message}));
+}
 export function problem(error: unknown): Response {
     const p = error instanceof Problem ? error : new Problem(503, 'storage');
+    if (!(error instanceof Problem)) logUnexpected(error);
     const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Agent authentication required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress', 'idempotency-conflict':'Idempotency key reused with different input', 'not-connected':'Not connected', 'grant-revoked':'Authorization revoked', 'agent-limit':'Agent limit reached', 'agent-not-found':'Agent not found', 'webhook-limit':'Webhook limit reached', 'webhook-not-found':'Webhook not found' };
     // A code without a title still answers valid JSON: stringify writes an undefined value literally.
     const response = json({ status: p.status, ...(Object.hasOwn(titles, p.code) ? {title: titles[p.code]} : {}), code: p.code, ...(p.detail ?? {}) }, p.status);

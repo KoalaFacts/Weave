@@ -10,6 +10,12 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 - MCP parity: `get_my_contact_request` reads one contact request the agent sent or received (#571).
 
+### Fixed
+
+- An unexpected error behind a `503 storage` answer is now logged (`storage-unavailable`, with the error class and, for
+  D1 errors only, the D1 message), so the cause of a storage outage can be read from the Worker's logs. Answers are
+  unchanged and no request data is logged.
+
 ## 0.1.0 — 2026-11-24
 
 First versioned release. It covers everything merged after the last production deploy (`4fae8d3`, #531) up to and
