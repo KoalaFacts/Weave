@@ -114,6 +114,7 @@ test('real D1 results of every private tool conform to their published output sc
             recipientAddressId:b.cardId,message:{parts:[{text:'contract-introduction'}]},idempotencyKey:'contract-intro'});
         assert.equal(requested.generation,'1','generations are exact decimal strings in structured results');
         await run(b.accountId,'list_my_contact_requests');
+        assert.equal((await run(b.accountId,'get_my_contact_request',{requestId:requested.request.requestId,requesterAccountId:a.accountId})).status,'pending');
         await run(b.accountId,'decide_contact',{requestId:requested.request.requestId,requesterAccountId:a.accountId,
             expectedGeneration:requested.generation,status:'accepted'});
         await run(a.accountId,'list_my_contacts');

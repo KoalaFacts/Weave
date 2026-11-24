@@ -596,3 +596,38 @@ test('getMyReceipt_SenderReadsOwnReceipt_OthersUnknownMalformedOrRevokedRefused'
         assert.equal((await executeWithGrant(env,origin,a.accountId,'get_my_receipt',{messageId:sent.messageId},grantId)).status,401);
     }finally{await h.close();}
 });
+
+test('getMyContactRequest_RequesterAndRecipientRead_OthersUnknownMalformedOrRevokedRefused',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),a=await h.participant(),b=await h.participant(),c=await h.participant();
+        assert.equal(privateScope('get_my_contact_request'),'weave:contacts.read','reading a request is a contacts read');
+        const requested=await ok(env,a.accountId,'request_contact',{requesterAddressId:a.cardId,recipientAccountId:b.accountId,
+            recipientAddressId:b.cardId,message:text('hello, may we talk?')});
+        const key={requestId:requested.request.requestId,requesterAccountId:a.accountId};
+        const pending=await ok(env,a.accountId,'get_my_contact_request',key);
+        assert.equal(pending.status,'pending');
+        assert.equal(pending.recipientAccountId,b.accountId);
+        const listed=(await ok(env,b.accountId,'list_my_contact_requests',{})).items.find((item:{requestId:string})=>item.requestId===key.requestId);
+        assert.deepEqual(await ok(env,b.accountId,'get_my_contact_request',key),listed,'the recipient reads the same request as list_my_contact_requests');
+        await ok(env,b.accountId,'decide_contact',{...key,expectedGeneration:String(requested.generation),status:'accepted'});
+        assert.equal((await ok(env,a.accountId,'get_my_contact_request',key)).status,'accepted');
+        // Only the two parties read a request; a third agent, the wrong requester and an unknown ID all read as unavailable.
+        for(const [owner,args] of [[c.accountId,key],[a.accountId,{...key,requesterAccountId:b.accountId}],
+            [a.accountId,{...key,requestId:'0199aaaa-0000-7000-8000-000000000009'}]] as [string,Record<string,unknown>][]){
+            const answer=await call(env,owner,'get_my_contact_request',args);
+            assert.equal(answer.status,404,JSON.stringify(args));
+            assert.equal(answer.body.code,'unavailable');
+        }
+        for(const args of [{},{requestId:key.requestId},{requesterAccountId:a.accountId},{...key,requestId:'not-a-uuid'},{...key,requesterAccountId:''},{...key,extra:1}] as Record<string,unknown>[]){
+            const answer=await call(env,a.accountId,'get_my_contact_request',args);
+            assert.equal(answer.status,400,JSON.stringify(args));
+        }
+        assert.equal((await call(env,a.accountId,'get_my_contact_request',{requesterAccountId:a.accountId})).body.field,'requestId');
+        assert.equal((await call(env,a.accountId,'get_my_contact_request',{...key,requestId:'not-a-uuid'})).body.field,'requestId','a malformed ID is named before any read');
+        assert.equal((await call(env,a.accountId,'get_my_contact_request',{...key,requesterAccountId:'not-a-uuid'})).body.field,'requesterAccountId');
+        const grantId=await testGrant(h.db,a.accountId);
+        await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now())*10000n).toString(),grantId).run();
+        assert.equal((await executeWithGrant(env,origin,a.accountId,'get_my_contact_request',key,grantId)).status,401);
+    }finally{await h.close();}
+});

@@ -4,6 +4,12 @@ Releases of the TypeScript Workers (`typescript/mailbox-worker` and `typescript/
 public demo through the production dispatch of `.github/workflows/deploy-demo.yml`. Versions follow SemVer; the
 two Workers share one version. The `csharp/` implementation is in maintenance and is not versioned here.
 
+## Unreleased
+
+### Added
+
+- MCP parity: `get_my_contact_request` reads one contact request the agent sent or received (#571).
+
 ## 0.1.0 — 2026-11-24
 
 First versioned release. It covers everything merged after the last production deploy (`4fae8d3`, #531) up to and
