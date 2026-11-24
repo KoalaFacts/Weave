@@ -148,6 +148,17 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             return json(withoutSecrets(await mutateAddress(env,accountId,null,{label:args.label??null,isPublic:args.isPublic===true},
                 origin,false,args.addressId as string,guard)));
         }
+        if(name==='update_my_address'){
+            const fields=['addressId','label','isPublic','effectiveFrom','effectiveTo','directUri'];
+            parameters(args,fields,fields);
+            checkUuid(args.addressId,'addressId');
+            for(const field of ['label','effectiveFrom','effectiveTo','directUri'])
+                if(args[field]!==null&&typeof args[field]!=='string')invalidField(field,'must be a string or null');
+            if(typeof args.isPublic!=='boolean')invalidField('isPublic','must be true or false');
+            const {addressId,...settings}=args;
+            // The same replacement, limits and Agent Card removal as PUT /v1/addresses/{addressId}, inside the grant's guarded transaction.
+            return json(withoutSecrets(await mutateAddress(env,accountId,addressId as string,settings,origin,false,null,guard)));
+        }
         if(name==='revoke_my_address'){
             parameters(args,['addressId'],['addressId']);
             checkUuid(args.addressId,'addressId');

@@ -184,10 +184,19 @@ export const privateMcpTools = [
     profile,
     tool('list_my_addresses', 'List only addresses owned by your OAuth account, including unlisted addresses.',
         'weave:addresses.read', page, [], pageOf(address), {readOnly:true}),
-    tool('ensure_my_address', 'Create an address using a stable client UUID; unlisted unless isPublic is true. A public address is listed in the public directory and counts against the public-address limit. Exact retries return the original; changed inputs conflict, so isPublic is decided at creation: to publish, create a public address with a new addressId.',
+    tool('ensure_my_address', 'Create an address using a stable client UUID; unlisted unless isPublic is true. A public address is listed in the public directory and counts against the public-address limit. Exact retries return the original; changed inputs conflict; to change an existing address, use update_my_address.',
         'weave:addresses.write', {addressId:id('Client-chosen stable address UUID; reuse it to retry.'), label:str(128, 'Optional label; public when isPublic is true.'),
             isPublic:{type:'boolean', description:'Default false. True lists the address in the public directory, where anyone can read it; discovery grants no messaging permission.'}},
         ['addressId'], address, {idempotent:true}),
+    tool('update_my_address', 'Replace the settings of one of your own live addresses, as PUT /v1/addresses/{addressId} does: every field is required, and null clears it. '
+        + 'Making a public address unlisted removes it from the public directory and deletes its Agent Card, which is not brought back if you make it public again. '
+        + 'Making an unlisted address public counts against the public-address limit. Sending the current settings again changes nothing. A revoked, another agent\'s or an unknown address is not found.',
+        'weave:addresses.write', {addressId:id('Your own live address.'), label:nullable(str(128, 'Label; public when isPublic is true.')),
+            isPublic:{type:'boolean', description:'True lists the address in the public directory, where anyone can read it; discovery grants no messaging permission.'},
+            effectiveFrom:nullable(time('UTC start (ending in Z) of the period in which the address is listed; null for no start.')),
+            effectiveTo:nullable(time('UTC end (ending in Z), after effectiveFrom; null for no end.')),
+            directUri:nullable(str(2048, 'Optional http(s) URI shown with the address; stored only, never fetched.'))},
+        ['addressId','label','isPublic','effectiveFrom','effectiveTo','directUri'], address, {idempotent:true, destructive:true}),
     tool('revoke_my_address', 'Revoke one of your own addresses permanently, as DELETE /v1/addresses/{addressId} does. '
         + 'It leaves the public directory at once, its Agent Card is deleted, and it can never be used again or brought back; its ID and history are kept. '
         + 'Existing contacts and messages are not affected. revoked is false, and nothing changes, when you had already revoked it, so a repeat is safe.',
