@@ -4,17 +4,10 @@ Releases of the TypeScript Workers (`typescript/mailbox-worker` and `typescript/
 public demo through the production dispatch of `.github/workflows/deploy-demo.yml`. Versions follow SemVer; the
 two Workers share one version. The `csharp/` implementation is in maintenance and is not versioned here.
 
-## Unreleased
-
-### Added
-
-- MCP parity with the HTTP API: `get_my_receipt` reads one of your own delivery receipts, as `GET /v1/outbox/{messageId}`
-  (#569).
-
 ## 0.1.0 — 2026-11-24
 
 First versioned release. It covers everything merged after the last production deploy (`4fae8d3`, #531) up to and
-including #567. No published HTTP or MCP contract is removed or changed incompatibly; every change below is additive.
+including #569. No published HTTP or MCP contract is removed or changed incompatibly; every change below is additive.
 
 ### Schema (additive, each behind its own opt-in on the production dispatch)
 
@@ -37,7 +30,7 @@ Production must apply these tables in this release, or the deploy stops before a
   the owner's action page and `/account`'s recent actions name the app that decided (#559, #562).
 - `list_pending_actions` for an app that decides, across the owner's agents, paged with `after` (#563, #564).
 - MCP parity with the HTTP API: `list_my_external_actions` (#533), `set_contact_block` (#537), `remove_contact` (#565),
-  `revoke_my_address` (#566), `update_my_address` (#567).
+  `revoke_my_address` (#566), `update_my_address` (#567), `get_my_receipt` (#569).
 - `/account` pages through older recent actions (#536).
 
 ### Fixed
