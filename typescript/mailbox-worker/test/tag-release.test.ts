@@ -25,7 +25,7 @@ function github(answers: Record<string, Answer>) {
 }
 const deployed = (state = 'success', deployments: unknown[] = [{id: 7, sha, ref: 'main'}]): Record<string, Answer> => ({
     'GET /deployments': {status: 200, body: deployments},
-    'GET /deployments/7/statuses': {status: 200, body: [{state}]},
+    'GET /deployments/7/statuses': {status: 200, body: [{state}, {state: 'success'}]},
     'GET /deployments/9/statuses': {status: 200, body: [{state: 'failure'}]}
 });
 const created = {'POST /releases': {status: 201, body: {html_url: 'https://github.com/KoalaFacts/Weave/releases/tag/v0.2.0'}}};
@@ -48,7 +48,7 @@ test('tagRelease_DeployedCommitWithoutTag_CreatesReleaseAtThatCommit', async () 
     assert.deepEqual([deploymentsQuery.get('environment'), deploymentsQuery.get('sha')], ['production', sha]);
     assert.deepEqual([g.calls[0].auth, g.calls[0].redirect], ['Bearer ghs_synthetic', 'error']);
     const post = g.calls.find(call => call.method === 'POST');
-    assert.deepEqual(post?.body, {tag_name: 'v0.2.0', target_commitish: sha, name: 'v0.2.0', body: 'notes', draft: false, prerelease: false, make_latest: 'true'});
+    assert.deepEqual(post?.body, {tag_name: 'v0.2.0', target_commitish: sha, name: 'v0.2.0', body: 'notes', draft: false, prerelease: false, make_latest: 'legacy'});
 });
 
 test('tagRelease_NewestDeploymentFailedAfterAnOlderSuccess_RecordsNothing', async () => {
@@ -98,6 +98,9 @@ test('tagRelease_TagForThisCommitWithoutRelease_CreatesTheRelease', async () => 
 test('tagRelease_TagLookupOrCreateFails_Throws', async () => {
     await assert.rejects(tagRelease(github({...deployed(), 'GET /git/ref/tags/v0.2.0': {status: 403}, ...created}).options), /git\/ref\/tags failed \(HTTP 403\)/);
     await assert.rejects(tagRelease(github({...deployed(), 'POST /releases': {status: 422}}).options), /\/releases failed \(HTTP 422\)/);
+    const g = github({...deployed(), 'GET /git/ref/tags/v0.2.0': {status: 200, body: {object: {type: 'commit', sha}}}, 'GET /releases/tags/v0.2.0': {status: 500}, ...created});
+    await assert.rejects(tagRelease(g.options), /releases\/tags failed \(HTTP 500\)/);
+    assert.equal(g.calls.some(call => call.method === 'POST'), false);
 });
 
 test('tagRelease_PrereleaseVersion_MarksPrerelease', async () => {

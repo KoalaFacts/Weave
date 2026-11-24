@@ -1,7 +1,7 @@
 /**
  * Release record: after a production deploy, tag the deployed commit `v<version>` and publish a GitHub Release whose
- * notes are that version's CHANGELOG section. It runs only for a commit whose latest production deployment on main
- * succeeded, and never moves an existing tag: a tag that names another commit means the version was not bumped.
+ * notes are that version's CHANGELOG section. It runs only for a commit whose newest production deployment from main
+ * succeeded (Actions does not mark older deployments inactive, so this proves it deployed, not that it is still served), and never moves an existing tag: a tag that names another commit means the version was not bumped.
  */
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -40,7 +40,7 @@ export async function tagRelease({repository, sha, token, version, notes, fetchI
         if (result.status < 200 || result.status > 299) throw Error(`GitHub request ${path} failed (HTTP ${result.status}); no release recorded.`);
     };
 
-    // The commit must be what production serves: its newest production deployment on main ended in success.
+    // The commit must have deployed: its newest production deployment from main ended in success (statuses come newest first).
     const deploymentsPath = '/deployments?' + new URLSearchParams({environment: 'production', sha, per_page: '20'});
     const deployments = await call(deploymentsPath);
     ok(deployments, '/deployments');
@@ -75,7 +75,7 @@ export async function tagRelease({repository, sha, token, version, notes, fetchI
     } else if (ref.status !== 404) ok(ref, '/git/ref/tags');
 
     const created = await call('/releases', {method: 'POST',
-        body: JSON.stringify({tag_name: tag, target_commitish: sha, name: tag, body: notes, draft: false, prerelease: version.includes('-'), make_latest: 'true'})});
+        body: JSON.stringify({tag_name: tag, target_commitish: sha, name: tag, body: notes, draft: false, prerelease: version.includes('-'), make_latest: 'legacy'})});
     ok(created, '/releases');
     const url = (created.body as {html_url?: unknown} | null)?.html_url;
     return typeof url === 'string' ? url : '';
