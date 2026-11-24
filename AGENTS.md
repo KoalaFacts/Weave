@@ -57,6 +57,6 @@ Before completing non-trivial changes, apply the relevant [check-rules](.claude/
 
 ## Git and completion policy
 
-Work on the agreed feature branch or isolated workspace. Inspect status before edits and before pushing. Preserve concurrent work; use non-force updates and recheck the remote head. Do not merge to main, publish packages, create a release, deploy, change production credentials, reset persisted state, or delete upstream resources unless explicitly authorized for that operation.
+Work on the agreed feature branch or isolated workspace. Inspect status before edits and before pushing. Preserve concurrent work; use non-force updates and recheck the remote head. Do not merge to main, publish packages, create a release, deploy, change production credentials, reset persisted state, or delete upstream resources unless explicitly authorized for that operation. The scheduled Weave task is authorized (owner decision, 2026-11-24) to release and deploy the TypeScript Workers under the release rule in [advance-weave](.claude/skills/advance-weave/SKILL.md), with [CHANGELOG.md](CHANGELOG.md) recording each release.
 
 Review the final diff for unintended changes. Report the files/behavior changed, exact tested commit where applicable, commands actually run, outcomes, skipped/failed checks, and remaining limits. Distinguish self-review from independent review. Deliver the repository change/PR; do not attach raw CI archives unless requested.

@@ -1,7 +1,7 @@
 # Changelog
 
 Releases of the TypeScript Workers (`typescript/mailbox-worker` and `typescript/auth-worker`), which ship together to the
-public demo through the manual production dispatch of `.github/workflows/deploy-demo.yml`. Versions follow SemVer; the
+public demo through the production dispatch of `.github/workflows/deploy-demo.yml`. Versions follow SemVer; the
 two Workers share one version. The `csharp/` implementation is in maintenance and is not versioned here.
 
 ## 0.1.0 — 2026-11-24
@@ -11,8 +11,8 @@ including #567. No published HTTP or MCP contract is removed or changed incompat
 
 ### Schema (additive, each behind its own opt-in on the production dispatch)
 
-Production must apply these tables in this release, or the deploy stops before any change (with
-`apply_owner_grants_schema` / `apply_external_action_keys_schema` too if production still lacks those older tables):
+Production must apply these tables in this release, or the deploy stops before any change (production already has
+`owner_grants` and `external_action_keys` from the 2026-11-22 deploy):
 
 - `app_webhooks` (#541) — `apply_app_webhooks_schema: true`
 - `app_webhook_deliveries` (#550) — `apply_app_webhook_deliveries_schema: true`
@@ -35,4 +35,5 @@ Production must apply these tables in this release, or the deploy stops before a
 
 ### Fixed
 
-- Publishing describes and refuses media plainly for text-only accounts (#532).
+- Publishing describes and refuses media plainly for text-only accounts (#532). The refusal reason strings for those
+  accounts changed; apps that match the old text literally must update.
