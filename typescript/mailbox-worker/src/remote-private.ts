@@ -138,6 +138,11 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             parameters(args,['peerAccountId'],['peerAccountId']);identity(args.peerAccountId);target.pathname='/v1/contacts/channel';target.searchParams.set('peerAccountId',args.peerAccountId);
             return json(withoutSecrets(await atomic(env.db,tx=>read(tx,target,accountId))));
         }
+        if(name==='get_my_receipt'){
+            parameters(args,['messageId'],['messageId']);checkUuid(args.messageId,'messageId');target.pathname='/v1/outbox/'+args.messageId;
+            // The same sender-owned read as GET /v1/outbox/{messageId}, inside the grant's guarded transaction.
+            return json(withoutSecrets(await atomic(env.db,guarded(tx=>read(tx,target,accountId)))));
+        }
         // Validate all shapes before running bounded cleanup or any state change.
         if(name==='ensure_my_address'){
             parameters(args,['addressId','label','isPublic'],['addressId']);

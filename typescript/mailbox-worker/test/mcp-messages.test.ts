@@ -565,3 +565,34 @@ test('removeContact_InvalidSelfStrangerOrRevokedGrant_RefusedWithoutChange',asyn
         assert.deepEqual(await ok(env,a.accountId,'get_my_channel',{peerAccountId:b.accountId}),channel,'nothing changed');
     }finally{await h.close();}
 });
+
+test('getMyReceipt_SenderReadsOwnReceipt_OthersUnknownMalformedOrRevokedRefused',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),{a,b}=await pair(h,env);
+        assert.equal(privateScope('get_my_receipt'),'weave:messages.read','reading a receipt is a messages read');
+        const sent=await ok(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:text('did you get this?')});
+        const pending=await ok(env,a.accountId,'get_my_receipt',{messageId:sent.messageId});
+        assert.equal(pending.state,'pending');
+        const listed=(await ok(env,a.accountId,'list_my_outbox',{})).items.find((item:{messageId:string})=>item.messageId===sent.messageId);
+        assert.deepEqual(pending,listed,'the same receipt as list_my_outbox');
+        await ok(env,b.accountId,'ack_message',{messageId:sent.messageId,senderAccountId:a.accountId});
+        const acknowledged=await ok(env,a.accountId,'get_my_receipt',{messageId:sent.messageId});
+        assert.equal(acknowledged.state,'acknowledged');
+        assert.notEqual(acknowledged.terminalAt,null);
+        // Only the sender reads a receipt: the recipient and an unknown ID both read as unavailable.
+        for(const [owner,messageId] of [[b.accountId,sent.messageId],[a.accountId,'0199aaaa-0000-7000-8000-000000000009']]){
+            const answer=await call(env,owner,'get_my_receipt',{messageId});
+            assert.equal(answer.status,404,owner);
+            assert.equal(answer.body.code,'unavailable');
+        }
+        for(const args of [{},{messageId:'not-a-uuid'},{messageId:sent.messageId,extra:1}] as Record<string,unknown>[]){
+            const answer=await call(env,a.accountId,'get_my_receipt',args);
+            assert.equal(answer.status,400,JSON.stringify(args));
+        }
+        assert.equal((await call(env,a.accountId,'get_my_receipt',{})).body.field,'messageId');
+        const grantId=await testGrant(h.db,a.accountId);
+        await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now())*10000n).toString(),grantId).run();
+        assert.equal((await executeWithGrant(env,origin,a.accountId,'get_my_receipt',{messageId:sent.messageId},grantId)).status,401);
+    }finally{await h.close();}
+});

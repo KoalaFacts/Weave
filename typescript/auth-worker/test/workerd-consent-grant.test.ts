@@ -655,6 +655,11 @@ test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeou
     const outA=await privateCall(mf,token,"list_my_outbox");
     const outB=await privateCall(mf,tokenB,"list_my_outbox");
     assert.ok(outA.items.length>=3&&outB.items.length>=3,"both accounts retain three outgoing receipts");
+    const one=await privateCall(mf,deliveries[0].token,"get_my_receipt",{messageId:deliveries[0].messageId});
+    assert.equal(one.messageId,deliveries[0].messageId);
+    assert.equal(one.state,"acknowledged","the sender reads one receipt through the real consent token");
+    const foreign=await (await mcpCall(mf,deliveries[0].receiverToken,"get_my_receipt",{messageId:deliveries[0].messageId})).json() as {result?:{isError?:boolean}};
+    assert.equal(foreign.result?.isError,true,"the recipient never reads the sender's receipt");
 
     // Real two-Worker Service Binding, real AS KV tokens, and the real
     // resource's authorizeOAuth source running in workerd against D1.

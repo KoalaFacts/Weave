@@ -123,6 +123,7 @@ test('real D1 results of every private tool conform to their published output sc
         assert.ok(inbox.items.some((item:{message?:{messageId:string}})=>item.message?.messageId===message.messageId));
         await run(b.accountId,'ack_message',{messageId:message.messageId,senderAccountId:a.accountId});
         await run(a.accountId,'list_my_outbox');
+        assert.equal((await run(a.accountId,'get_my_receipt',{messageId:message.messageId})).state,'acknowledged');
         const channel=await run(a.accountId,'get_my_channel',{peerAccountId:b.accountId});
         const blocked=await run(a.accountId,'set_contact_block',{peerAccountId:b.accountId,expectedGeneration:channel.generation,blocked:true});
         assert.equal(blocked.isBlockedByAccount,true,'positive control: the block reaches the schema check');
