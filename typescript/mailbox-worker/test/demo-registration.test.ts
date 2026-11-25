@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createHash, webcrypto } from 'node:crypto';
 import { createContext, runInContext } from 'node:vm';
+import { setRegistrationHour } from './registration-limits.ts';
+import { limits } from '../src/limits.ts';
 import { start } from './harness.ts';
 import { agentKey } from './agent-key.ts';
 
@@ -330,9 +332,11 @@ test('resumeFromKeyFile_SameAgent', async () => {
 });
 
 test('real Worker commits a lost registration once, resumes its saved key, and enforces quota for the next agent', async () => {
-    const h = await start({ bindings: { REGISTRATION_MAX_ACCOUNTS: '1' } });
+    const h = await start({ bindings: {} });
     let loseResponse = true;
     try {
+        // One registration left this hour across every source.
+        await setRegistrationHour(h.db, limits.registrationGlobalPerHour - 1);
         const app = ui(async (path, options) => {
             const response = await h.mf.dispatchFetch('http://localhost' + path, options);
             if (path === '/v1/accounts' && loseResponse) {

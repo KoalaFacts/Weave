@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
+import { fillAccounts } from './registration-limits.ts';
 import { start, payload} from './harness.ts';
 import { agentKey, dpopProof, keyEndorsement, keyProof } from './agent-key.ts';
 import { credentialRefPattern } from '../src/owner-actions.ts';
@@ -17,7 +18,7 @@ function responseShape(operation, value) {
 }
 
 test('OpenAPI is an anonymous no-store JSON asset independent of account storage', async () => {
-    const h = await start({migrate:false,bindings:{REGISTRATION_ENABLED:'false'}});
+    const h = await start({migrate:false,bindings:{}});
     try {
         const response = await h.request('/openapi.json');
         assert.equal(response.status,200);
@@ -195,8 +196,9 @@ test('documented account/address/contact/message/ACK responses match real Worker
 });
 
 test('429 contract distinguishes public-rate Retry-After from registration capacity', async () => {
-    const h = await start({bindings:{REGISTRATION_MAX_ACCOUNTS:'1'}});
+    const h = await start({bindings:{}});
     try {
+        await fillAccounts(h.db,1);
         await h.register();
         const capacity = await h.request('/v1/accounts',h.stranger(),'POST',{});
         assert.equal(capacity.status,429);

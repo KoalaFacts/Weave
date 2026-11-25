@@ -56,8 +56,7 @@ test('model-visible result strips connection tokens recursively',()=>{
 test('real D1 account-scoped contact, message and ACK use server-side channel tokens',async()=>{
     const h=await start();
     try{
-        const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',REGISTRATION_PER_IP_PER_HOUR:'10',
-            REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+        const env:Env={db:h.db,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
         const a=await h.participant(),b=await h.participant(),c=await h.participant();
         const requested=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
             requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,message:{parts:[{text:'request'}]}
@@ -114,9 +113,7 @@ test('malformed private request does not sweep or write maintenance state before
     const h=await start();
     try{
         const a=await h.participant(),b=await h.participant();
-        const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',
-            CLEANUP_MAX_MESSAGES:'1',CLEANUP_TIME_BUDGET_MS:'2000'};
+        const env:Env={db:h.db,CLEANUP_MAX_MESSAGES:'1',CLEANUP_TIME_BUDGET_MS:'2000'};
         const revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
         const initial=await h.db.prepare("SELECT count(*) n FROM maintenance_state WHERE name='sweep'").first('n');
         const response=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
@@ -134,9 +131,7 @@ test('malformed private request does not sweep or write maintenance state before
 test('Cloudflare-style private token validation reaches real D1 owner-scoped MCP operations without a shared identity',async()=>{
     const h=await start();
     try {
-        const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',
-            CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+        const env:Env={db:h.db,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
         const a=await h.participant(),b=await h.participant();
         const tokenA=a.accountId+':grantA:secretA',tokenB=b.accountId+':grantB:secretB';
         // Each token's mirrored consent grant; the composition below reads it on every call.
@@ -213,9 +208,7 @@ test('request_contact names the rejected field, writes nothing, and uses the ser
     const h=await start();
     try{
         const a=await h.participant(),b=await h.participant();
-        const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',
-            CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+        const env:Env={db:h.db,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
         const base={requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId};
         const rejected=async(args:Record<string,unknown>,field:string)=>{
             const response=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...base,...args});

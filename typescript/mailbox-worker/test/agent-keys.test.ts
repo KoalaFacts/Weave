@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fillAccounts, setRegistrationHour } from './registration-limits.ts';
+import { limits } from '../src/limits.ts';
 import { start } from './harness.ts';
 import { agentKey, dpopProof, nowSeconds, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
@@ -28,8 +30,7 @@ async function registered(h: Harness, key: TestKey, body: object = {}, headers: 
 }
 const count = async (h: Harness, table: string) => Number(await h.db.prepare(`SELECT count(*) n FROM ${table}`).first('n'));
 const environment = (h: Harness, overrides: Partial<Env> = {}) => ({
-    db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
-    REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100', ...overrides }) as unknown as Env;
+    db: h.db, ...overrides }) as unknown as Env;
 
 test('registerAgent_NewKey_CreatesOwnerlessAgentWithSettledKey', async () => {
     const h = await start();
@@ -148,20 +149,6 @@ test('registerAgent_InvalidLabel_400', async () => {
     } finally { await h.close(); }
 });
 
-test('registerAgent_RegistrationDisabled_NewKey404ExistingKeyReturns', async () => {
-    const persist = await mkdtemp(join(tmpdir(), 'weave-d1-'));
-    let h = await start({persist});
-    try {
-        const key = agentKey();
-        const first = await registered(h, key);
-        await h.close();
-        h = await start({persist, migrate: false, bindings: {REGISTRATION_ENABLED: 'false'}});
-        assert.deepEqual(await registered(h, key), first);
-        assert.equal((await registerKey(h, agentKey())).status, 404);
-        assert.equal(await count(h, 'accounts'), 1);
-    } finally { await h.close(); await rm(persist, {recursive: true, force: true}); }
-});
-
 test('registerAgent_RecoveryReadOnly_NewKey503ExistingKeyReturns', async () => {
     const persist = await mkdtemp(join(tmpdir(), 'weave-d1-'));
     let h = await start({persist});
@@ -177,26 +164,28 @@ test('registerAgent_RecoveryReadOnly_NewKey503ExistingKeyReturns', async () => {
 });
 
 test('registerAgent_CapacityCountsSelfRegisteredOnly', async () => {
-    const h = await start({bindings: {REGISTRATION_MAX_ACCOUNTS: '2'}});
+    const h = await start({bindings: {}});
     try {
         const env = environment(h);
         const human = await signInHuman(env, {provider: 'github', subject: '123', providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'alice'});
         assert.equal(human.ok, true);
         const humanId = (human as {humanId: string}).humanId;
         for (let i = 0; i < 3; i++) assert.equal((await createOwnedAgent(env, {humanId, displayName: 'owned ' + i, sourceIp: '203.0.113.7'})).ok, true);
+        await fillAccounts(h.db, 2);
         await registered(h, agentKey());
         await registered(h, agentKey());
         const refused = await registerKey(h, agentKey());
         assert.equal(refused.status, 429);
         assert.equal((await refused.json() as {code: string}).code, 'capacity');
-        assert.equal(await count(h, 'accounts'), 5);
+        assert.equal(await count(h, 'accounts'), limits.registrationMaxAccounts + 3);
     } finally { await h.close(); }
 });
 
 test('registerAgent_HourlyPerIpLimit_429', async () => {
-    const h = await start({bindings: {REGISTRATION_PER_IP_PER_HOUR: '1'}});
+    const h = await start({bindings: {}});
     try {
         const source = {'CF-Connecting-IP': '198.51.100.9'};
+        await setRegistrationHour(h.db, limits.registrationPerIpPerHour - 1, '198.51.100.9');
         await registered(h, agentKey(), {}, source);
         const refused = await registerKey(h, agentKey(), {}, undefined, source);
         assert.equal(refused.status, 429);
@@ -206,9 +195,10 @@ test('registerAgent_HourlyPerIpLimit_429', async () => {
 });
 
 test('registerAgent_SameKeyRetries_ChargeNoRateLimit', async () => {
-    const h = await start({bindings: {REGISTRATION_PER_IP_PER_HOUR: '2'}});
+    const h = await start({bindings: {}});
     try {
         const source = {'CF-Connecting-IP': '198.51.100.10'};
+        await setRegistrationHour(h.db, limits.registrationPerIpPerHour - 2, '198.51.100.10');
         const a = agentKey();
         const first = await registered(h, a, {}, source);
         assert.deepEqual(await registered(h, a, {}, source), first);

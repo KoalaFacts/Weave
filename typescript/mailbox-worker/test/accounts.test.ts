@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fillAccounts, setRegistrationHour } from './registration-limits.ts';
+import { limits } from '../src/limits.ts';
 import { start, payload } from './harness.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { agentKey } from './agent-key.ts';
@@ -80,26 +82,26 @@ test('UTC scheduling hides future and expired addresses and denies their contact
     } finally {await h.close();}
 });
 test('D1 concurrent registration is idempotent, capacity and rate limits persist across restart', async () => {
-    const persist=await mkdtemp(join(tmpdir(),'weave-d1-')); let h=await start({persist,bindings:{REGISTRATION_PER_IP_PER_HOUR:'1'}});
+    const persist=await mkdtemp(join(tmpdir(),'weave-d1-')); let h=await start({persist});
     try {
+        // One registration left this hour across every source.
+        await setRegistrationHour(h.db,limits.registrationGlobalPerHour-1);
         const key=agentKey(),[a,b]=await Promise.all([h.register({},key),h.register({},key)]); assert.deepEqual(a,b);
         const address=await h.address(a,{label:'persistent'});
         const stored=await h.db.prepare("SELECT * FROM accounts").all();
         assert.equal(stored.results.length,1); assert.equal(JSON.stringify(stored.results[0]).includes(key.privateJwk.d!),false);
-        await h.close();h=await start({persist,migrate:false,bindings:{REGISTRATION_PER_IP_PER_HOUR:'1'}});
+        await h.close();h=await start({persist,migrate:false});
         assert.deepEqual(await h.ok('/v1/accounts',a,'POST',{}),{agentId:a.accountId,accountId:a.accountId,displayName:null,description:null,kid:a.kid});
         assert.deepEqual((await h.ok('/v1/addresses',a)).items,[address]);
         assert.equal((await h.request('/v1/accounts',h.stranger(),'POST',{})).status,429);
-        await h.close();h=await start({persist,migrate:false,bindings:{REGISTRATION_ENABLED:'false'}});
-        assert.deepEqual(await h.ok('/v1/accounts',a,'POST',{}),{agentId:a.accountId,accountId:a.accountId,displayName:null,description:null,kid:a.kid});
-        assert.equal((await h.request('/v1/accounts',h.stranger(),'POST',{})).status,404);
     } finally {await h.close();await rm(persist,{recursive:true,force:true});}
 });
 test('register_HumanOwnedAgents_DoNotConsumeSelfRegistrationCapacity', async () => {
-    const h=await start({bindings:{REGISTRATION_MAX_ACCOUNTS:'1'}});
+    const h=await start();
     try {
-        const env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'1',REGISTRATION_PER_IP_PER_HOUR:'100',REGISTRATION_GLOBAL_PER_HOUR:'100'} as any;
+        const env={db:h.db} as any;
         const human=await signInHuman(env,{provider:'github',subject:'123',providerCreatedAt:'2020-01-01T00:00:00Z',displayLogin:'alice'}) as any;
+        await fillAccounts(h.db,1);
         for(let i=0;i<2;i++)assert.equal((await createOwnedAgent(env,{humanId:human.humanId,displayName:'owned '+i,sourceIp:'203.0.113.7'})).ok,true);
         await h.register();
         assert.equal((await h.request('/v1/accounts',h.stranger(),'POST',{})).status,429);

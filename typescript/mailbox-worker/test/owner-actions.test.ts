@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { fillOwnedAgents } from './registration-limits.ts';
+import { limits } from '../src/limits.ts';
 import { start, type AgentCredential } from './harness.ts';
 import { agentKey, bindingRequest, dpopProof, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
@@ -15,8 +17,7 @@ const bindingsUrl = origin + '/v1/binding-requests';
 const keysUrl = origin + '/v1/keys';
 const recoveryUrl = origin + '/v1/key-requests';
 
-const environment = (h: Harness, overrides: Partial<Env> = {}) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
-    REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100', ...overrides}) as unknown as Env;
+const environment = (h: Harness, overrides: Partial<Env> = {}) => ({db: h.db, ...overrides}) as unknown as Env;
 async function human(h: Harness, subject: string): Promise<string> {
     const result = await signInHuman(environment(h), {provider: 'github', subject, providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'person' + subject});
     assert.equal(result.ok, true);
@@ -295,11 +296,11 @@ test('confirmBinding_KeyAddedAfterOverview_KeysChangedNoEffect', async () => {
     } finally { await h.close(); }
 });
 
-test('confirmBinding_HumanAtTen_AgentLimitRequestStaysPending', async () => {
+test('confirmBinding_HumanAtTheLimit_AgentLimitRequestStaysPending', async () => {
     const h = await start();
     try {
         const id = await human(h, '555');
-        for (let i = 0; i < 10; i++) assert.equal((await createOwnedAgent(environment(h), {humanId: id, displayName: 'a' + i, sourceIp: '203.0.113.7'})).ok, true);
+        await fillOwnedAgents(h.db, id);
         const {cred, requestId} = await requested(h, '555');
         assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId}), {ok: false, reason: 'agent-limit'});
         assert.equal(await ownerOf(h, cred.accountId), null);
@@ -307,15 +308,15 @@ test('confirmBinding_HumanAtTen_AgentLimitRequestStaysPending', async () => {
     } finally { await h.close(); }
 });
 
-test('confirmBinding_TwoConcurrentAtNine_ExactlyOneOk', async () => {
+test('confirmBinding_TwoConcurrentOneBelowTheLimit_ExactlyOneOk', async () => {
     const h = await start();
     try {
         const id = await human(h, '555');
-        for (let i = 0; i < 9; i++) assert.equal((await createOwnedAgent(environment(h), {humanId: id, displayName: 'a' + i, sourceIp: '203.0.113.7'})).ok, true);
+        await fillOwnedAgents(h.db, id, 1);
         const first = await requested(h, '555'), second = await requested(h, '555');
         const results = await Promise.all([first, second].map(item => act(h, id, {kind: 'confirm-binding', requestId: item.requestId})));
         assert.deepEqual(results.map(result => result.ok ? 'ok' : (result as {reason: string}).reason).sort(), ['agent-limit', 'ok']);
-        assert.equal(Number(await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(id).first('n')), 10);
+        assert.equal(Number(await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(id).first('n')), limits.ownedAgentsPerHuman);
     } finally { await h.close(); }
 });
 
@@ -815,13 +816,12 @@ test('ownerAction_MalformedRevokeGrantOrCredential_NotFoundAndNothingRevoked', a
     } finally { await h.close(); }
 });
 
-const manyAgents = (h: Harness, limit: string) => environment(h, {OWNED_AGENTS_PER_HUMAN: limit, REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '1000'});
-
-test('confirmBinding_ConfiguredLimitAboveTen_BindsTheEleventh', async () => {
+test('confirmBinding_OneBelowTheOwnedLimit_BindsThenRefuses', async () => {
     const h = await start();
     try {
-        const id = await human(h, '555'), env = manyAgents(h, '11');
+        const id = await human(h, '555'), env = environment(h);
         for (let i = 0; i < 10; i++) assert.equal((await createOwnedAgent(env, {humanId: id, displayName: 'a' + i, sourceIp: '203.0.113.7'})).ok, true);
+        await fillOwnedAgents(h.db, id, 1);
         const {cred, requestId} = await requested(h, '555');
         assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId}, {env}), {ok: true});
         assert.equal(await ownerOf(h, cred.accountId), id);
@@ -834,10 +834,10 @@ test('confirmBinding_ConfiguredLimitAboveTen_BindsTheEleventh', async () => {
 test('overview_ManyAgents_PagesThroughEveryAgentOnce', async () => {
     const h = await start();
     try {
-        const id = await human(h, '555'), env = manyAgents(h, '200');
+        const id = await human(h, '555'), env = environment(h), hourly = {...limits, registrationPerIpPerHour: 200};
         const created: string[] = [];
         for (let i = 0; i < 120; i++) {
-            const result = await createOwnedAgent(env, {humanId: id, displayName: 'a' + i, sourceIp: '203.0.113.7'});
+            const result = await createOwnedAgent(env, {humanId: id, displayName: 'a' + i, sourceIp: '203.0.113.7'}, undefined, hourly);
             assert.equal(result.ok, true);
             created.push((result as {accountId: string}).accountId);
         }

@@ -97,8 +97,7 @@ test('inbox_OwnedKeyRequestPending_Notice', async () => {
     } finally { await h.close(); }
 });
 
-const directEnv = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
-    REGISTRATION_GLOBAL_PER_HOUR: '100'}) as unknown as Env;
+const directEnv = (h: Harness) => ({db: h.db}) as unknown as Env;
 
 test('inbox_AuthorizationServerAgentFirstRecoveryKey_ReportedAsKeyAdded', async () => {
     const h = await start();
@@ -327,7 +326,7 @@ test('mcpInbox_ShapeUnchanged', async () => {
     try {
         const a = await h.participant();
         await addKey(h, a);
-        const env: Env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100'};
+        const env: Env = {db: h.db};
         const response = await executePrivateMcp(env, origin, a.accountId, 'list_my_inbox', {});
         assert.equal(response.status, 200);
         const result = await response.json() as Record<string, unknown>;

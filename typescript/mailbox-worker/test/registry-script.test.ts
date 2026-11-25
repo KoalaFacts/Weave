@@ -19,7 +19,7 @@ async function registry(h) {
 
 test('registry browser script requests ten-item pages and follows the server cursor without duplicate rows', async () => {
     // Eleven public addresses need eleven unclaimed agents (one public address each), beyond the default per-source registrations.
-    const h = await start({ bindings: { REGISTRATION_PER_IP_PER_HOUR: '100' } });
+    const h = await start({ bindings: {} });
     try {
         const expected = [];
         for (let index = 0; index < 11; index++) expected.push(await h.address(await h.register(), { label: 'Browse ' + index, isPublic: true }));

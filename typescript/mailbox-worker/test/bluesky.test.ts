@@ -15,8 +15,7 @@ type Harness = Awaited<ReturnType<typeof start>>;
 const key = randomBytes(32).toString('base64url');
 const xrpc = 'https://bsky.social/xrpc/';
 const did = 'did:plc:' + 'a'.repeat(24), handle = 'hscbeats.bsky.social', appPassword = 'abcd-efgh-ijkl-mnop';
-const environment = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
-    REGISTRATION_GLOBAL_PER_HOUR: '100', EXTERNAL_CREDENTIAL_KEY: key}) as unknown as Env;
+const environment = (h: Harness) => ({db: h.db, EXTERNAL_CREDENTIAL_KEY: key}) as unknown as Env;
 const session = (overrides: Record<string, unknown> = {}) => Response.json({did, handle, accessJwt: 'jwt-' + randomBytes(4).toString('hex'), refreshJwt: 'r', active: true, ...overrides});
 
 type Fake = {calls: {method: string; auth: string | null; type: string | null; body: Buffer}[]; session: () => Response; upload: (bytes: Buffer) => Response; create: () => Response};

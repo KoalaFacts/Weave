@@ -258,7 +258,7 @@ test('addKey_ConcurrentAtNinetyNine_ExactlyOneSucceeds', async () => {
 test('addKey_HumanOwnedAgent_202AwaitingOwner', async () => {
     const h = await start();
     try {
-        const env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100'} as unknown as Env;
+        const env = {db: h.db} as unknown as Env;
         const human = await signInHuman(env, {provider: 'github', subject: '123', providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'alice'});
         assert.equal(human.ok, true);
         const humanId = (human as {humanId: string}).humanId;

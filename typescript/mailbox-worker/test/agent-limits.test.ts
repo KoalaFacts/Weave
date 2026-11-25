@@ -20,9 +20,9 @@ const assertionType = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const ticksPerHour = 36000000000n;
 const dayTicks = 864000000000n;
 // Enough registrations for the multi-agent scenarios; the registration counters are not under test here.
-const bindings = {REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '10000', REGISTRATION_MAX_ACCOUNTS: '1000'};
+const bindings = {};
 
-const env = (h: Harness) => ({db: h.db, ...bindings, REGISTRATION_ENABLED: 'true'}) as unknown as Env;
+const env = (h: Harness) => ({db: h.db, ...bindings}) as unknown as Env;
 const nowTicks = () => BigInt(Date.now()) * 10000n;
 
 async function participant(h: Harness): Promise<Participant> {

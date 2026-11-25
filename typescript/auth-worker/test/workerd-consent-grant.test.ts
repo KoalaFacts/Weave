@@ -8,6 +8,8 @@ import {after,before,test} from "node:test";
 import {Miniflare} from "miniflare";
 import {stripTypeScriptTypes} from "node:module";
 import {initializeDatabase} from "../../mailbox-worker/scripts/latest-schema.ts";
+import {fillOwnedAgents,setRegistrationHour} from "../../mailbox-worker/test/registration-limits.ts";
+import {limits as mailboxLimits} from "../../mailbox-worker/src/limits.ts";
 import {demoOAuthClientId,demoOAuthClientMetadata} from "../../mailbox-worker/src/oauth-client-metadata.ts";
 import {signedCookieValue} from "../src/human-session.ts";
 
@@ -130,10 +132,6 @@ function options(storage:string,authEnv:Record<string,unknown>={},mailboxEnv:Rec
           db:{type:"d1"},
           OAUTH_ISSUER:{type:"text",value:issuer},
           OAUTH_RESOURCE:{type:"text",value:resource},
-          REGISTRATION_ENABLED:{type:"text",value:"true"},
-          REGISTRATION_MAX_ACCOUNTS:{type:"text",value:"1000"},
-          REGISTRATION_PER_IP_PER_HOUR:{type:"text",value:"1000"},
-          REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"1000"},
           CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
           CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
           ...mailboxEnv
@@ -433,23 +431,20 @@ test("consent_OtherHumansAgentId_DeniedWithoutCode",{timeout:60_000},async()=>{
   assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,3002)),[]);
 });
 
-test("consent_EleventhNewAgent_ShowsLimitWithoutCode",{timeout:120_000},async()=>{
+test("consent_NewAgentOverTheOwnedLimit_ShowsLimitWithoutCode",{timeout:120_000},async()=>{
   const {mf}=shared;
   const auth=authorization();
   const session=await signIn(mf,auth,4001);
-  for(let i=1;i<=10;i++){
-    const next=authorization();
-    const consent=await openConsent(mf,next,session);
-    codeFrom(await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Agent "+i}),next);
-  }
+  const first=authorization(),opened=await openConsent(mf,first,session);
+  codeFrom(await post(mf,opened.cookie,{handle:opened.handle,decision:"approve",agent:"new",agentName:"Agent 1"}),first);
   const humanId=await humanIdOf(mf,4001);
-  assert.equal((await agentsOf(mf,humanId)).length,10);
+  await fillOwnedAgents(await mailboxDb(mf) as never,humanId);
   const consent=await openConsent(mf,auth,session);
-  const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Agent 11"});
+  const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Over"});
   assert.equal(response.status,400);
   assert.equal(response.headers.get("location"),null);
   assert.match(await response.text(),/already owns as many agents as this server allows/);
-  assert.equal((await agentsOf(mf,humanId)).length,10);
+  assert.equal(await (await mailboxDb(mf)).prepare("SELECT count(*) n FROM accounts WHERE human_id=?").bind(humanId).first("n"),mailboxLimits.ownedAgentsPerHuman);
 });
 
 test("consent_ExpiredOrTamperedSession_RedirectsToGithubWithoutCode",{timeout:60_000},async()=>{
@@ -516,9 +511,11 @@ test("consent_Deny_RedirectsWithAccessDenied",{timeout:60_000},async()=>{
 });
 
 test("consent_RateLimitedNewAgent_Returns429WithoutCode",{timeout:60_000},async()=>{
-  const instance=await start({},{REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"1"}});
+  const instance=await start();
   try{
     const {mf}=instance;
+    // One registration left this hour across every source.
+    await setRegistrationHour(await mailboxDb(mf) as never,mailboxLimits.registrationGlobalPerHour-1);
     const first=await authorizeAgent(mf,7001,"new","Only one");
     const auth=authorization();
     const consent=await openConsent(mf,auth,first.session);
@@ -712,28 +709,6 @@ test("consent_HumanFrozenAfterSignIn_NoCodeForExistingOrNewAgent",{timeout:60_00
   assert.deepEqual(await agentsOf(mf,humanId),[owner.accountId],"no agent created after the freeze");
 });
 
-test("consent_AgentCreationUnavailable_Returns503WithoutCode",{timeout:60_000},async()=>{
-  const instance=await start({},{REGISTRATION_ENABLED:{type:"text",value:"false"}});
-  try{
-    const {mf}=instance;
-    // Existing humans still sign in while registration is closed. Seed the
-    // previously registered identity so this tests agent creation, not the
-    // separate first-time human registration gate.
-    const existingHumanId=randomUUID();
-    const at=(BigInt(Date.now())*10000n).toString();
-    await (await mailboxDb(mf)).prepare(
-      "INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES(?,?,?,?,?,?,?)"
-    ).bind(existingHumanId,"github","11001","2011-01-25T18:44:36Z","human11001",at,at).run();
-    const auth=authorization();
-    const consent=await openConsent(mf,auth,await signIn(mf,auth,11001));
-    const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Claude Code"});
-    assert.equal(response.status,503);
-    assert.equal(response.headers.get("location"),null);
-    assert.match(await response.text(),/New agents cannot be created right now/);
-    assert.equal(await humanIdOf(mf,11001),existingHumanId);
-    assert.deepEqual(await agentsOf(mf,existingHumanId),[]);
-  }finally{await stop(instance);}
-});
 
 test("consent_Approved_TokenCarriesGrantId",{timeout:60_000},async()=>{
   const {mf}=shared;

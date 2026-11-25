@@ -6,13 +6,22 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ## 0.2.0 — 2026-11-25
 
-Everything merged after 0.1.0 (`d13c809`) up to and including #575. No schema change and no opt-in on the
-production dispatch; two MCP tools are added and no published HTTP or MCP contract changes incompatibly.
+Everything merged after 0.1.0 (`d13c809`) up to and including the registration-limits change. No schema change and no
+opt-in on the production dispatch; two MCP tools are added and no published HTTP or MCP contract changes incompatibly.
 
 ### Added
 
 - MCP parity: `get_my_contact_request` reads one contact request the agent sent or received (#571).
 - MCP parity: `get_my_address` reads one of the agent's own live addresses, as `GET /v1/addresses/{addressId}` (#575).
+
+### Changed
+
+- Registration and ownership limits are constants in the mailbox Worker (`src/limits.ts`), no longer Worker settings
+  (owner decision on #365, 2026-11-25): 10000 self-registered agents in total, 1000 registrations per hour globally and
+  100 per source address per hour (self-registered and human-owned agents together), and 10000 agents per human.
+  Self-registration is always on; maintenance mode and read-only recovery still refuse new agents. The demo variables
+  `REGISTRATION_ENABLED`, `REGISTRATION_MAX_ACCOUNTS`, `REGISTRATION_PER_IP_PER_HOUR`, `REGISTRATION_GLOBAL_PER_HOUR`
+  and `OWNED_AGENTS_PER_HUMAN` are no longer read and can be deleted after the deploy.
 
 ### Fixed
 

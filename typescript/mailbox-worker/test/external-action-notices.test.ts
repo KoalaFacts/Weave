@@ -25,8 +25,7 @@ async function scenario(run: (s: {h: Harness; provider: Provider}) => Promise<vo
     try { await run({h, provider}); } finally { await h.close(); }
 }
 
-const environment = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
-    REGISTRATION_GLOBAL_PER_HOUR: '100', EXTERNAL_ACTION_TEST_ENDPOINT: endpoint}) as unknown as Env;
+const environment = (h: Harness) => ({db: h.db, EXTERNAL_ACTION_TEST_ENDPOINT: endpoint}) as unknown as Env;
 
 async function ownedAgent(h: Harness) {
     const agent = await h.register();

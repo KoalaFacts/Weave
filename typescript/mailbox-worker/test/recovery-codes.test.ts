@@ -15,7 +15,7 @@ const recoveryUrl = 'http://localhost/v1/key-requests';
 const dayTicks = 864_000_000_000n;
 
 function env(h: Harness): Env {
-    return {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '200', REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100'} as unknown as Env;
+    return {db: h.db} as unknown as Env;
 }
 async function human(h: Harness, subject: string): Promise<string> {
     const signedIn = await signInHuman(env(h), {provider: 'github', subject, providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'person' + subject});

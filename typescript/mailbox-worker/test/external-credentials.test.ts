@@ -11,8 +11,7 @@ type Harness = Awaited<ReturnType<typeof start>>;
 const key = randomBytes(32).toString('base64url');
 const channelId = 'UC' + 'a'.repeat(22);
 const scope = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly';
-const environment = (h: Harness, overrides: Partial<Env> = {}) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
-    REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100', GOOGLE_CLIENT_ID: 'client.apps.googleusercontent.com',
+const environment = (h: Harness, overrides: Partial<Env> = {}) => ({db: h.db, GOOGLE_CLIENT_ID: 'client.apps.googleusercontent.com',
     GOOGLE_CLIENT_SECRET: 'google-secret', EXTERNAL_CREDENTIAL_KEY: key, ...overrides}) as unknown as Env;
 
 type Google = {token: () => Response | Promise<Response>; channels: () => Response | Promise<Response>; requests: {url: string; body: string; auth: string | null}[]};
