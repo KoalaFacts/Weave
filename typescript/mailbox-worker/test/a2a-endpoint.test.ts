@@ -67,6 +67,18 @@ test('a2aSendMessage_RetrySameMessageId_SameReceiptOneDelivery_DifferentContentC
         const changed=await send(h,a,b.cardId,rpc({...message,parts:[{text:'different'}]}));
         assert.equal(changed.body.error.code,-32000);assert.equal(changed.body.error.data.code,'idempotency-conflict');
         assert.equal((await inboxFrom(h,b,a)).length,1);
+        // The same messageId and content to another contact's address is a conflict, never the receipt for b.
+        const c=await h.register(),cCard=await h.address(c,{isPublic:true});
+        await connect(h,a,{...c,cardId:cCard.addressId});
+        const elsewhere=await send(h,a,cCard.addressId,rpc(message));
+        assert.equal(elsewhere.body.error.data.code,'idempotency-conflict');assert.equal((await inboxFrom(h,c,a)).length,0);
+        // A retry after b's address left the directory still gets its receipt, and nothing new is sent.
+        await h.ok('/v1/addresses/'+b.cardId,b,'DELETE');
+        const late=await send(h,a,b.cardId,rpc(message));
+        assert.equal(late.body.result.message.parts[1].data.weave.receipt.messageId,first.body.result.message.parts[1].data.weave.receipt.messageId);
+        assert.equal((await inboxFrom(h,b,a)).length,1);
+        // A new message to the revoked address is refused like the directory.
+        assert.equal((await send(h,a,b.cardId,rpc(userMessage('after revoke')))).body.error.data.code,'unavailable');
     }finally{await h.close();}
 });
 
@@ -79,14 +91,19 @@ test('a2aSendMessage_NotAContactOrBlockedOrNotPublic_RefusedAndNothingStored',as
         const generation=await connect(h,a,b);
         await h.ok('/v1/contacts/blocks',b,'PUT',{peerAccountId:a.accountId,expectedGeneration:generation});
         const blocked=await send(h,a,b.cardId,rpc(userMessage('hi')));
-        assert.equal(blocked.body.error.code,-32000);assert.equal(blocked.body.result,undefined);
-        // A private address, an unknown one and the sender's own address answer like the directory: unavailable.
+        assert.equal(blocked.body.error.code,-32000);assert.equal(blocked.body.error.data.code,'not-connected');assert.equal(blocked.body.result,undefined);
+        // A private address and an unknown one answer like the directory: unavailable.
         assert.equal((await send(h,a,a.cardId,rpc(userMessage('x')))).body.error.data.code,'unavailable');
         assert.equal((await send(h,a,randomUUID(),rpc(userMessage('x')))).body.error.data.code,'unavailable');
+        // A public address outside its effective window is unavailable too, even to an accepted contact.
+        const later=await h.register(),laterCard=await h.address(later,{isPublic:true});
+        await connect(h,a,{...later,cardId:laterCard.addressId});
+        await h.ok('/v1/addresses/'+laterCard.addressId,later,'PUT',{label:null,isPublic:true,effectiveFrom:new Date(Date.now()+86400000).toISOString(),effectiveTo:null,directUri:null});
+        assert.equal((await send(h,a,laterCard.addressId,rpc(userMessage('too early')))).body.error.data.code,'unavailable');
         // An agent cannot send to its own public address.
         const own=await h.address(a,{isPublic:true});
         const self=await send(h,a,own.addressId,rpc(userMessage('me')));
-        assert.equal(self.body.error.code,-32602);assert.equal((await inboxFrom(h,a,a)).length,0);
+        assert.equal(self.body.error.code,-32602);assert.equal(self.body.error.data.field,'addressId');assert.equal((await inboxFrom(h,a,a)).length,0);
         assert.equal((await inboxFrom(h,b,a)).length,0);
     }finally{await h.close();}
 });

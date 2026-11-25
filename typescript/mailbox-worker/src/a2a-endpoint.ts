@@ -11,7 +11,7 @@ import { idempotencyClaim } from './mcp-idempotency.ts';
 import { sweep } from './cleanup.ts';
 import { terminalize, sendWithResolvedConnection } from './messages.ts';
 import { connectedGeneration, keyed, withoutSecrets } from './remote-private.ts';
-import { boundedBody, fail, Problem, stringify } from './wire.ts';
+import { boundedBody, fail, invalidField, Problem, stringify } from './wire.ts';
 
 const MAX_REQUEST_BYTES = 131072, MAX_DEPTH = 32;
 /** The only A2A version served; a request without `A2A-Version` is treated as 1.0. */
@@ -86,19 +86,18 @@ export async function a2aSendMessage(env: Env, request: Request, addressId: stri
         // this endpoint and the address, so the same key used for a different send is a conflict, never a replay.
         const claim = await idempotencyClaim('send_message', clientMessageId, {via: 'a2a', addressId, message});
         await sweep(env);
-        const receipt = withoutSecrets(await atomic(env.db, async tx => {
-            const recipient = await publicAddressOwner(tx, addressId);
-            if (recipient === senderId) fail(400, 'invalid');
-            return keyed(tx, senderId, claim, async messageId => {
+        // A retry is answered first, so it keeps its receipt even if the address has since left the directory.
+        const receipt = withoutSecrets(await atomic(env.db, async tx => keyed(tx, senderId, claim, async messageId => {
                 const stored = await tx.get('message', senderId, messageId);
                 if (!stored) fail(404, 'unavailable');
                 return terminalize(tx, stored);
             }, async () => {
+                const recipient = await publicAddressOwner(tx, addressId);
+                if (recipient === senderId) invalidField('addressId', 'is your own address');
                 const generation = await connectedGeneration(tx, senderId, recipient);
                 const payload = messagePayload(message, tx.store.now);
                 return {result: await sendWithResolvedConnection(tx, senderId, recipient, generation, payload), resultId: payload.messageId};
-            });
-        })) as Record<string, unknown>;
+            }))) as Record<string, unknown>;
         const reply = {messageId: uuidV7(BigInt(Date.now())), ...(message.contextId === undefined ? {} : {contextId: message.contextId}), role: 'ROLE_AGENT',
             parts: [{text: 'Queued for delivery to the recipient\'s Weave inbox. This does not mean the recipient has read or acted on it.'},
                 {data: {weave: {status: 'queued', receipt}}, mediaType: 'application/json'}]};
