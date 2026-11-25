@@ -1,5 +1,10 @@
 # Owner-approved provider-neutral OAuth subject links — 2026-10-26
 
+> **2026-11-25:** the RFC 7662 introspection mode described here is deleted (owner decision on #365, "fewer runtime
+> settings" 3/3). The Service Binding to the auth Worker is the only OAuth mode; `OAUTH_INTROSPECTION_URL`,
+> `OAUTH_INTROSPECTION_TRUSTED_ORIGIN`, `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET` are no longer read. The text below
+> is kept as the record of what was built.
+
 This is **source and isolated D1 verification, not approval for cloud migration,
 a deployed identity provider, or public Agent acceptance**. Live schema changes,
 identity migration, and Auth Server settings require explicit separate approval.

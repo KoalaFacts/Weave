@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
 import {remoteMcp, type PrivateAccess} from '../src/remote-mcp.ts';
-import {authorizeOAuth, type OAuthConfiguration} from '../src/remote-oauth.ts';
+import {authorizeOAuth, type OAuthOptions, type OAuthServiceBinding} from '../src/remote-oauth.ts';
 import {withTestGrant,start} from './harness.ts';
 import type {Env} from '../src/database.ts';
 
@@ -13,28 +13,26 @@ const {privateMcpTools,privateScope,executePrivateMcp:executeWithGrant}=await im
 const executePrivateMcp=withTestGrant(executeWithGrant);
 
 const origin='https://demo.test';
-const config:OAuthConfiguration={
-    issuer:'https://auth.test',resource:origin+'/mcp',
-    introspectionUrl:'https://auth.test/oauth/introspect',
-    clientId:'synthetic-client',clientSecret:'synthetic_only_not_a_real_secret'
-};
 const accountId='01234567-89ab-4def-8123-456789abcdef';
+const humanId='11234567-89ab-4def-8123-456789abcdef',grantId='21234567-89ab-4def-8123-456789abcdef';
+const binding=(validateToken:OAuthServiceBinding['validateToken']):OAuthOptions=>
+    ({issuer:'https://auth.test',resource:origin+'/mcp',authServer:{validateToken}});
+const config=binding(async()=>{throw Error('the Service Binding must not run without a token');});
+const token=accountId+':grant:synthetic_access_token';
 const headers={'Content-Type':'application/json',Accept:'application/json, text/event-stream'};
 const rpc=(name:string)=>({jsonrpc:'2.0',id:17,method:'tools/call',params:{name,arguments:{}}});
-const request=(value:unknown,bearer?:string)=>new Request(config.resource,{method:'POST',
+const request=(value:unknown,bearer?:string)=>new Request(origin+'/mcp',{method:'POST',
     headers:{...headers,...(bearer?{Authorization:'Bearer '+bearer}:{})},body:JSON.stringify(value)});
 const unused=async(_url:URL):Promise<Response>=>{throw Error('Public directory must not be touched');};
 const env=(db:Env['db']):Env=>({db});
-const introspection=(scopes:string)=>async()=>new Response(JSON.stringify({
-    active:true,iss:config.issuer,aud:config.resource,sub:accountId,
-    scope:scopes,iat:Math.floor(Date.now()/1000)-10,exp:Math.floor(Date.now()/1000)+120
-}),{headers:{'Content-Type':'application/json'}});
+const validated=(scopes:string[])=>binding(async()=>({audience:origin+'/mcp',userId:accountId,
+    props:{accountId,humanId,grantId},expiresAt:Math.floor(Date.now()/1000)+120,scope:scopes,clientId:'synthetic-client'}));
+const live=async()=>({accountId,humanId,clientId:'synthetic-client'});
 
 test('missing bearer preserves HTTP 401 and supplies ChatGPT tool-level OAuth challenge without dispatch',async()=>{
     const incoming=request(rpc('send_message'));let called=0;
     const access:PrivateAccess={tools:privateMcpTools,scope:privateScope,
-        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>null,
-            (async()=>{throw Error('introspection must not run without token');}) as typeof fetch),
+        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>null),
         invoke:async()=>{called++;return new Response('{}');}};
     const response=await remoteMcp(incoming,unused,access);
     assert.equal(response.status,401);
@@ -48,17 +46,15 @@ test('missing bearer preserves HTTP 401 and supplies ChatGPT tool-level OAuth ch
     assert.equal(body.result?.isError,true,'linking needs an MCP error result on the same denied request');
     assert.deepEqual(body.result?._meta?.['mcp/www_authenticate'],[challenge]);
     assert.equal(called,0,'no private write may execute');
-    assert.doesNotMatch(JSON.stringify(body),/synthetic_only_not_a_real_secret/);
     assert.equal(response.headers.get('cache-control'),'no-store');
     assert.equal(response.headers.get('pragma'),'no-cache');
     assert.equal(response.headers.get('x-content-type-options'),'nosniff');
 });
 
 test('insufficient scope preserves HTTP 403 and gives bounded step-up challenge, never invoking tool',async()=>{
-    const incoming=request(rpc('send_message'),'synthetic_access_token');let calls=0;
+    const incoming=request(rpc('send_message'),token);let calls=0;
     const access:PrivateAccess={tools:privateMcpTools,scope:privateScope,
-        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>null,
-            introspection('weave:messages.read') as typeof fetch),
+        authorize:scope=>authorizeOAuth(validated(['weave:messages.read']),incoming,scope,live),
         invoke:async()=>{calls++;return new Response('{}');}};
     const response=await remoteMcp(incoming,unused,access);
     assert.equal(response.status,403);
@@ -73,11 +69,10 @@ test('insufficient scope preserves HTTP 403 and gives bounded step-up challenge,
     assert.doesNotMatch(JSON.stringify(body),/synthetic_access_token/);
 });
 
-test('introspection outage remains HTTP 503 with no misleading OAuth linking UI',async()=>{
-    const incoming=request(rpc('send_message'),'synthetic_access_token');let writes=0;
+test('authorization server outage remains HTTP 503 with no misleading OAuth linking UI',async()=>{
+    const incoming=request(rpc('send_message'),token);let writes=0;
     const access:PrivateAccess={tools:privateMcpTools,scope:privateScope,
-        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>null,
-            (async()=>{throw Error('provider unavailable with internal secret');}) as typeof fetch),
+        authorize:scope=>authorizeOAuth(binding(async()=>{throw Error('provider unavailable with internal secret');}),incoming,scope,async()=>null),
         invoke:async()=>{writes++;return new Response('{}');}};
     const response=await remoteMcp(incoming,unused,access);
     assert.equal(response.status,503);

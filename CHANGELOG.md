@@ -12,6 +12,15 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
   #365, 2026-11-25): business cleanup stays off (0 messages, 0 ms), as the demo has always run it. The demo variables
   `CLEANUP_MAX_MESSAGES` and `CLEANUP_TIME_BUDGET_MS` are no longer read and can be deleted after the deploy.
 
+### Removed
+
+- The mailbox Worker's external OAuth server mode (RFC 7662 introspection) is deleted (owner decision on #365,
+  2026-11-25). The Service Binding to the auth Worker (`AUTH_SERVER` with `OAUTH_ISSUER` and `OAUTH_RESOURCE`) is the
+  only OAuth mode; `OAUTH_INTROSPECTION_URL`, `OAUTH_INTROSPECTION_TRUSTED_ORIGIN`, `OAUTH_CLIENT_ID` and
+  `OAUTH_CLIENT_SECRET` are no longer read, and the deploy script no longer checks for them. That mode never
+  authorized private tools, and the demo never used it. Issuer and resource without the Service Binding still fail
+  closed (`503`).
+
 ## 0.2.0 — 2026-11-25
 
 Everything merged after 0.1.0 (`d13c809`) up to and including the registration-limits change. No schema change and no

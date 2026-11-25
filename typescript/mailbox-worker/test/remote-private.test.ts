@@ -39,7 +39,7 @@ test('private tool discovery does not grant authority and rejected bearer never 
     assert.equal(notification.status,202);
     assert.equal(writes,0,'missing id/bearer must never dispatch a write');
 });
-test('private route receives only the introspected owner and required scope, never a supplied account override',async()=>{
+test('private route receives only the authenticated owner and required scope, never a supplied account override',async()=>{
     let actual:{owner:string;name:string;scope:string;args:Record<string,unknown>}|null=null,required='';
     const permitted:PrivateAccess={tools:privateMcpTools,scope:privateScope,
         authorize:async scope=>{required=scope;return accountId;},
@@ -89,11 +89,7 @@ test('real D1 account-scoped contact, message and ACK use server-side channel to
 });
 
 test('real Worker advertises protected-resource metadata and challenges unauthenticated private tools',async()=>{
-    const h=await start({bindings:{
-        OAUTH_ISSUER:'https://auth.example',OAUTH_RESOURCE:'https://localhost/mcp',
-        OAUTH_INTROSPECTION_URL:'https://auth.example/oauth/introspect',
-        OAUTH_CLIENT_ID:'weave-client',OAUTH_CLIENT_SECRET:'local_fake_secret_for_testing_only'
-    }});
+    const h=await start({bindings:{OAUTH_ISSUER:'https://auth.example',OAUTH_RESOURCE:'https://localhost/mcp'},authServer:true});
     try{
         const discovery=await h.mf.dispatchFetch('https://localhost/.well-known/oauth-protected-resource/mcp');
         assert.equal(discovery.status,200,await discovery.clone().text());

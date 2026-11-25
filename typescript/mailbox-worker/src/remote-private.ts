@@ -1,5 +1,5 @@
 /** Private MCP operations reuse the existing account-scoped Worker business paths.
- * The authenticated account is derived exclusively from OAuth introspection,
+ * The authenticated account is derived exclusively from the validated OAuth token,
  * never from tool parameters. Channel tokens stay server-side.
  */
 import { atomic, type Env, type Transaction } from './database';

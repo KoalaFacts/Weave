@@ -11,11 +11,18 @@ const tokens = new Map<string, { accessToken: string; expiresAt: number }>();
 let humanSubjects = 900000;
 /** The demo's saved key-file form of a registered credential. */
 export const keyFile = (as: AgentCredential) => JSON.stringify({ accountId: as.accountId, key: { kty: 'OKP', crv: 'Ed25519', x: as.key.privateJwk.x, d: as.key.privateJwk.d } });
-export type StartOptions = { persist?: string; migrate?: boolean; bindings?: Record<string, string>; scriptPath?: string; legacy?: boolean; outboundService?: any };
-export async function start({ persist, migrate = true, bindings = {}, scriptPath = 'dist/index.js', legacy = false, outboundService }: StartOptions = {}) {
-    const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath, compatibilityDate: '2026-07-01', compatibilityFlags:['nodejs_compat'],
-        d1Databases: ['db'], r2Buckets: ['EXTERNAL_MEDIA'], ...(persist ? { resourcePersistencePath: persist } : {}), bindings: {
-            ...bindings }, ...(outboundService ? {outboundService} : {}) }));
+/** `authServer` binds AUTH_SERVER to a stub auth Worker whose RPC `validateToken` accepts no token, as the
+ * deployed Service Binding to the auth Worker would for an unknown one. Real token flows run in the auth-worker's
+ * two-worker tests. */
+export type StartOptions = { persist?: string; migrate?: boolean; bindings?: Record<string, string>; scriptPath?: string; legacy?: boolean; outboundService?: any; authServer?: boolean };
+const authStub = `import {WorkerEntrypoint} from 'cloudflare:workers';
+export default class extends WorkerEntrypoint { async validateToken(){ return null; } async fetch(){ return new Response(null,{status:404}); } }`;
+export async function start({ persist, migrate = true, bindings = {}, scriptPath = 'dist/index.js', legacy = false, outboundService, authServer = false }: StartOptions = {}) {
+    const mailbox = { name: 'mailbox', modules: true, scriptPath, compatibilityDate: '2026-07-01', compatibilityFlags:['nodejs_compat'],
+        d1Databases: ['db'], r2Buckets: ['EXTERNAL_MEDIA'], bindings: { ...bindings }, ...(outboundService ? {outboundService} : {}),
+        ...(authServer ? { serviceBindings: { AUTH_SERVER: 'weave-auth-stub' } } : {}) };
+    const mf = new Miniflare(convertV4MiniflareOptions({ ...(persist ? { resourcePersistencePath: persist } : {}),
+        workers: [mailbox, ...(authServer ? [{ name: 'weave-auth-stub', modules: true, script: authStub, compatibilityDate: '2026-07-01' }] : [])] } as any));
     try {
         const db = await mf.getD1Database('db');
         if(migrate){

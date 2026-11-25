@@ -18,7 +18,7 @@ test('remote onboarding tools declare explicit independent address scopes',async
     const names=new Set(privateMcpTools.map(tool=>tool.name));
     for(const name of ['list_my_addresses','ensure_my_address','list_my_contact_requests'])assert.ok(names.has(name));
     const metadata=await protectedResourceMetadata({issuer:'https://auth.example',resource:origin+'/mcp',
-        introspectionUrl:'https://auth.example/oauth/introspect',clientId:'test-client',clientSecret:'synthetic_test_secret'}).json();
+        authServer:{validateToken:async()=>null}}).json();
     assert.ok(metadata.scopes_supported.includes('weave:addresses.read'));
     assert.ok(metadata.scopes_supported.includes('weave:addresses.write'));
 });
