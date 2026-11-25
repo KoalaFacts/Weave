@@ -17,6 +17,7 @@ changes. An operator configuration mode the demo never used is removed, hence a 
 - Cleanup limits are constants in the mailbox Worker (`src/limits.ts`), no longer Worker settings (owner decision on
   #365, 2026-11-25): business cleanup stays off (0 messages, 0 ms), as the demo has always run it. The demo variables
   `CLEANUP_MAX_MESSAGES` and `CLEANUP_TIME_BUDGET_MS` are no longer read and can be deleted after the deploy (#579).
+  Other deployments lose the old unset default of 128 messages / 2000 ms: turning cleanup on now takes a source change.
 
 ### Removed
 
@@ -25,7 +26,7 @@ changes. An operator configuration mode the demo never used is removed, hence a 
   only OAuth mode; `OAUTH_INTROSPECTION_URL`, `OAUTH_INTROSPECTION_TRUSTED_ORIGIN`, `OAUTH_CLIENT_ID` and
   `OAUTH_CLIENT_SECRET` are no longer read, and the deploy script no longer checks for them. That mode never
   authorized private tools, and the demo never used it. Issuer and resource without the Service Binding still fail
-  closed (`503`) (#580).
+  closed (`503`); the retired variables set on their own configure nothing, so private tools stay off (#580).
 
 ## 0.2.0 — 2026-11-25
 
