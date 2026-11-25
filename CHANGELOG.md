@@ -4,16 +4,20 @@ Releases of the TypeScript Workers (`typescript/mailbox-worker` and `typescript/
 public demo through the production dispatch of `.github/workflows/deploy-demo.yml`. Versions follow SemVer; the
 two Workers share one version. The `csharp/` implementation is in maintenance and is not versioned here.
 
-## Unreleased
+## 0.4.0 — 2026-11-26
+
+Everything merged after 0.3.0 (`641399b`) up to and including #583. No schema change and no opt-in on the production
+dispatch; no published HTTP or MCP contract changes. An operator binding (`REGISTRATION_GLOBAL_LIMITER`) is retired,
+hence a minor version.
 
 ### Changed
 
 - New agents have no hourly limit across all sources any more (owner request on #365, 2026-11-25): only the 100 per
   source address per hour remains, for self-registered and human-owned agents together. Old `global` counter rows age out
-  through the existing bounded cleanup.
+  through the existing bounded cleanup (#583).
 - The auth Worker's open dynamic client registration (`/register`) has only the per-address `REGISTRATION_LIMITER`
   budget; `REGISTRATION_GLOBAL_LIMITER` (100 per minute across all sources) is retired, and the next `update-demo`
-  publishes the Worker without it, so nothing needs deleting by hand.
+  publishes the Worker without it, so nothing needs deleting by hand (#583).
 
 ## 0.3.0 — 2026-11-25
 
