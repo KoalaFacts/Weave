@@ -1112,3 +1112,52 @@ for(const [name,extraEnv,pattern] of [
     const f=fixture({extraEnv});
     await assert.rejects(deploy(f.options),pattern);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);
 });
+
+// Owner-approved external_action_settlements (#560 option 1, 2026-11-25): a seventh approved change with its own opt-in.
+const settlementsOptIn={WEAVE_APPROVED_EXTERNAL_ACTION_SETTLEMENTS_SCHEMA:'true'};
+async function generatedSettlementsStatements(){
+    const {latestSchemaStatements}=await import('../scripts/latest-schema.ts');
+    return (await latestSchemaStatements()).filter(sql=>/^CREATE (?:TABLE `external_action_settlements`|INDEX "external_action_settlements_human")/.test(sql));
+}
+async function withoutSettlementsTable(f){
+    await f.h.db.prepare('DROP INDEX external_action_settlements_human').run();
+    await f.h.db.prepare('DROP TABLE external_action_settlements').run();
+}
+const settlementsObjects=f=>f.h.db.prepare("SELECT type,name FROM sqlite_master WHERE tbl_name='external_action_settlements' AND sql IS NOT NULL ORDER BY type DESC").all().then(r=>r.results.map(x=>x.type+':'+x.name));
+test('opted-in completed-only release applies exactly the approved external_action_settlements table and index on actual D1',async()=>{
+    const f=await completedFixture(),approved=await generatedSettlementsStatements();
+    Object.assign(f.options.env,settlementsOptIn);await withoutSettlementsTable(f);
+    try{
+        const result=await deploy(f.options);
+        assert.deepEqual(result.approvedSchemaApplied,approved);
+        assert.deepEqual(f.writes().slice(1),approved,'the approved statements, and nothing else, are written');
+        assert.deepEqual(await settlementsObjects(f),['table:external_action_settlements','index:external_action_settlements_human']);
+        assert.deepEqual((await planLatestSchema(f.h.db)).statements,[]);
+    }finally{await f.h.close();}
+});
+for(const [name,env,pattern] of [
+    ['only the owner_grant_decisions opt-in while external_action_settlements is missing',decisionsOptIn,/approved owner_grant_decisions/i],
+    ['no opt-in while external_action_settlements is missing',{},/empty schema plan/i]
+])test('completed-only with '+name+' refuses before any deployment or writes',async()=>{
+    const f=await completedFixture();Object.assign(f.options.env,env);await withoutSettlementsTable(f);
+    try{
+        await assert.rejects(deploy(f.options),pattern);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+test('opted-in release refuses an existing external_action_settlements table with an extra index before any deployment or writes',async()=>{
+    const f=await completedFixture();Object.assign(f.options.env,settlementsOptIn);
+    try{
+        await f.h.db.prepare('CREATE INDEX "external_action_settlements_extra" ON "external_action_settlements" ("settled_at")').run();
+        await assert.rejects(deploy(f.options),/existing external_action_settlements table has an unapproved index/);
+        assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+for(const [name,extraEnv,pattern] of [
+    ['an ambiguous value',{WEAVE_APPROVED_EXTERNAL_ACTION_SETTLEMENTS_SCHEMA:'yes',WEAVE_DEPLOY_DATABASE_MODE:'completed-only'},/Invalid external_action_settlements schema opt-in/],
+    ['maintain mode',{WEAVE_APPROVED_EXTERNAL_ACTION_SETTLEMENTS_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'maintain'},/completed-only/i],
+    ['the OAuth bootstrap',{WEAVE_APPROVED_EXTERNAL_ACTION_SETTLEMENTS_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'completed-only',WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING:'true'},/OAuth/i]
+])test('external_action_settlements opt-in with '+name+' stops before any external operation',async()=>{
+    const f=fixture({extraEnv});
+    await assert.rejects(deploy(f.options),pattern);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);
+});

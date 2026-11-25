@@ -134,6 +134,23 @@ remains possible later for chat channels.
   the app. The page never reads an outcome from its URL, so a link carrying `?result=approved` or `?result=rejected`
   cannot make it claim a decision that was not made.
 
+### Settling an unknown outcome (2026-11-25)
+
+The owner approved option 1 on [#560](https://github.com/KoalaFacts/Weave/issues/560): the owner may record, on Weave's
+own action page, what they found on the platform for their own action whose outcome is `unknown`. S1 (this step) adds
+only the additive table `external_action_settlements` (`action_id` primary key → `external_actions`, `finding` in
+`posted`/`not_posted`, optional `post_url` only for `posted` (`https://`, at most 2048 characters), `settled_by` →
+`humans`, `settled_at`; index on `settled_by`; every foreign key `restrict`), and its release gate
+`scripts/approved-external-action-settlements.ts`, applied only by the default-off
+`apply_external_action_settlements_schema` input of a manual production dispatch (gated before release work and again
+inside protected production, like the A1 tables). Nothing reads or writes the table yet. Next: S2 the owner page's
+"It was posted" / "It was not posted" form for an `unknown` action, written at most once; S3 the `settlement` member on
+the agent's action reads and the inbox notice. The action keeps `status='unknown'` and is never re-sent; a retry still
+needs a new proposal and approval. Verification: `test/approved-external-action-settlements.test.ts` pins the generated
+statements and refuses each weakened variant; `test/deploy.test.ts` applies exactly the two statements on real D1 and
+refuses a missing opt-in, an extra index, an ambiguous value, maintain mode and the OAuth bootstrap before any external
+operation; `test/deploy-entry.test.ts` checks the workflow input is default-off and passed only to the production deploy.
+
 ## Verification
 
 auth-worker workerd tests, against the real mailbox and authorization Workers:

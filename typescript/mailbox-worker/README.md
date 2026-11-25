@@ -77,7 +77,7 @@ deployment replaces it, and a failed check leaves that version serving. (Pausing
 to add about a minute of 503 responses to every release while protecting nothing.)
 The one-time OAuth bootstrap still deploys maintenance first, because it adds bindings.
 
-Six owner-approved exceptions, each off by default and set per run: a manual production dispatch with
+Seven owner-approved exceptions, each off by default and set per run: a manual production dispatch with
 `apply_external_action_keys_schema: true` lets completed-only apply exactly the approved `external_action_keys`
 table and unique index (`schema-366`, `scripts/approved-external-action-keys.ts`), `apply_owner_grants_schema: true`
 exactly the approved `owner_grants` table and its index (`scripts/approved-owner-grants.ts`, see the
@@ -87,8 +87,10 @@ exactly the approved `owner_grants` table and its index (`scripts/approved-owner
 (`scripts/approved-app-webhook-deliveries.ts`, same record), `apply_owner_grant_approvals_schema: true` exactly the
 approved `owner_grant_approvals` table and its index (`scripts/approved-owner-grant-approvals.ts`, see
 [apps that decide for the owner](../../docs/implementation/2026-11-01-owner-grants.md#apps-that-decide-for-the-owner-2026-11-23)),
-and `apply_owner_grant_decisions_schema: true` exactly the approved `owner_grant_decisions` table and its index
-(`scripts/approved-owner-grant-decisions.ts`, same record); nothing else. All share `scripts/approved-schema-change.ts`; with several on, one batch applies them, and every pending
+`apply_owner_grant_decisions_schema: true` exactly the approved `owner_grant_decisions` table and its index
+(`scripts/approved-owner-grant-decisions.ts`, same record), and `apply_external_action_settlements_schema: true` exactly
+the approved `external_action_settlements` table and its index (`scripts/approved-external-action-settlements.ts`, see
+[settling an unknown outcome](../../docs/implementation/2026-11-05-action-approval-page.md#settling-an-unknown-outcome-2026-11-25)); nothing else. All share `scripts/approved-schema-change.ts`; with several on, one batch applies them, and every pending
 statement must belong to an enabled change. It compares full
 normalized definitions, refuses any other pending statement or a differing existing table or index, and is a no-op once
 applied. Operator steps, the exact statements and the read-only check are in the
