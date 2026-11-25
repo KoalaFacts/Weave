@@ -8,15 +8,25 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ### Changed
 
-- Cleanup limits are constants in the mailbox Worker (`src/limits.ts`), no longer Worker settings (owner decision on
-  #365, 2026-11-25): business cleanup stays off (0 messages, 0 ms), as the demo has always run it. The demo variables
-  `CLEANUP_MAX_MESSAGES` and `CLEANUP_TIME_BUDGET_MS` are no longer read and can be deleted after the deploy.
 - New agents have no hourly limit across all sources any more (owner request on #365, 2026-11-25): only the 100 per
   source address per hour remains, for self-registered and human-owned agents together. Old `global` counter rows age out
   through the existing bounded cleanup.
 - The auth Worker's open dynamic client registration (`/register`) has only the per-address `REGISTRATION_LIMITER`
   budget; `REGISTRATION_GLOBAL_LIMITER` (100 per minute across all sources) is retired, and the next `update-demo`
   publishes the Worker without it, so nothing needs deleting by hand.
+
+## 0.3.0 — 2026-11-25
+
+Everything merged after 0.2.0 (`b7ffadd`) up to and including #580: the last two parts of the owner's "fewer runtime
+settings" request. No schema change and no opt-in on the production dispatch; no published HTTP or MCP contract
+changes. An operator configuration mode the demo never used is removed, hence a minor version.
+
+### Changed
+
+- Cleanup limits are constants in the mailbox Worker (`src/limits.ts`), no longer Worker settings (owner decision on
+  #365, 2026-11-25): business cleanup stays off (0 messages, 0 ms), as the demo has always run it. The demo variables
+  `CLEANUP_MAX_MESSAGES` and `CLEANUP_TIME_BUDGET_MS` are no longer read and can be deleted after the deploy (#579).
+  Other deployments lose the old unset default of 128 messages / 2000 ms: turning cleanup on now takes a source change.
 
 ### Removed
 
@@ -25,7 +35,7 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
   only OAuth mode; `OAUTH_INTROSPECTION_URL`, `OAUTH_INTROSPECTION_TRUSTED_ORIGIN`, `OAUTH_CLIENT_ID` and
   `OAUTH_CLIENT_SECRET` are no longer read, and the deploy script no longer checks for them. That mode never
   authorized private tools, and the demo never used it. Issuer and resource without the Service Binding still fail
-  closed (`503`).
+  closed (`503`); the retired variables set on their own configure nothing, so private tools stay off (#580).
 
 ## 0.2.0 — 2026-11-25
 
