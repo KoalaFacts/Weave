@@ -272,7 +272,10 @@ export type SettledPublicationView={state:string;url:string|null;error:string|nu
  * once sent the platform's receipt, the post's own address when the receipt names one, and tracked publication. A mailbox that
  * predates them omits them, which reads as none.
  */
-export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null;about?:SettledPlanView|null;sendBy?:string|null;postUrl?:string|null;decidedByApp?:DecidingAppView|null};
+export type SettledActionView={status:string;failure:string|null;receipt?:string|null;publication?:SettledPublicationView|null;about?:SettledPlanView|null;sendBy?:string|null;postUrl?:string|null;decidedByApp?:DecidingAppView|null;
+  settlement?:SettlementView|null};
+/** What the owner recorded finding on the platform for their `unknown` action; a mailbox that predates it omits it (nothing offered). */
+export type SettlementView={finding:string;postUrl:string|null;settledAt:string};
 /** The app that made the decision the action's status rests on, through the owner's choice to let it approve or reject; null when the owner decided on this page. */
 export type DecidingAppView={grantId:string;clientId:string;clientName:string|null};
 /** What the settled action was: the agent, operation, the account the plan bound (its name while the credential still points there) and the content. */
@@ -288,6 +291,7 @@ export const actionPagePath=(actionId:string)=>"/account/actions/"+actionId;
 const actionResultText:Readonly<Record<string,string>>=Object.freeze({
   approved:"Approved. The agent may now send it once. You can close this page.",
   rejected:"Rejected. Nothing will be sent. You can close this page.",
+  settled:"Recorded. Weave keeps what you found with this action; it will still never be sent again. You can close this page.",
   "not-pending":"This action is no longer waiting for a decision: it was already decided or expired, or the agent started sending it. Open it again to see what became of it."
 });
 
@@ -373,6 +377,27 @@ function sentDetails(settled:SettledActionView):string{
 }
 
 /**
+ * For the owner's own action whose outcome is unknown: what they recorded finding on the platform, or, while nothing is recorded,
+ * the two forms that record it once. The link is the owner's own input, shown only as text when it is a well-formed https URL.
+ */
+function settlementSection(settlement:SettlementView|null|undefined,actionId:string,tokens:ReadonlyMap<string,string>):string{
+  if(settlement){
+    const when=typeof settlement.settledAt==="string"?" on "+esc(settlement.settledAt):"";
+    if(settlement.finding==="not_posted")return "<p>You recorded"+when+" that it was not posted.</p>";
+    if(settlement.finding!=="posted")return "";
+    const link=publishedLink(settlement.postUrl);
+    return "<p>You recorded"+when+" that it was posted.</p>"+(link===null?"":'<p>The link you gave: <a href="'+esc(link)+'" rel="noopener noreferrer">'+esc(link)+"</a></p>");
+  }
+  const posted=tokens.get("settle-action:posted:"+actionId),notPosted=tokens.get("settle-action:not_posted:"+actionId);
+  if(posted===undefined||notPosted===undefined)return "";
+  const target=esc(actionPagePath(actionId));
+  return "<h2>What did you find on the platform?</h2><p>Check the platform, then record what you found. You can record it once; it never sends the action again.</p>"+
+    '<form method="post" action="'+target+'"><input type="hidden" name="action" value="'+esc(posted)+'"><label>Link to the post (optional) '+
+    '<input type="url" name="postUrl" maxlength="2048" placeholder="https://"></label> <button type="submit">It was posted</button></form>'+
+    '<form method="post" action="'+target+'"><input type="hidden" name="action" value="'+esc(notPosted)+'"><button type="submit">It was not posted</button></form>';
+}
+
+/**
  * The response to a decision posted on the page for one action. The outcome is what this request just did, never read back
  * from a URL, so a link cannot make the page claim a decision that was not made.
  */
@@ -404,7 +429,8 @@ export function actionPage(view:PendingActionView,human:HumanSession,actionId:st
     // When an approval runs out, read from the mailbox; a mailbox that predates `sendBy`, or a malformed one, adds nothing.
     const sendBy=settled?.status==="approved"&&typeof settled.sendBy==="string"&&settled.sendBy?"<p>The agent must send it by "+esc(settled.sendBy)+". After that it expires and is never sent.</p>":"";
     const withdraw=settled?.status==="approved"?form("Withdraw approval","reject-action:"+actionId,tokens,actionPagePath(actionId)):"";
-    return shell("Approve an action",head+"<p>"+text+"</p>"+byApp+sendBy+(withdraw===""?"":"<p>Changed your mind? Withdraw the approval and it will never be sent. Once the agent has started sending it, it can no longer be withdrawn.</p>"+withdraw)+
+    const settle=settled?.status==="unknown"?settlementSection(settled.settlement,actionId,tokens):"";
+    return shell("Approve an action",head+"<p>"+text+"</p>"+byApp+sendBy+(withdraw===""?"":"<p>Changed your mind? Withdraw the approval and it will never be sent. Once the agent has started sending it, it can no longer be withdrawn.</p>"+withdraw)+settle+
       (settled?.status==="completed"?sentDetails(settled):"")+(settled?settledPlan(settled.about):"")+all);
   }
   const fresh=freshAuthentication(human,now);

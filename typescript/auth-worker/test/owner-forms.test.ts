@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
 import {signedCookieValue,type HumanSession} from "../src/human-session.ts";
-import {destructiveKinds,ownerActionToken,readConnectForm,readOwnerAction,type OwnerFormAction} from "../src/owner-forms.ts";
+import {destructiveKinds,ownerActionToken,readActionPageForm,readConnectForm,readOwnerAction,type OwnerFormAction} from "../src/owner-forms.ts";
 import {publishingAdapters} from "../../mailbox-worker/src/external-providers.ts";
 import {ownerConnector} from "../../mailbox-worker/src/publishing.ts";
 
@@ -19,12 +19,13 @@ test("readOwnerAction_RoundTrip_ReturnsAction",async()=>{
     {kind:"confirm-key",requestId:randomUUID()},{kind:"reject-key",requestId:randomUUID()},
     {kind:"revoke-key",agentId,kid:randomBytes(32).toString("base64url")},{kind:"issue-recovery-code",agentId},
     {kind:"confirm-action",requestId:randomUUID(),planDigest:randomBytes(32).toString("base64url")},{kind:"reject-action",requestId:randomUUID()},
+    {kind:"settle-action",requestId:randomUUID(),finding:"posted"},{kind:"settle-action",requestId:randomUUID(),finding:"not_posted"},
     {kind:"connect-youtube",agentId},{kind:"connect-account",agentId,provider:"postiz"},{kind:"revoke-credential",agentId,credentialRef:"youtube"}];
   for(const action of actions){
     const token=await ownerActionToken(key,humanId,action,now);
     assert.deepEqual(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now+1000),action);
   }
-  assert.deepEqual([...destructiveKinds].sort(),["confirm-action","confirm-binding","confirm-key","connect-account","connect-youtube","issue-recovery-code","revoke-key"]);
+  assert.deepEqual([...destructiveKinds].sort(),["confirm-action","confirm-binding","confirm-key","connect-account","connect-youtube","issue-recovery-code","revoke-key","settle-action"]);
 });
 
 test("readOwnerAction_RevokeGrant_RoundTripNotDestructive",async()=>{
@@ -186,4 +187,27 @@ test("readConnectForm_TokenThenFields_ReturnsProviderAndValues",async()=>{
     assert.equal(await readConnectForm(key,form(...fields),session,now+1000),null,name);
   assert.equal(await readConnectForm(key,form(["action",token],["handle","x"]),sessionFor(randomUUID()),now+1000),null,"another human");
   assert.equal(await readConnectForm(key,form(["action",token],["handle","x"]),session,now+601_000),"expired");
+});
+
+// The page for one action reads its one token, and for "It was posted" also the optional link; anything else is not its form.
+test("readActionPageForm_SettleWithLink_OnlyPostedCarriesALink",async()=>{
+  const humanId=randomUUID(),requestId=randomUUID(),session=sessionFor(humanId);
+  const posted=await ownerActionToken(key,humanId,{kind:"settle-action",requestId,finding:"posted"},now);
+  const notPosted=await ownerActionToken(key,humanId,{kind:"settle-action",requestId,finding:"not_posted"},now);
+  const reject=await ownerActionToken(key,humanId,{kind:"reject-action",requestId},now);
+  const url="https://bsky.app/profile/a.test/post/3k";
+  assert.deepEqual(await readActionPageForm(key,form(["action",posted],["postUrl",url]),session,now),{action:{kind:"settle-action",requestId,finding:"posted"},postUrl:url});
+  assert.deepEqual(await readActionPageForm(key,form(["action",posted],["postUrl",""]),session,now),{action:{kind:"settle-action",requestId,finding:"posted"},postUrl:null},"a blank link is no link");
+  assert.deepEqual(await readActionPageForm(key,form(["action",notPosted]),session,now),{action:{kind:"settle-action",requestId,finding:"not_posted"},postUrl:null});
+  assert.deepEqual(await readActionPageForm(key,form(["action",reject]),session,now),{action:{kind:"reject-action",requestId},postUrl:null},"the page's other forms still read");
+  assert.equal(await readActionPageForm(key,form(["action",notPosted],["postUrl",url]),session,now),null,"not posted carries no link");
+  assert.equal(await readActionPageForm(key,form(["action",reject],["postUrl",url]),session,now),null,"a decision carries no link");
+  assert.equal(await readActionPageForm(key,form(["action",posted],["link",url]),session,now),null,"only postUrl");
+  assert.equal(await readActionPageForm(key,form(["action",posted],["postUrl","https://"+"a".repeat(2041)]),session,now),null,"over 2048 characters");
+  assert.equal(await readActionPageForm(key,form(["action",posted],["postUrl",url],["postUrl",url]),session,now),null,"three fields");
+  assert.equal(await readActionPageForm(key,form(["postUrl",url],["action",posted]),session,now),null,"the token comes first");
+  assert.equal(await readActionPageForm(key,form(["action",posted],["postUrl",url]),sessionFor(randomUUID()),now),null,"another human's session");
+  assert.equal(await readActionPageForm(key,form(["action",posted]),session,now+600_000),"expired");
+  const odd=await signedCookieValue(key,"owner-action",{humanId,kind:"settle-action",requestId,finding:"maybe",expiresAt:now+600_000});
+  assert.equal(await readActionPageForm(key,form(["action",odd]),session,now),null,"an unknown finding");
 });

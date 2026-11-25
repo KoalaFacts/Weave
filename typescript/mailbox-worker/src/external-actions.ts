@@ -8,7 +8,7 @@ import * as schema from './schema.ts';
 import type { AgentAuth } from './agent-tokens.ts';
 import { findKey } from './agent-keys.ts';
 import { base64url } from './jose.ts';
-import { apiTime, exactInt64, nowUtc } from './time.ts';
+import { apiInstant, apiTime, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Env, type Transaction } from './database.ts';
 import { writesRefused } from './humans.ts';
 import { credentialRefPattern, type OwnerDecision, type OwnerHuman } from './owner-actions.ts';
@@ -515,7 +515,10 @@ export function mediaIdsOf(content: string): string[] {
  * `postUrl` is the platform's own https address of a sent post when its receipt alone determines it (`postUrlOf`), else null.
  */
 export type OwnerSettledAction = {status: Exclude<ActionStatus | 'expired', 'pending'>; failure: string | null; receipt: string | null;
-    publication: PublicationView | null; about: OwnerSettledPlan; sendBy: string | null; postUrl: string | null; decidedByApp: OwnerDecidingApp | null};
+    publication: PublicationView | null; about: OwnerSettledPlan; sendBy: string | null; postUrl: string | null; decidedByApp: OwnerDecidingApp | null;
+    settlement: OwnerSettlement | null};
+/** What the owner recorded finding on the platform for their action whose outcome is `unknown` (`settleExternalAction`), once. */
+export type OwnerSettlement = {finding: SettlementFinding; postUrl: string | null; settledAt: string};
 /**
  * The app that made the decision the action's status rests on, through an owner grant whose owner let it approve or reject (A1):
  * the approval for an action that was approved (sent or not, or expired unsent), the rejection for a rejected one. Null when the owner
@@ -563,8 +566,15 @@ export async function ownerPendingAction(env: Env, humanId: string, actionId: st
             targetAccount: row.target_account, targetDisplay: names?.target_account === row.target_account ? names.target_display : null, content: row.content};
         return {frozen: false as const, action: null, settled: {status, failure: row.failure, receipt: sent ? row.receipt : null,
             publication: sent ? await readPublication(tx, actionId) : null, about, sendBy: status === 'approved' ? apiTime(row.expires_at) : null,
-            postUrl: postUrlOf(env, row, status), decidedByApp: await decidingApp(tx, row)}};
+            postUrl: postUrlOf(env, row, status), decidedByApp: await decidingApp(tx, row), settlement: status === 'unknown' ? await readSettlement(tx, actionId) : null}};
     });
+}
+
+/** The owner's settlement of an `unknown` action, or null while none is recorded. */
+async function readSettlement(tx: Transaction, actionId: string): Promise<OwnerSettlement | null> {
+    const row = await tx.db.prepare('SELECT finding,post_url,CAST(settled_at AS TEXT) settled_at FROM external_action_settlements WHERE action_id=?')
+        .bind(actionId).first<{finding: SettlementFinding; post_url: string | null; settled_at: string}>();
+    return row ? {finding: row.finding, postUrl: row.post_url, settledAt: apiInstant(row.settled_at)} : null;
 }
 
 /** The app whose grant made the decision `row`'s status rests on (`OwnerDecidingApp`), or null. */

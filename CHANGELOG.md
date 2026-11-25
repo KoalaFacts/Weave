@@ -11,10 +11,13 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 Production must apply this table in the next release, or the deploy stops before any change:
 
 - `external_action_settlements` (#560 option 1) — `apply_external_action_settlements_schema: true`. Nothing reads or
-  writes it from a page yet (the owner RPC `settle-action` can); it will hold what an owner found on the platform for their own action whose outcome is `unknown`.
+  holds what an owner found on the platform for their own action whose outcome is `unknown`.
 
 ### Added
 
+- The owner's action page records, once, what the owner found on the platform for their own action whose outcome is
+  `unknown`: "It was posted" (optional `https` link) or "It was not posted", with who and when. The action stays
+  `unknown` and is never sent again (#560 option 1, S2).
 - A2A v1.0 `SendMessage` (JSON-RPC 2.0) at `POST /a2a/{addressId}`: an accepted contact can send to a public address
   from an A2A client; the message lands in the owner's inbox like `send_message`, the client's `messageId` is the retry
   key, and the answer reports the receipt as it stands (`queued`, `acknowledged` or `delivery-stopped`) (roadmap #586, R1-1).

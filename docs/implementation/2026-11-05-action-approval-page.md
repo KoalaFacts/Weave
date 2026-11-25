@@ -156,8 +156,16 @@ S2a (2026-11-25) adds the mailbox's half of S2: the owner RPC `ownerAction` take
 `settleExternalAction` writes the row for the owner's own agent's action only while its stored status is `unknown`
 and no settlement exists (else `not-pending`). It needs a fresh sign-in like an approval, because a settlement cannot
 be changed; a frozen owner is refused; a malformed finding or link is `not-found` with nothing written. The action
-stays `unknown` and is never sent again. No page offers it yet (S2b). Verification:
-`test/external-action-settlements.test.ts` (5 tests) on real D1, with mutations listed in the PR.
+stays `unknown` and is never sent again. S2b puts it on the owner's own action page (`/account/actions/{actionId}`):
+for their `unknown` action with nothing recorded, the page shows "It was posted" (with an optional link field) and "It
+was not posted", each a signed `settle-action` token bound to the finding, posting back to the page (same-origin and
+fresh sign-in rules as approving; `/account` refuses the token). `readActionPageForm` accepts the link only with the
+`posted` token, at most 2048 characters, a blank field meaning no link. `ownerPendingAction`'s `settled` carries
+`settlement` (`finding`, `postUrl`, `settledAt`, or null) for an `unknown` action, and the page then shows what was
+recorded (the link only when it is a well-formed `https` URL) instead of the forms. Verification:
+`mailbox-worker/test/external-action-settlements.test.ts` (5 tests on real D1), auth-worker `test/owner-forms.test.ts`,
+`test/owner-page.test.ts` and the two-worker `actionPage_SettleUnknownOutcome_RecordedOnceAndNeverSent` in
+`test/workerd-owner-page.test.ts`, with mutations listed in the PR. Next: S3 the agent's reads and the inbox notice.
 
 ## Verification
 

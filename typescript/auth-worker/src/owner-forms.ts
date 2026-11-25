@@ -6,6 +6,7 @@ export type OwnerFormAction=
   |{kind:"confirm-binding";requestId:string;keysDigest:string}
   |{kind:"confirm-action";requestId:string;planDigest:string}
   |{kind:"reject-binding"|"confirm-key"|"reject-key"|"reject-action";requestId:string}
+  |{kind:"settle-action";requestId:string;finding:"posted"|"not_posted"}
   |{kind:"revoke-key";agentId:string;kid:string}
   |{kind:"issue-recovery-code";agentId:string}
   |{kind:"revoke-grant"|"stop-app-decisions";grantId:string}
@@ -14,13 +15,13 @@ export type OwnerFormAction=
   |{kind:"revoke-credential";agentId:string;credentialRef:string};
 /** Kinds that need a fresh GitHub authentication before they are offered or applied. Revoking a client's grant, or its permission to decide, is protective and does not. */
 export const destructiveKinds:ReadonlySet<OwnerFormAction["kind"]>=
-  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action","connect-youtube","connect-account"]);
+  new Set(["confirm-binding","confirm-key","revoke-key","issue-recovery-code","confirm-action","settle-action","connect-youtube","connect-account"]);
 
 const tokenSeconds=600;
 const maxBodyBytes=4096;
 const memberSets:Record<OwnerFormAction["kind"],readonly string[]>={
   "confirm-binding":["requestId","keysDigest"],"reject-binding":["requestId"],"confirm-key":["requestId"],"reject-key":["requestId"],
-  "confirm-action":["requestId","planDigest"],"reject-action":["requestId"],
+  "confirm-action":["requestId","planDigest"],"reject-action":["requestId"],"settle-action":["requestId","finding"],
   "revoke-key":["agentId","kid"],"issue-recovery-code":["agentId"],"revoke-grant":["grantId"],"stop-app-decisions":["grantId"],
   "connect-youtube":["agentId"],"connect-account":["agentId","provider"],"revoke-credential":["agentId","credentialRef"]};
 
@@ -37,6 +38,28 @@ export async function readOwnerAction(key:string,request:Request,session:HumanSe
   const fields=form?[...form]:[];
   if(fields.length!==1||fields[0][0]!=="action")return null;
   return verifiedAction(key,fields[0][1],session,now);
+}
+
+/** The longest post link the mailbox keeps for a settlement. */
+const maxPostUrl=2048;
+/**
+ * A form on the page for one action: its one signed token, or for "It was posted" (a settle-action token with finding `posted`)
+ * also the post link the owner typed, which may be blank (null). The mailbox checks the link; this only bounds it. "expired" as
+ * for readOwnerAction; null for anything else.
+ */
+export async function readActionPageForm(key:string,request:Request,session:HumanSession,now:number):
+    Promise<{action:OwnerFormAction;postUrl:string|null}|"expired"|null>{
+  const form=await readBoundedForm(request,maxBodyBytes+3*maxPostUrl);
+  const fields=form?[...form]:[];
+  if(fields.length<1||fields.length>2||fields[0][0]!=="action")return null;
+  if(fields.length===2&&(fields[1][0]!=="postUrl"||fields[1][1].length>maxPostUrl))return null;
+  const action=await verifiedAction(key,fields[0][1],session,now);
+  if(action===null||action==="expired")return action;
+  if(action.kind==="settle-action"&&action.finding!=="posted"&&action.finding!=="not_posted")return null;
+  // Only "It was posted" carries a link; a link field on any other form is not this page's form.
+  if(fields.length===2&&!(action.kind==="settle-action"&&action.finding==="posted"))return null;
+  const postUrl=fields.length===2&&fields[1][1]!==""?fields[1][1]:null;
+  return {action,postUrl};
 }
 
 const fieldName=/^[A-Za-z][A-Za-z0-9]{0,31}$/,maxConnectFields=5,maxFieldValue=2048;

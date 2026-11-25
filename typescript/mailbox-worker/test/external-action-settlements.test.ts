@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { start } from './harness.ts';
 import { ownerAction, ownerOverview, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
 import type { Env } from '../src/database.ts';
+import { ownerPendingAction } from '../src/external-actions.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
 type Call = {actionId: string};
@@ -50,6 +51,8 @@ const status = (h: Harness, actionId: string) => h.db.prepare('SELECT status FRO
 test('settleAction_OwnerFindsItPosted_RecordedOnceAndNeverResent', () => scenario(async ({h, respond, calls}) => {
     const {agent, humanId, actionId} = await unknownAction(h, respond);
     const url = 'https://www.linkedin.com/feed/update/urn:li:share:1';
+    const view = async () => (await ownerPendingAction(environment(h), humanId, actionId) as {settled: {settlement: unknown}}).settled.settlement;
+    assert.equal(await view(), null, 'nothing recorded yet');
     assert.deepEqual(await decide(h, humanId, {kind: 'settle-action', requestId: actionId, finding: 'posted', postUrl: url}), {ok: true});
     const row = await settlement(h, actionId);
     assert.equal(row?.finding, 'posted');
@@ -57,6 +60,8 @@ test('settleAction_OwnerFindsItPosted_RecordedOnceAndNeverResent', () => scenari
     assert.equal(row?.settled_by, humanId);
     assert.ok(BigInt(row!.settled_at) > 0n);
     assert.equal(await status(h, actionId), 'unknown', 'the action keeps its unknown outcome');
+    assert.deepEqual(await view(), {finding: 'posted', postUrl: url, settledAt: (await view() as {settledAt: string}).settledAt});
+    assert.match((await view() as {settledAt: string}).settledAt, /^\d{4}-\d{2}-\d{2}T/);
     // At most once: a second finding, even a different one, is refused and the first stays.
     assert.deepEqual(await decide(h, humanId, {kind: 'settle-action', requestId: actionId, finding: 'not_posted', postUrl: null}), {ok: false, reason: 'not-pending'});
     assert.equal((await settlement(h, actionId))?.finding, 'posted');
