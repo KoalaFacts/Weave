@@ -39,7 +39,7 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
         '/v1/contacts/requests/{requestId}':['get'], '/v1/contacts/requests/{requestId}/decision':['post'],
         '/v1/contacts/channel':['get'], '/v1/contacts/blocks':['put','delete'], '/v1/messages':['post'],
         '/v1/inbox':['get'], '/v1/outbox':['get'], '/v1/outbox/{messageId}':['get'], '/v1/inbox/{messageId}/ack':['post'],
-        '/v1/inbox/events':['get'], '/inbox/{accountId}':['get'], '/outbox/{accountId}':['get','post']
+        '/v1/inbox/events':['get'], '/inbox/{accountId}':['get'], '/outbox/{accountId}':['get','post'], '/a2a/{addressId}':['post']
     };
     assert.equal(spec.openapi,'3.1.1');
     assert.deepEqual(spec.servers.map(x => x.url),['/']);
