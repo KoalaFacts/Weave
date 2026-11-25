@@ -1,5 +1,10 @@
 # Remote MCP: per-user delegated authorization and private mailbox operations
 
+> **2026-11-25:** the RFC 7662 introspection mode described here is deleted (owner decision on #365, "fewer runtime
+> settings" 3/3). The Service Binding to the auth Worker is the only OAuth mode; `OAUTH_INTROSPECTION_URL`,
+> `OAUTH_INTROSPECTION_TRUSTED_ORIGIN`, `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET` are no longer read. The text below
+> is kept as the record of what was built.
+
 ## Status
 
 This increment implements the **resource-server side** of OAuth-protected

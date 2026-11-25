@@ -1,149 +1,52 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {authorizeOAuth,oauthConfiguration,protectedResourceMetadata,type OAuthConfiguration} from '../src/remote-oauth.ts';
+import {authorizeOAuth,oauthConfiguration,protectedResourceMetadata} from '../src/remote-oauth.ts';
 const id='01234567-89ab-4def-8123-456789abcdef';
-const config:OAuthConfiguration={issuer:'https://auth.example',resource:'https://weave.example/mcp',introspectionUrl:'https://auth.example/oauth/introspect',clientId:'weave-client',clientSecret:'a_secure_local_test_secret_value'};
+const config={issuer:'https://auth.example',resource:'https://weave.example/mcp'};
 const req=(token='token')=>new Request(config.resource,{method:'POST',headers:{Authorization:'Bearer '+token}});
-const valid=(now:number)=>({active:true,iss:config.issuer,aud:config.resource,sub:id,scope:'weave:messages.read weave:messages.send',iat:now-15,exp:now+120});
-function fetchFor(data:unknown, spy?:(input:any,init:any)=>void):typeof fetch {return (async(input:any,init:any)=>{spy?.(input,init);return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}})}) as typeof fetch;}
 const humanId='fedcba98-7654-4321-8765-43210fedcba9',grantId='0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0';
 // The mirrored consent grant behind every Service Binding token below.
 const exists=async(g:string)=>g===grantId?{accountId:id,humanId,clientId:'verified-public-client'}:null;
 const none=async()=>null;
-test('only a complete resource-bound provider enables auth',()=>{
+test('no OAuth settings leave private tools off; the retired RFC 7662 settings are ignored',()=>{
     assert.equal(oauthConfiguration({},config.resource),null);
-    assert.throws(()=>oauthConfiguration({OAUTH_ISSUER:config.issuer},config.resource),/Incomplete/);
-    assert.throws(()=>oauthConfiguration({OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:'https://evil.example/mcp',OAUTH_INTROSPECTION_URL:config.introspectionUrl,OAUTH_CLIENT_ID:config.clientId,OAUTH_CLIENT_SECRET:config.clientSecret},config.resource));
-    assert.deepEqual((protectedResourceMetadata(config).headers.get('cache-control')),'no-store');
+    // The external introspection mode is deleted: its old variables neither configure nor enable anything.
+    assert.equal(oauthConfiguration({OAUTH_INTROSPECTION_URL:'https://auth.example/oauth/introspect',OAUTH_CLIENT_ID:'weave-client',
+        OAUTH_CLIENT_SECRET:'a_secure_local_test_secret_value',OAUTH_INTROSPECTION_TRUSTED_ORIGIN:'https://auth.example'} as any,config.resource),null);
 });
 test('bearer-only credentials and resource discovery on 401',async()=>{
     let called=false;
-    const r=await authorizeOAuth(config,new Request(config.resource), 'weave:messages.send',exists,fetchFor({},()=>{called=true}));
+    const cfg=oauthConfiguration({AUTH_SERVER:{validateToken:async()=>{called=true;return null;}},OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource},config.resource)!;
+    const r=await authorizeOAuth(cfg,new Request(config.resource),'weave:messages.send',exists);
     assert.ok(r instanceof Response);assert.equal(r.status,401);assert.match(r.headers.get('WWW-Authenticate')??'',/resource_metadata=.*oauth-protected-resource\/mcp/);assert.equal(called,false);
 });
-test('authorization-server binding is checked via live introspection, never token passthrough',async()=>{
-    const now=Math.floor(Date.now()/1000);let checked=false;
-    const r=await authorizeOAuth(config,req(), 'weave:messages.send',exists,fetchFor(valid(now),(url,init)=>{
-        checked=true;assert.equal(url,config.introspectionUrl);assert.equal(init.redirect,'manual');assert.ok(init.body instanceof URLSearchParams);assert.equal(init.body.get('token'),'token');
-    }),now*1000);
-    assert.equal(checked,true);
-    // Introspected tokens carry no Weave consent grant, so private tools stay closed.
-    assert.ok(r instanceof Response);assert.equal(r.status,401);
-});
-test('revocation, audience, account, issuer, expiry and scopes fail closed',async()=>{
-    const now=Math.floor(Date.now()/1000),good=valid(now);
-    const variants=[{...good,active:false},{...good,iss:'https://evil.example'},{...good,aud:'https://another.example/mcp'},
-      {...good,sub:'another-account'},{...good,exp:now},{...good,exp:now+1800},{...good,iat:now+500},{...good,scope:'weave:messages.read'}];
-    for(const data of variants){const res=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetchFor(data),now*1000);
-        assert.ok(res instanceof Response);assert.ok([401,403].includes(res.status));}
-    const denied=await authorizeOAuth(config,req(),'weave:messages.send',none,fetchFor(good),now*1000);
-    assert.ok(denied instanceof Response);assert.equal(denied.status,401);
-});
-test('invalid AS response never grants access, no cached revoked token',async()=>{
-    const now=Math.floor(Date.now()/1000);let count=0;
-    const f=fetchFor(valid(now),()=>{count++});
-    const first=await authorizeOAuth(config,req(),'weave:messages.send',exists,f,now*1000);
-    assert.ok(first instanceof Response);assert.equal(first.status,401);
-    const revoked=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetchFor({...valid(now),active:false},()=>{count++}),now*1000);
-    assert.ok(revoked instanceof Response);assert.equal(revoked.status,401);assert.equal(count,2);
-    const error=await authorizeOAuth(config,req(),'weave:messages.send',exists,(async()=>{throw Error('AS secret failure')}) as typeof fetch,now*1000);
-    assert.ok(error instanceof Response);assert.equal(error.status,503);assert.doesNotMatch(await error.text(),/secret/);
-});
-test('RFC7662 introspection body must stop waiting when a 200 JSON stream stalls',{timeout:7_000},async()=>{
-    // HTTP headers can arrive before the authorization server stops producing a body.
-    // The fetch deadline alone does not bound an already delivered Response stream.
-    let accountReads=0,cancelled=false;
-    const upstream=new ReadableStream<Uint8Array>({
-        start(controller){controller.enqueue(new TextEncoder().encode('{"active":true,'));},
-        cancel(){cancelled=true;return new Promise<void>(()=>{});}
-    });
-    const fetcher=(async()=>new Response(upstream,{headers:{'Content-Type':'application/json'}})) as typeof fetch;
-    const started=performance.now();
-    const answer=await authorizeOAuth(config,req(),'weave:messages.send',
-        async()=>{accountReads++;return null;},fetcher);
-    const elapsed=performance.now()-started;
-    assert.ok(answer instanceof Response);
-    assert.equal(answer.status,503,'incomplete introspection cannot authorize an account');
-    assert.equal(accountReads,0,'do not look up a grant for incomplete AS responses');
-    assert.equal(cancelled,true,'attempt to cancel the stalled upstream');
-    assert.ok(elapsed<6_000,'stalled body must not defeat the 3.5s budget: '+elapsed+'ms');
-});
-test('RFC7662 non-JSON response cannot hang on a broken upstream cancel',{timeout:5_000},async()=>{
-    let cancelled=false;
-    const upstream=new ReadableStream<Uint8Array>({
-        cancel(){cancelled=true;return new Promise<void>(()=>{});}
-    });
-    const fetcher=(async()=>new Response(upstream,{headers:{'Content-Type':'text/html'}})) as typeof fetch;
-    const started=performance.now();
-    const answer=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetcher);
-    assert.ok(answer instanceof Response);
-    assert.equal(answer.status,503);
-    assert.equal(cancelled,true);
-    assert.ok(performance.now()-started<3_500,'invalid response cleanup must not delay denial');
-});
-test('RFC7662 oversized JSON cannot hang on a broken upstream cancel',{timeout:5_000},async()=>{
-    let cancelled=false;
-    const upstream=new ReadableStream<Uint8Array>({
-        start(controller){controller.enqueue(new Uint8Array(8_193));},
-        cancel(){cancelled=true;return new Promise<void>(()=>{});}
-    });
-    const fetcher=(async()=>new Response(upstream,{headers:{'Content-Type':'application/json'}})) as typeof fetch;
-    const started=performance.now();
-    const answer=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetcher);
-    assert.ok(answer instanceof Response);
-    assert.equal(answer.status,503);
-    assert.equal(cancelled,true);
-    assert.ok(performance.now()-started<3_500,'oversized response cleanup must not delay denial');
-});
-
-test('OAuth Basic form-encodes client ID and secret before transport',async()=>{
-    const now=Math.floor(Date.now()/1000),special={...config,clientId:'weave+client',clientSecret:'secret+%value'};
-    let observed='';
-    const r=await authorizeOAuth(special,req(),'weave:messages.send',exists,fetchFor(valid(now),(_url,init)=>{
-        observed=Buffer.from(String(init.headers.Authorization).slice(6),'base64').toString('utf8');
-    }),now*1000);
-    assert.ok(r instanceof Response);assert.equal(r.status,401);
-    assert.equal(observed,'weave%2Bclient:secret%2B%25value');
-});
-test('bearer expiry during introspection fails closed',async()=>{
-    const now=Math.floor(Date.now()/1000),payload={...valid(now),exp:now+1};let clock=now*1000;
-    const fetcher=(async()=>{clock+=2000;return new Response(JSON.stringify(payload),{headers:{'Content-Type':'application/json'}});}) as typeof fetch;
-    const r=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetcher,()=>clock);
-    assert.ok(r instanceof Response);assert.equal(r.status,401);
-});
-test('RFC7662 introspection never authorizes a private call: it carries no consent grant to look up',async()=>{
-    const now=Math.floor(Date.now()/1000);let lookups=0;
-    const r=await authorizeOAuth(config,req(),'weave:messages.send',async()=>{lookups++;return {accountId:id,humanId,clientId:config.clientId};},fetchFor(valid(now)),now*1000);
-    assert.ok(r instanceof Response);assert.equal(r.status,401);assert.match(r.headers.get('WWW-Authenticate')??'',/error="invalid_token"/);
-    assert.equal(lookups,0);
-});
-
-
-test('Cloudflare v1 Service Binding opt-in rejects partial and ambiguous OAuth modes',()=>{
+test('only a complete, resource-bound Service Binding enables auth; anything partial fails closed',()=>{
     const binding={validateToken:async()=>null};
     const configured=oauthConfiguration({OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,AUTH_SERVER:binding} as any,config.resource);
-    assert.equal((configured as any)?.mode,'service');
-    assert.equal((configured as any)?.resource,config.resource);
+    assert.equal(configured?.resource,config.resource);
+    assert.equal(configured?.issuer,config.issuer);
     assert.deepEqual((protectedResourceMetadata(configured!).headers.get('cache-control')),'no-store');
     for(const env of [
         {AUTH_SERVER:binding},
         {AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer},
         {AUTH_SERVER:{},OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource},
-        {AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,OAUTH_CLIENT_ID:config.clientId},
-        {AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,OAUTH_INTROSPECTION_URL:config.introspectionUrl,OAUTH_CLIENT_ID:config.clientId,OAUTH_CLIENT_SECRET:config.clientSecret}
+        {OAUTH_ISSUER:config.issuer},
+        {OAUTH_RESOURCE:config.resource},
+        {OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource},
+        {AUTH_SERVER:binding,OAUTH_ISSUER:'http://auth.example',OAUTH_RESOURCE:config.resource},
+        {AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:'https://weave.example/other'}
     ])assert.throws(()=>oauthConfiguration(env as any,config.resource),'partial, malformed, or ambiguous providers must fail closed');
     assert.throws(()=>oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,'https://evil.example/mcp'));
 });
-test('Service Binding verifies exact resource, owner identity and operation scope without HTTP introspection',async()=>{
+test('Service Binding verifies exact resource, owner identity and operation scope',async()=>{
     const now=Math.floor(Date.now()/1000);let seen:unknown=null,lookups=0;
     const binding={validateToken:async(resource:string,token:string)=>{
         seen={resource,token};return {audience:config.resource,userId:id,props:{accountId:id,humanId,grantId},
             expiresAt:now+120,scope:['weave:messages.send'],clientId:'verified-public-client'};
     }};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-    const result=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',
-        async grant=>{lookups++;return exists(grant);},
-        (async()=>{throw Error('Never perform public token introspection in service mode');}) as typeof fetch,now*1000);
+    const result=await authorizeOAuth(cfg,req(id+':grantId:secretValue'),'weave:messages.send',
+        async grant=>{lookups++;return exists(grant);},now*1000);
     assert.deepEqual(result,{accountId:id,grantId});
     assert.deepEqual(seen,{resource:config.resource,token:id+':grantId:secretValue'});
     assert.equal(lookups,1);
@@ -171,20 +74,20 @@ test('Service Binding rejects revoked, foreign resource, foreign account, mismat
     for(const [claims,status] of cases){
         const binding={validateToken:async()=>claims};
         const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-        const result=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',exists,undefined,now*1000);
+        const result=await authorizeOAuth(cfg,req(id+':grantId:secretValue'),'weave:messages.send',exists,now*1000);
         assert.ok(result instanceof Response);
         assert.equal(result.status,status);
     }
     const binding={validateToken:async()=>valid};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-    const denied=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',none,undefined,now*1000);
+    const denied=await authorizeOAuth(cfg,req(id+':grantId:secretValue'),'weave:messages.send',none,now*1000);
     assert.ok(denied instanceof Response);assert.equal(denied.status,401);
 });
 test('Service Binding failure is 503 and never leaks upstream error details or dispatches grant read',async()=>{
     let checked=0;
     const binding={validateToken:async()=>{throw Error('private binding unavailable SECRET');}};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-    const result=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',async()=>{checked++;return exists(grantId);});
+    const result=await authorizeOAuth(cfg,req(id+':grantId:secretValue'),'weave:messages.send',async()=>{checked++;return exists(grantId);});
     assert.ok(result instanceof Response);assert.equal(result.status,503);assert.equal(checked,0);
     assert.doesNotMatch(await result.text(),/SECRET|binding/);
 });
@@ -193,7 +96,7 @@ test('Service Binding denies a token that expires while the grant lookup execute
     const binding={validateToken:async()=>({audience:config.resource,userId:id,props:{accountId:id,humanId,grantId},
         expiresAt:now+1,scope:['weave:messages.send'],clientId:'verified-public-client'})};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-    const result=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',async g=>{clock+=2000;return exists(g);},undefined,()=>clock);
+    const result=await authorizeOAuth(cfg,req(id+':grantId:secretValue'),'weave:messages.send',async g=>{clock+=2000;return exists(g);},()=>clock);
     assert.ok(result instanceof Response);assert.equal(result.status,401);
 });
 
@@ -205,9 +108,9 @@ test('Service Binding rechecks revocation rather than caching an accepted token'
     const binding={validateToken:async()=>{reads++;return revoked?null:validClaims;}};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
     const request=req(id+':grantId:secretValue');
-    assert.deepEqual(await authorizeOAuth(cfg,request,'weave:messages.send',exists,undefined,now*1000),{accountId:id,grantId});
+    assert.deepEqual(await authorizeOAuth(cfg,request,'weave:messages.send',exists,now*1000),{accountId:id,grantId});
     revoked=true;
-    const denied=await authorizeOAuth(cfg,request,'weave:messages.send',exists,undefined,now*1000);
+    const denied=await authorizeOAuth(cfg,request,'weave:messages.send',exists,now*1000);
     assert.ok(denied instanceof Response);assert.equal(denied.status,401);assert.equal(reads,2);
 });
 test('Service Binding rejects a non-Cloudflare token before private RPC',async()=>{
@@ -223,75 +126,6 @@ test('Service Binding rechecks expiry after the private RPC latency',async()=>{
         expiresAt:now+1,scope:['weave:messages.send'],clientId:'verified-public-client'};}};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
     let lookedUp=false;
-    const denied=await authorizeOAuth(cfg,req(id+':grantId:secretValue'),'weave:messages.send',async g=>{lookedUp=true;return exists(g);},undefined,()=>clock);
+    const denied=await authorizeOAuth(cfg,req(id+':grantId:secretValue'),'weave:messages.send',async g=>{lookedUp=true;return exists(g);},()=>clock);
     assert.ok(denied instanceof Response);assert.equal(denied.status,401);assert.equal(lookedUp,false);
-});
-
-test('RFC7662 introspection refuses a subject that is not a Weave account ID without any grant lookup',async()=>{
-    const now=Math.floor(Date.now()/1000);let lookups=0;
-    const denied=await authorizeOAuth(config,req(),'weave:messages.send',async g=>{lookups++;return exists(g);},
-        fetchFor({...valid(now),sub:'tenant-specific-opaque-subject'}),now*1000);
-    assert.ok(denied instanceof Response);assert.equal(denied.status,401);assert.equal(lookups,0);
-});
-
-test('RFC7662 introspection rejects redirects without forwarding the bearer or Basic credentials',async()=>{
-    const now=Math.floor(Date.now()/1000);
-    let outgoing=0,accountReads=0;
-    const redirectOnly=(async(url:unknown,init:RequestInit)=>{
-        outgoing++;
-        assert.equal(url,config.introspectionUrl);
-        assert.equal(init.redirect,'manual','workerd must not follow or throw on the redirect policy');
-        assert.equal(init.method,'POST');
-        return new Response(null,{status:302,headers:{Location:'https://untrusted.example/steal'}});
-    }) as typeof fetch;
-    const answer=await authorizeOAuth(config,req('synthetic-opaque-token'),'weave:messages.send',
-        async g=>{accountReads++;return exists(g);},redirectOnly,now*1000);
-    assert.ok(answer instanceof Response);
-    assert.equal(answer.status,503,'an upstream 3xx must fail closed');
-    assert.equal(outgoing,1,'never follow the redirect destination');
-    assert.equal(accountReads,0,'redirects cannot establish an authorized account');
-});
-
-test('operator-approved split-origin RFC 7662 endpoint is used exactly yet never authorizes a private call',async()=>{
-    const separate='https://token-gateway.example:8443';
-    const split={...config,introspectionUrl:separate+'/oauth/introspect'};
-    const env={
-        OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,
-        OAUTH_INTROSPECTION_URL:split.introspectionUrl,
-        OAUTH_INTROSPECTION_TRUSTED_ORIGIN:separate,
-        OAUTH_CLIENT_ID:config.clientId,OAUTH_CLIENT_SECRET:config.clientSecret
-    };
-    const approved=oauthConfiguration(env,config.resource);
-    assert.deepEqual(approved,split,'a deliberate exact endpoint-origin trust choice must permit split-origin RFC 7662');
-    let introspections=0;
-    const now=Math.floor(Date.now()/1000);
-    const authorized=await authorizeOAuth(approved!,req(),'weave:messages.send',exists,
-        fetchFor(valid(now),(url,init)=>{
-            introspections++;
-            assert.equal(url,split.introspectionUrl,'never redirect or choose an unapproved endpoint');
-            assert.equal(init.redirect,'manual');
-        }),now*1000);
-    assert.ok(authorized instanceof Response);assert.equal(authorized.status,401,'a valid introspected token still carries no consent grant');
-    assert.equal(introspections,1);
-    const bad=await authorizeOAuth(approved!,req(),'weave:messages.send',exists,
-        fetchFor({...valid(now),iss:separate}),now*1000);
-    assert.ok(bad instanceof Response);assert.equal(bad.status,401,'introspection hosting does not change token issuer trust');
-});
-test('cross-origin token endpoint remains default-denied, exact-pinned, and mutually exclusive with private RPC',()=>{
-    const common={OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,
-        OAUTH_INTROSPECTION_URL:'https://token-gateway.example/oauth/introspect',
-        OAUTH_CLIENT_ID:config.clientId,OAUTH_CLIENT_SECRET:config.clientSecret};
-    assert.throws(()=>oauthConfiguration(common,config.resource),'cross-origin introspection needs deliberate opt-in');
-    for(const origin of ['https://different.example','http://token-gateway.example',
-        'https://token-gateway.example/path','https://user@token-gateway.example',
-        'https://token-gateway.example?x=1','https://token-gateway.example#fragment']){
-        assert.throws(()=>oauthConfiguration({...common,OAUTH_INTROSPECTION_TRUSTED_ORIGIN:origin},config.resource),
-            'invalid or non-exact trusted endpoint origin must be rejected: '+origin);
-    }
-    assert.throws(()=>oauthConfiguration({OAUTH_INTROSPECTION_TRUSTED_ORIGIN:'https://token-gateway.example'},config.resource),
-        'trust setting alone must never silently disable OAuth and expose anonymous private operations');
-    assert.throws(()=>oauthConfiguration({
-        OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,
-        AUTH_SERVER:{validateToken:async()=>null},OAUTH_INTROSPECTION_TRUSTED_ORIGIN:'https://token-gateway.example'
-    },config.resource),'one resource must not accept ambiguous providers');
 });
