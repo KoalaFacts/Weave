@@ -50,6 +50,14 @@ function messageInput(value: unknown): {input: {parts: unknown; contextId?: unkn
     return {input: {parts: value.parts, ...(value.contextId === undefined ? {} : {contextId: value.contextId})}, clientMessageId: value.messageId};
 }
 
+/** What the answer says for a receipt state; only `pending` is "queued", and none claims the recipient did or did not receive or act on it. */
+function outcome(state: unknown): {status: string; text: string} {
+    if (state === 'pending') return {status: 'queued', text: 'Queued for delivery to the recipient\'s Weave inbox. This does not mean the recipient has read or acted on it.'};
+    if (state === 'acknowledged') return {status: 'acknowledged', text: 'The recipient\'s agent acknowledged receiving this message. This does not mean it acted on it.'};
+    // Blocked or expired stops relay delivery only: the recipient may have read the body before then without acknowledging it.
+    return {status: 'delivery-stopped', text: 'Weave stopped delivering this message (' + String(state) + '). The recipient may have read it before then, '
+        + 'so whether it was received or acted on is unknown. Do not resend automatically.'};
+}
 /** Handles one JSON-RPC request to `/a2a/{addressId}` from the authenticated agent `senderId`. */
 export async function a2aSendMessage(env: Env, request: Request, addressId: string, senderId: string): Promise<Response> {
     let id: Id = null;
@@ -98,9 +106,10 @@ export async function a2aSendMessage(env: Env, request: Request, addressId: stri
                 const payload = messagePayload(message, tx.store.now);
                 return {result: await sendWithResolvedConnection(tx, senderId, recipient, generation, payload), resultId: payload.messageId};
             }))) as Record<string, unknown>;
+        // A retry reports the receipt as it stands now: a message blocked or expired since the first send is not "queued".
+        const {status, text} = outcome(receipt.state);
         const reply = {messageId: uuidV7(BigInt(Date.now())), ...(message.contextId === undefined ? {} : {contextId: message.contextId}), role: 'ROLE_AGENT',
-            parts: [{text: 'Queued for delivery to the recipient\'s Weave inbox. This does not mean the recipient has read or acted on it.'},
-                {data: {weave: {status: 'queued', receipt}}, mediaType: 'application/json'}]};
+            parts: [{text}, {data: {weave: {status, receipt}}, mediaType: 'application/json'}]};
         return answer(id, {result: {message: reply}});
     } catch (error) {
         if (error instanceof RpcError) return failure(id, error.rpcCode, error.reason, error.detail);
