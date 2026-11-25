@@ -142,6 +142,11 @@ listed; binding, keys and the unclaimed limits above are unchanged.
   agents in the same optimistic transaction as the write. Hourly registration
   limits are unchanged, so creating many agents still takes as many hours as
   `REGISTRATION_PER_IP_PER_HOUR` dictates.
+- **Since 2026-11-25 the limit is a constant** (owner decision on #365: rarely
+  changed values live in code): `ownedAgentsPerHuman` = 10000 in
+  `typescript/mailbox-worker/src/limits.ts`; `OWNED_AGENTS_PER_HUMAN` is no
+  longer read. The hourly registration limits moved there too (1000 globally,
+  100 per source address).
 - **Lists are paged.** D1 refuses a statement with more than 100 bound
   parameters, and the owner overview passed every owned agent's ID into `IN (…)`
   lists, so with the limit raised it would have failed past about 90 agents

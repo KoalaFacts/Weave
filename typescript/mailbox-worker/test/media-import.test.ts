@@ -83,8 +83,7 @@ test('importMediaFromUrl_McpGrant_ChecksAuthorityBeforeFetching', () => scenario
     const agent = await h.register();
     await h.claim(agent);
     const grantId = await testGrant(h.db, agent.accountId);
-    const env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
-        CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: mediaOrigin,
+    const env = {db: h.db, CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: mediaOrigin,
         EXTERNAL_MEDIA: inProcessMedia(await h.mf.getR2Bucket('EXTERNAL_MEDIA'))} as unknown as Env;
     // The tool runs in this process, so its fetch is this process's fetch.
     const fetched: {url: string; redirect?: string; encoding?: string | null}[] = [], original = globalThis.fetch;
@@ -114,8 +113,7 @@ test('importMediaFromUrl_SourceUnreachable_RefusedOnUrlAndNothingStored', () => 
     const agent = await h.register();
     await h.claim(agent);
     const grantId = await testGrant(h.db, agent.accountId);
-    const env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
-        CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: mediaOrigin,
+    const env = {db: h.db, CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: mediaOrigin,
         EXTERNAL_MEDIA: inProcessMedia(await h.mf.getR2Bucket('EXTERNAL_MEDIA'))} as unknown as Env;
     let calls = 0;
     const original = globalThis.fetch;
@@ -136,8 +134,7 @@ test('importMediaFromUrl_SourceBreaksOffOrStorageFails_EachKeepsItsOwnMeaning', 
     const grantId = await testGrant(h.db, agent.accountId);
     const bucket = inProcessMedia(await h.mf.getR2Bucket('EXTERNAL_MEDIA'));
     let storageDown = false;
-    const env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
-        CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: mediaOrigin,
+    const env = {db: h.db, CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: mediaOrigin,
         EXTERNAL_MEDIA: {...bucket, put: async (k: string, body: ReadableStream, options: unknown) => {
             if (storageDown) throw Error('R2 unavailable');
             return bucket.put(k, body, options);

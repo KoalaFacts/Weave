@@ -27,12 +27,6 @@ export interface Env {
     RECOVERY_READ_ONLY?: string;
     CLEANUP_MAX_MESSAGES?: string;
     CLEANUP_TIME_BUDGET_MS?: string;
-    REGISTRATION_ENABLED: string;
-    REGISTRATION_MAX_ACCOUNTS: string;
-    REGISTRATION_PER_IP_PER_HOUR: string;
-    REGISTRATION_GLOBAL_PER_HOUR: string;
-    // How many agents one human may own; 10 when unset (humans.ts ownedAgentLimit).
-    OWNED_AGENTS_PER_HUMAN?: string;
     // Enables the test-only external action provider. Never set in a deployed configuration.
     EXTERNAL_ACTION_TEST_ENDPOINT?: string;
     // Google OAuth client for connecting YouTube, and the 32-byte base64url key sealing credential secrets. Worker secrets.

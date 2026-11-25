@@ -16,8 +16,7 @@ const {sweep}=await bundle('src/cleanup.ts') as typeof import('../src/cleanup.ts
 const origin='https://demo.test';
 type Harness=Awaited<ReturnType<typeof start>>;
 type Participant=AgentCredential&{cardId:string};
-const environment=(h:Harness,cleanup='0'):Env=>({db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-    REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:cleanup,CLEANUP_TIME_BUDGET_MS:'2000'});
+const environment=(h:Harness,cleanup='0'):Env=>({db:h.db,CLEANUP_MAX_MESSAGES:cleanup,CLEANUP_TIME_BUDGET_MS:'2000'});
 const call=async(env:Env,owner:string,name:string,args:Record<string,unknown>)=>{
     const response=await executePrivateMcp(env,origin,owner,name,args);
     return {status:response.status,body:await response.json()};

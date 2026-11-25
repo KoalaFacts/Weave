@@ -4,7 +4,7 @@ import { start } from './harness.ts';
 
 for (const count of [0, 10, 11, 23]) test(`anonymous directory browses ${count} public addresses in stable ten-item pages`, async () => {
     // An unclaimed agent may hold one public address, so each visible address has its own owner with the private profile.
-    const h = await start({ bindings: { REGISTRATION_PER_IP_PER_HOUR: '100' } });
+    const h = await start({ bindings: {} });
     try {
         const ownerProfile = { displayName: 'PRIVATE-PROFILE', description: 'PRIVATE-DESCRIPTION' };
         const owner = await h.register(ownerProfile);

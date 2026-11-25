@@ -13,8 +13,7 @@ type Harness = Awaited<ReturnType<typeof start>>;
 const key = randomBytes(32).toString('base64url');
 const member = 'xY12_ab-CD', author = 'urn:li:person:' + member;
 const accessToken = 'AQV' + 'a1B2-c3_D4.e5~'.repeat(20);
-const environment = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
-    REGISTRATION_GLOBAL_PER_HOUR: '100', EXTERNAL_CREDENTIAL_KEY: key}) as unknown as Env;
+const environment = (h: Harness) => ({db: h.db, EXTERNAL_CREDENTIAL_KEY: key}) as unknown as Env;
 const connectLinkedIn = (env: Env, {fields = {accessToken}, ...owner}: {humanId: string; authAt: number; agentId: string; fields?: Record<string, string>}) =>
     connectAccount(env, {...owner, provider: 'linkedin', fields});
 

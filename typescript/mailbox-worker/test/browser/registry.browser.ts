@@ -33,7 +33,7 @@ test('public registry browser: desktop and touch browse ten-item pages, rate den
     let h, fixture;
     try {
         try {
-            h = await start({ bindings: { REGISTRATION_PER_IP_PER_HOUR: '100' } });
+            h = await start({ bindings: {} });
             const origin = (await h.mf.ready).origin;
             assert.equal(new URL(origin).hostname, '127.0.0.1');
             fixture = new BrowserFixture(evidence, origin); await fixture.start();

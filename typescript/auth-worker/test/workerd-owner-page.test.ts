@@ -7,6 +7,7 @@ import {join,resolve} from "node:path";
 import {after,before,test} from "node:test";
 import {Miniflare} from "miniflare";
 import {initializeDatabase} from "../../mailbox-worker/scripts/latest-schema.ts";
+import {fillOwnedAgents} from "../../mailbox-worker/test/registration-limits.ts";
 import {demoOAuthClientId,demoOAuthClientMetadata} from "../../mailbox-worker/src/oauth-client-metadata.ts";
 import {agentKey,bindingRequest,clientAssertion,dpopProof,keyEndorsement,keyProof,type TestKey} from "../../mailbox-worker/test/agent-key.ts";
 import {beginGithubLogin} from "../src/github-login.ts";
@@ -163,10 +164,6 @@ function options(storage:string,authEnv:Record<string,unknown>={}){
         env:{
           db:{type:"d1"},
           EXTERNAL_MEDIA:{type:"r2"},
-          REGISTRATION_ENABLED:{type:"text",value:"true"},
-          REGISTRATION_MAX_ACCOUNTS:{type:"text",value:"1000"},
-          REGISTRATION_PER_IP_PER_HOUR:{type:"text",value:"1000"},
-          REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"1000"},
           CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
           CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
           EXTERNAL_ACTION_TEST_ENDPOINT:{type:"text",value:providerEndpoint},
@@ -487,9 +484,10 @@ test("account_IssueRecoveryCode_Stale_RedirectsToGithub",{timeout:60_000},async(
   assert.equal(issued,0);
 });
 
-test("account_HumanAtTenAgents_ShowsAgentLimit",{timeout:120_000},async()=>{
+test("account_HumanAtTheOwnedLimit_ShowsAgentLimit",{timeout:120_000},async()=>{
   const human=await seedHuman();
-  for(let i=0;i<10;i++)await ownedAgent(human,"owned"+i);
+  await ownedAgent(human,"owned");
+  await fillOwnedAgents(await db() as never,human.humanId);
   const agent=await registerAgent("eleventh"),view=await requestBinding(agent,human);
   const response=await postAccount(await tokenFor(human,"Confirm binding"),await sessionCookie(human));
   assert.equal(result(response),"agent-limit");

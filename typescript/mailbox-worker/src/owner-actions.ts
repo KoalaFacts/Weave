@@ -1,7 +1,8 @@
 import { atomic, type Env, type Transaction } from './database.ts';
 import { confirmKeyRequest, revokeKeyForOwner } from './agent-keys.ts';
 import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, rejectBindingRequest } from './binding-requests.ts';
-import { ownedAgentLimit, ownedAgentPage, requireReadable, writesRefused } from './humans.ts';
+import { ownedAgentPage, requireReadable, writesRefused } from './humans.ts';
+import { limits } from './limits.ts';
 import { rejectKeyRequest } from './key-requests.ts';
 import { maxLiveOwnerGrants, revokeGrantIn, stopAppDecisionsIn } from './client-grants.ts';
 import { maxLiveWebhooks, type WebhookView } from './app-webhooks.ts';
@@ -196,7 +197,7 @@ async function decide(env: Env, tx: Transaction, input: DecidedAction, at: bigin
     if (!human) return notFound;
     if (human.frozen_at !== null) return {ok: false, reason: 'frozen'};
     switch (input.kind) {
-        case 'confirm-binding': return confirmBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.keysDigest, ownedAgentLimit(env), at);
+        case 'confirm-binding': return confirmBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.keysDigest, limits.ownedAgentsPerHuman, at);
         case 'reject-binding': return rejectBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
         case 'confirm-key': return confirmKeyRequest(tx, input.humanId, input.requestId, at);
         case 'reject-key': return rejectKeyRequest(tx, input.humanId, input.requestId, at);

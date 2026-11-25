@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { build } from 'esbuild';
+import { fillOwnedAgents } from './registration-limits.ts';
+import { limits } from '../src/limits.ts';
 import { start } from './harness.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { maxLiveOwnerGrants, recordGrant, recordOwnerGrant, revokeGrant } from '../src/client-grants.ts';
@@ -19,8 +21,7 @@ const { oauthPrivateAccess } = await import('data:text/javascript;base64,' + Buf
 const origin = 'https://demo.test', resource = origin + '/mcp', clientId = 'https://office.example/oauth-client.json';
 const manage = 'weave:agents.manage';
 const environment = (db: Database, overrides: Partial<Env> = {}): Env => ({
-    db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
-    REGISTRATION_GLOBAL_PER_HOUR: '100', CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', ...overrides });
+    db, CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', ...overrides });
 let subjects = 800000;
 async function human(env: Env) {
     const signed = await signInHuman(env, { provider: 'github', subject: String(++subjects), providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'owner' + subjects });
@@ -153,12 +154,13 @@ test('ownerGrant_ManageTools_ListCreateRenameTheHumansAgentsOnly', async () => {
 test('ownerGrant_CreateAtTheLimit_AgentLimitCodeNothingWritten', async () => {
     const h = await start();
     try {
-        const env = environment(h.db, { OWNED_AGENTS_PER_HUMAN: '1' }), humanId = await human(env), grantId = crypto.randomUUID();
+        const env = environment(h.db, {}), humanId = await human(env), grantId = crypto.randomUUID();
         await agentOf(env, humanId, 'Only');
+        await fillOwnedAgents(h.db, humanId);
         assert.deepEqual(await recordOwnerGrant(env, { grantId, humanId, clientId }), { ok: true });
         const refused = await resultOf(await mcp(env, () => ownerClaims(humanId, grantId))({ name: 'create_agent', args: { displayName: 'Second' } }));
         assert.deepEqual(refused.structuredContent, { status: 409, code: 'agent-limit' });
-        assert.equal(await h.db.prepare('SELECT count(*) AS n FROM accounts WHERE human_id=?').bind(humanId).first('n'), 1);
+        assert.equal(await h.db.prepare('SELECT count(*) AS n FROM accounts WHERE human_id=?').bind(humanId).first('n'), limits.ownedAgentsPerHuman);
     } finally { await h.close(); }
 });
 

@@ -1,22 +1,18 @@
 import { findKey, insertKey, validLabel } from './agent-keys.ts';
 import { atomic, type Env, type Transaction } from './database.ts';
 import { verifyDpop } from './dpop.ts';
+import { limits, type Limits } from './limits.ts';
 import { epochSeconds } from './time.ts';
 import { visibleName } from './visible-text.ts';
 import { fail, hash, object } from './wire.ts';
 
-function settings(env: Env, name: keyof Env, max: number): number {
-    const text = env[name]; if (typeof text !== 'string' || !/^\d+$/.test(text)) fail(503,'storage');
-    const n = Number(text); if (n < 1 || n > max) fail(503,'storage'); return n;
-}
 // Shared by self-registration and human-owned agent creation: global and per-source
 // hourly counters and the bounded cleanup of old counters. Total account capacity is
 // a self-registration concern only.
-export async function admitRegistration(env: Env, tx: Transaction, sourceIp: string): Promise<boolean> {
+export async function admitRegistration(tx: Transaction, sourceIp: string, limit: Limits = limits): Promise<boolean> {
     const hour = Number(tx.store.now / 36000000000n);
     const source = await hash('registration:' + hour + ':' + sourceIp);
-    const maxGlobal = settings(env,'REGISTRATION_GLOBAL_PER_HOUR',10000);
-    const maxSource = settings(env,'REGISTRATION_PER_IP_PER_HOUR',1000);
+    const maxGlobal = limit.registrationGlobalPerHour, maxSource = limit.registrationPerIpPerHour;
     const increments: [string,number][] = [];
     for (const [id,max] of [['global',maxGlobal],[source,maxSource]] as const) {
         const counter = await tx.get('registration-rate','',id);
@@ -28,13 +24,12 @@ export async function admitRegistration(env: Env, tx: Transaction, sourceIp: str
     tx.writes.push(tx.db.prepare("DELETE FROM rate_limits WHERE seq IN (SELECT seq FROM rate_limits WHERE policy='registration' AND window_start<CAST(? AS INTEGER) LIMIT 100)").bind((BigInt(hour)*36000000000n).toString()));
     return true;
 }
-// Self-registration gates; human-owned agents never consume REGISTRATION_MAX_ACCOUNTS.
-async function admitSelfRegistration(env: Env, tx: Transaction, request: Request): Promise<void> {
-    if (env.REGISTRATION_ENABLED !== 'true') fail(404,'unavailable');
-    const maxAccounts = settings(env,'REGISTRATION_MAX_ACCOUNTS',10000);
+// Self-registration gates; human-owned agents never consume registrationMaxAccounts.
+async function admitSelfRegistration(tx: Transaction, request: Request, limit: Limits = limits): Promise<void> {
+    const maxAccounts = limit.registrationMaxAccounts;
     const total = await tx.db.prepare('SELECT count(*) n FROM accounts WHERE human_id IS NULL').first<number>('n');
     if (total === null || total >= maxAccounts) fail(429,'capacity');
-    if (!await admitRegistration(env,tx,request.headers.get('CF-Connecting-IP') ?? 'unknown')) fail(429,'capacity');
+    if (!await admitRegistration(tx,request.headers.get('CF-Connecting-IP') ?? 'unknown',limit)) fail(429,'capacity');
 }
 function profile(input: any, optional: string[]): {displayName: string | null; description: string | null} {
     object(input,[],['displayName','description',...optional]);
@@ -65,7 +60,7 @@ export async function registerAgent(env: Env, request: Request, input: unknown):
             return {agentId:a.accountId,displayName:a.displayName,description:a.description,kid:existing.kid};
         }
         if (env.RECOVERY_READ_ONLY === 'true') fail(503,'maintenance',30);
-        await admitSelfRegistration(env,tx,request);
+        await admitSelfRegistration(tx,request);
         const accountId = await newAccountId(tx);
         tx.put('account','',accountId,{accountId,humanId:null,displayName,description});
         insertKey(tx,{kid:proof.jkt,accountId,jwk:proof.jwk,label,coolingUntil:null});

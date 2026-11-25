@@ -12,8 +12,7 @@ const {executePrivateMcp:executeWithGrant,privateScope}=await import('data:text/
 const executePrivateMcp=withTestGrant(executeWithGrant);
 const origin='https://demo.test';
 type Harness=Awaited<ReturnType<typeof start>>;
-const environment=(h:Harness):Env=>({db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-    REGISTRATION_PER_IP_PER_HOUR:'100',REGISTRATION_GLOBAL_PER_HOUR:'1000',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'});
+const environment=(h:Harness):Env=>({db:h.db,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'});
 const call=async(h:Harness,owner:AgentCredential,name:string,args:Record<string,unknown>)=>{
     const response=await executePrivateMcp(environment(h),origin,owner.accountId,name,args);
     return {status:response.status,body:await response.json()};

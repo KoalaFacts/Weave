@@ -9,9 +9,7 @@ const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write
 const {executePrivateMcp:executeWithGrant,privateScope,privateMcpTools}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
 const executePrivateMcp=withTestGrant(executeWithGrant);
 const origin='https://demo.test';
-const env=(db:Env['db']):Env=>({db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-    REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',
-    CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'});
+const env=(db:Env['db']):Env=>({db,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'});
 
 test('remote onboarding tools declare explicit independent address scopes',async()=>{
     assert.equal(privateScope('list_my_addresses'),'weave:addresses.read');
