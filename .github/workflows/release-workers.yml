@@ -1,0 +1,60 @@
+name: Release / Workers
+# Records a Workers release after its production deploy: tag workers-v<version> at the deployed commit and publish a GitHub
+# Release from that version's CHANGELOG.md section. It follows every successful dispatched run of deploy-demo.yml (which keeps a
+# read-only token) and records a release only for a commit with a successful production deployment from main; a
+# repository-scope deploy has none and is skipped. A manual run on main records a release whose deploy already
+# succeeded (also for a deploy started by the owner's #236 comment, since every issue comment runs deploy-demo.yml
+# with skipped jobs). It never moves a tag that already names another commit.
+on:
+  workflow_run:
+    workflows: ['Deploy / demo Workers']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full SHA of a commit whose production deploy from main succeeded
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-workers
+  cancel-in-progress: false
+jobs:
+  record:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.event == 'workflow_dispatch'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      deployments: read
+    env:
+      WEAVE_RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.commit }}
+    steps:
+      - name: Require a full commit SHA
+        run: '[[ "$WEAVE_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      # The release script comes from main; the version and notes come from the released commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: tool
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.WEAVE_RELEASE_SHA }}
+          path: release
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Tag the deployed commit and publish its GitHub Release
+        run: node tool/typescript/mailbox-worker/scripts/tag-release.ts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WEAVE_RELEASE_ROOT: release
+          # After a deploy run, a commit with no production deployment (repository scope) is skipped, not an error.
+          WEAVE_RELEASE_IF_DEPLOYED: ${{ github.event_name == 'workflow_run' }}
