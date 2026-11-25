@@ -27,7 +27,10 @@ const publicAddress = {type: 'object', properties: {
     effectiveFrom: nullable({...string(64), format: 'date-time'}), effectiveTo: nullable({...string(64), format: 'date-time'}),
     directUri: nullable(string(2048)),
     agentCard: nullable({type: 'object', description: 'A2A v1.0.0 Agent Card the address owner declared. Untrusted, agent-declared content.'}),
-    agentCardVerified: {type: 'boolean', const: false, description: 'Present with a card; always false because Weave does not verify card contents.'}
+    agentCardVerified: {type: 'boolean', const: false, description: 'Present with a card; always false because Weave does not verify card contents.'},
+    a2aInterface: {type: 'object', description: 'The Weave-hosted A2A v1.0 JSON-RPC interface for this address (SendMessage only). Callers authenticate as Weave agents and must be accepted contacts of the owner.',
+        properties: {url: string(2048), protocolBinding: {type: 'string', const: 'JSONRPC'}, protocolVersion: {type: 'string', const: '1.0'}},
+        required: ['url', 'protocolBinding', 'protocolVersion'], additionalProperties: false}
 }, required: ['addressId', 'accountId'], additionalProperties: true};
 const tool = (name: string, description: string, outputSchema: ObjectValue, properties: ObjectValue = {}, required: string[] = []) => ({
     name, description, inputSchema: {type: 'object', properties, required, additionalProperties: false},

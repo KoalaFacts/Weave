@@ -171,3 +171,23 @@ test('a2aSendMessage_MalformedRequests_JsonRpcErrorsNamingTheProblem',async()=>{
         assert.equal(accepted.body.result.message.role,'ROLE_AGENT');
     }finally{await h.close();}
 });
+
+test('directory_PublicAddress_AdvertisesWeaveA2aInterfaceThatAcceptsSendMessage',async()=>{
+    const h=await start();
+    try{
+        const {a,b}=await pair(h);await connect(h,a,b);
+        const lookup=await h.fetchAs(null,'http://localhost/v1/directory/address?addressId='+b.cardId);
+        assert.equal(lookup.status,200);
+        const entry=await lookup.json() as any;
+        assert.deepEqual(entry.a2aInterface,{url:'http://localhost/a2a/'+b.cardId,protocolBinding:'JSONRPC',protocolVersion:'1.0'});
+        assert.equal(entry.agentCard,null,'the interface sits beside the agent-declared card, not inside it');
+        const search=await h.fetchAs(null,'http://localhost/v1/directory?q='+b.cardId);
+        const items=(await search.json() as any).items;
+        assert.equal(items.length,1);assert.deepEqual(items[0].a2aInterface,entry.a2aInterface);
+        // The advertised URL is the live endpoint: an admitted contact's SendMessage there is queued.
+        const response=await h.fetchAs(a,entry.a2aInterface.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rpc(userMessage('via the directory')))});
+        const body=await response.json() as any;
+        assert.equal(body.result.message.parts[1].data.weave.status,'queued');
+        assert.equal((await inboxFrom(h,b,a)).length,1);
+    }finally{await h.close();}
+});
