@@ -6,7 +6,6 @@ import {test} from 'node:test';
 import {authorizeMcpAccount} from '../../examples/remote-mcp-pair/oauth.ts';
 import {authorizeOAuth,type OAuthOptions} from '../../typescript/mailbox-worker/src/remote-oauth.ts';
 
-const account='01234567-89ab-4def-8123-456789abcdef';
 const scope='weave:messages.read';
 // The mailbox validates tokens only through its Service Binding to the first-party auth Worker
 // (RFC 7662 introspection was removed on 2026-11-25), and admits a private call only for a live
@@ -16,7 +15,7 @@ function refusedWithoutGrant(result:unknown){
     assert.ok(result instanceof Response);assert.equal(result.status,401);
     assert.match(result.headers.get('WWW-Authenticate')??'',/error="invalid_token"/);
 }
-async function provider(label:string,token:string,lifetime=900,subject=account,
+async function provider(label:string,token:string,lifetime=900,
     discovery:'oauth'|'oidc-inserted'|'oidc-appended'|'oidc-blocked'='oauth',
     resourceDiscovery:'path'|'root'|'multiple'='path'){
     let origin='';
@@ -101,7 +100,7 @@ for(const [label,token] of [['issuer-a','opaque.alpha_123'],['issuer-b','opaque.
 
 for(const discovery of ['oidc-inserted','oidc-appended'] as const){
     test('existing remote MCP client must accept a trusted '+discovery+' OIDC-only issuer via PKCE',async()=>{
-        const p=await provider('oidc-'+discovery,'opaque.oidc-'+discovery,900,account,discovery);
+        const p=await provider('oidc-'+discovery,'opaque.oidc-'+discovery,900,discovery);
         try{
             const token=await p.login();
             assert.equal(token,'opaque.oidc-'+discovery);
@@ -113,7 +112,7 @@ for(const discovery of ['oidc-inserted','oidc-appended'] as const){
 }
 
 test('RFC 9728 root protected-resource metadata fallback completes the existing PKCE flow',async()=>{
-    const p=await provider('root-prm','opaque.root-prm',900,account,'oauth','root');
+    const p=await provider('root-prm','opaque.root-prm',900,'oauth','root');
     try{
         const token=await p.login();
         assert.equal(token,'opaque.root-prm');
@@ -124,7 +123,7 @@ test('RFC 9728 root protected-resource metadata fallback completes the existing 
 });
 
 test('multiple authorized issuers require an exact operator selected issuer before network login',async()=>{
-    const p=await provider('several-issuers','opaque.multi-issuer',900,account,'oauth','multiple');
+    const p=await provider('several-issuers','opaque.multi-issuer',900,'oauth','multiple');
     try{
         await assert.rejects(p.login(),/issuer|approval|unambiguous/i);
         await assert.rejects(p.login(p.issuer+'/foreign'),/issuer|approval|unambiguous/i);
@@ -138,7 +137,7 @@ test('multiple authorized issuers require an exact operator selected issuer befo
 });
 
 test('authorization-server 401 does not trigger a fallback or open a login page',async()=>{
-    const p=await provider('oidc-blocked','opaque.oidc-blocked',900,account,'oidc-blocked');
+    const p=await provider('oidc-blocked','opaque.oidc-blocked',900,'oidc-blocked');
     try{
         await assert.rejects(p.login(),/metadata or token response unavailable/);
         assert.deepEqual(p.counts,{authorization:0,exchange:0,validated:0});
@@ -159,13 +158,4 @@ test('the current 900-second client profile rejects a longer vendor session with
     const p=await provider('long-session','synthetic-token',3600);
     try{await assert.rejects(p.login,/Invalid OAuth token response/);assert.equal(p.counts.exchange,1);}
     finally{await p.close();}
-});
-test('external non-UUID subject fails closed rather than being guessed from email or another account',async()=>{
-    const p=await provider('external-subject','synthetic-token',900,'external-user-42');
-    try{
-        const token=await p.login();let lookup=false;
-        const result=await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),scope,async()=>{lookup=true;return null;});
-        assert.ok(result instanceof Response);assert.equal(result.status,401);assert.equal(lookup,false);
-        assert.equal(p.counts.validated,0);
-    }finally{await p.close();}
 });

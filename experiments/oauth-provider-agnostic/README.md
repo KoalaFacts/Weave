@@ -41,7 +41,6 @@ whose Git blob hashes are verified; CI imports the real checkout directly.
 | Two synthetic issuers | Same client code logs in using different metadata/configuration; token contents are opaque to the client. The resource refuses each external token (`401 invalid_token`). |
 | Access-shaped `oauth:` token | The client retains it unchanged, but the resource rejects it before any validation call. This is a characterization, not an attempt to bypass Access or broaden bearer grammar. |
 | Forged Access header | A bare `Cf-Access-Jwt-Assertion` never grants access. |
-| External non-UUID subject | The resource refuses the external token before any account lookup. No guessed/email-based account linking. |
 | 3600-second lifetime | Current client rejects it under the existing 900-second policy; the spike does not relax policy. |
 | Discovery variants | Resource-path/root metadata, RFC 8414/OIDC tenant locations and explicitly selected issuer work; malformed, oversized, redirected, untrusted and unsafe responses fail closed. |
 
@@ -77,12 +76,12 @@ successfully connected. These tests use no real vendor credentials or agents.
    protocol requirement. Negotiate/configure compatible lifetimes explicitly;
    never silently remove the limit to make a vendor test pass.
 
-## External RFC 7662 subjects
+## External subjects
 
-The resource's RFC 7662 verifier accepts only a Weave account UUID as `sub`
-after fresh issuer, audience, scope, active-state and expiry checks. A non-UUID
-subject is rejected before any account lookup; there is no subject-to-account
-mapping, email fallback or link store. Cloudflare Access signed identity
+The resource no longer has an RFC 7662 verifier (removed 2026-11-25), so an
+external issuer's subject never reaches it: the token is refused before any
+account lookup. There is no subject-to-account mapping, email fallback or link
+store. Cloudflare Access signed identity
 assertions are *not* RFC 7662 responses and are not accepted.
 
 Since onboarding slice 4 every private `/mcp` call also requires a live Weave
