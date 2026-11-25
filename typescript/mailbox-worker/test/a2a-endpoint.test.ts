@@ -96,8 +96,10 @@ test('a2aSendMessage_RetryAfterBlockOrAck_ReportsTheReceiptAsItStands',async()=>
         await send(h,a,b.cardId,rpc(blocked));
         await h.ok('/v1/contacts/blocks',b,'PUT',{peerAccountId:a.accountId,expectedGeneration:generation});
         const afterBlock=(await send(h,a,b.cardId,rpc(blocked))).body.result.message;
-        assert.equal(afterBlock.parts[1].data.weave.status,'not-delivered');assert.equal(afterBlock.parts[1].data.weave.receipt.state,'blocked');
-        assert.match(afterBlock.parts[0].text,/not delivered \(blocked\)/);assert.doesNotMatch(afterBlock.parts[0].text,/Queued/);
+        assert.equal(afterBlock.parts[1].data.weave.status,'delivery-stopped');assert.equal(afterBlock.parts[1].data.weave.receipt.state,'blocked');
+        // Blocking stops delivery but does not prove the recipient never read it, so the answer says that is unknown.
+        assert.match(afterBlock.parts[0].text,/stopped delivering this message \(blocked\)/);assert.match(afterBlock.parts[0].text,/unknown/);
+        assert.doesNotMatch(afterBlock.parts[0].text,/Queued|was not delivered/);
     }finally{await h.close();}
 });
 
