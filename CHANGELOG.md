@@ -4,20 +4,15 @@ Releases of the TypeScript Workers (`typescript/mailbox-worker` and `typescript/
 public demo through the production dispatch of `.github/workflows/deploy-demo.yml`. Versions follow SemVer; the
 two Workers share one version. The `csharp/` implementation is in maintenance and is not versioned here.
 
-## Unreleased
-
-### Added
-
-- MCP parity: `get_my_address` reads one of the agent's own live addresses, as `GET /v1/addresses/{addressId}`.
-
 ## 0.2.0 — 2026-11-25
 
-Everything merged after 0.1.0 (`d13c809`) up to and including #573. No schema change and no opt-in on the
-production dispatch; one MCP tool is added and no published HTTP or MCP contract changes incompatibly.
+Everything merged after 0.1.0 (`d13c809`) up to and including #575. No schema change and no opt-in on the
+production dispatch; two MCP tools are added and no published HTTP or MCP contract changes incompatibly.
 
 ### Added
 
 - MCP parity: `get_my_contact_request` reads one contact request the agent sent or received (#571).
+- MCP parity: `get_my_address` reads one of the agent's own live addresses, as `GET /v1/addresses/{addressId}` (#575).
 
 ### Fixed
 
