@@ -138,6 +138,11 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             parameters(args,['peerAccountId'],['peerAccountId']);identity(args.peerAccountId);target.pathname='/v1/contacts/channel';target.searchParams.set('peerAccountId',args.peerAccountId);
             return json(withoutSecrets(await atomic(env.db,tx=>read(tx,target,accountId))));
         }
+        if(name==='get_my_address'){
+            parameters(args,['addressId'],['addressId']);checkUuid(args.addressId,'addressId');target.pathname='/v1/addresses/'+args.addressId;
+            // The same owner-only live read as GET /v1/addresses/{addressId}, inside the grant's guarded transaction.
+            return json(withoutSecrets(await atomic(env.db,guarded(tx=>ownedAddresses(tx,accountId,target)))));
+        }
         if(name==='get_my_contact_request'){
             parameters(args,['requestId','requesterAccountId'],['requestId','requesterAccountId']);checkUuid(args.requestId,'requestId');checkUuid(args.requesterAccountId,'requesterAccountId');
             target.pathname='/v1/contacts/requests/'+args.requestId;target.searchParams.set('requesterAccountId',args.requesterAccountId);
