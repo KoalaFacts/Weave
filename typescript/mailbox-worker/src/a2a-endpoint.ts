@@ -15,7 +15,7 @@ import { terminalize, sendWithResolvedConnection } from './messages.ts';
 import { connectedGeneration, keyed, withoutSecrets } from './remote-private.ts';
 import { boundedBody, fail, invalidField, Problem, stringify } from './wire.ts';
 import { requestContact } from './contacts.ts';
-import { blocked, readChannel, relation } from './protocol.ts';
+import { readChannel, relation } from './protocol.ts';
 
 const MAX_REQUEST_BYTES = 131072, MAX_DEPTH = 32;
 /** The only A2A version served; a request without `A2A-Version` is treated as 1.0. */
@@ -57,8 +57,13 @@ function messageInput(value: unknown): {input: {parts: unknown; contextId?: unkn
 /** What the answer says for a receipt; only `pending` is "queued", and none claims the recipient did or did not receive or act on it. */
 function outcome(receipt: Record<string, unknown>): {status: string; text: string} {
     // A contact request (R1-2) carries its relation, not a message state: the owner decides before anything is delivered.
-    if (receipt.request !== undefined) return {status: 'contact-requested', text: 'You are not a contact of this address yet, so Weave sent this message '
-        + 'as a contact request. The recipient must accept it before your messages are delivered. This does not mean the recipient has read it.'};
+    if (receipt.request !== undefined) {
+        const requestStatus = (receipt.request as {status?: unknown}).status;
+        return {status: 'contact-requested', text: requestStatus === 'pending'
+            ? 'You are not a contact of this address yet, so Weave sent this message as a contact request. The recipient must accept it '
+                + 'before your messages are delivered. This does not mean the recipient has read it.'
+            : 'This message was sent as a contact request, which is now ' + String(requestStatus) + '. Send a new message to continue.'};
+    }
     const state = receipt.state;
     if (state === 'pending') return {status: 'queued', text: 'Queued for delivery to the recipient\'s Weave inbox. This does not mean the recipient has read or acted on it.'};
     if (state === 'acknowledged') return {status: 'acknowledged', text: 'The recipient\'s agent acknowledged receiving this message. This does not mean it acted on it.'};
@@ -66,14 +71,12 @@ function outcome(receipt: Record<string, unknown>): {status: string; text: strin
     return {status: 'delivery-stopped', text: 'Weave stopped delivering this message (' + String(state) + '). The recipient may have read it before then, '
         + 'so whether it was received or acted on is unknown. Do not resend automatically.'};
 }
-/** The connected generation, or null when the sender may ask to become a contact instead. A blocked pair stays
- * `not-connected`, as before, so the answer never reveals the block and no request is attempted. */
+/** The connected generation, or null when the sender is not a contact and goes through the contact-request path. That
+ * path refuses a blocked pair as `unavailable`, the answer for a private or unknown address, so the block stays hidden. */
 async function connectedOrNone(tx: Transaction, senderId: string, recipient: string): Promise<bigint | null> {
     try { return await connectedGeneration(tx, senderId, recipient); } catch (error) {
-        if (!(error instanceof Problem) || error.code !== 'not-connected') throw error;
-        const channel = await readChannel(tx, senderId, recipient);
-        if (channel && blocked(channel)) throw error;
-        return null;
+        if (error instanceof Problem && error.code === 'not-connected') return null;
+        throw error;
     }
 }
 /** Handles one JSON-RPC request to `/a2a/{addressId}` from the authenticated agent `senderId`. */

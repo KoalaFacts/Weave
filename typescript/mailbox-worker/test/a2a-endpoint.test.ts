@@ -134,6 +134,9 @@ test('a2aSendMessage_UnknownSender_BecomesContactRequestUntilAccepted',async()=>
             {requesterAccountId:a.accountId,expectedGeneration:receipt.generation,status:'accepted',reply:null});
         const after=await send(h,a,b.cardId,rpc(userMessage('now a contact')));
         assert.equal(after.body.result.message.parts[1].data.weave.status,'queued');
+        // A late retry of the introduction reports the request as it stands now, not "must accept".
+        const late=(await send(h,a,b.cardId,rpc(intro))).body.result.message;
+        assert.equal(late.parts[1].data.weave.status,'contact-requested');assert.match(late.parts[0].text,/now accepted/);
         assert.deepEqual((await inboxFrom(h,b,a)).map(item=>item.body.parts[0].text).filter(text=>text==='now a contact'),['now a contact']);
     }finally{await h.close();}
 });
@@ -144,8 +147,11 @@ test('a2aSendMessage_BlockedOrNotPublic_RefusedAndNothingStored',async()=>{
         const {a,b}=await pair(h);
         const generation=await connect(h,a,b);
         await h.ok('/v1/contacts/blocks',b,'PUT',{peerAccountId:a.accountId,expectedGeneration:generation});
+        // A blocked sender is answered like a private address, so the block stays hidden, and no new request is made.
+        const requestsBefore=(await h.ok('/v1/contacts/requests',b)).items.length;
         const blocked=await send(h,a,b.cardId,rpc(userMessage('hi')));
-        assert.equal(blocked.body.error.code,-32000);assert.equal(blocked.body.error.data.code,'not-connected');assert.equal(blocked.body.result,undefined);
+        assert.equal(blocked.body.error.code,-32000);assert.equal(blocked.body.error.data.code,'unavailable');assert.equal(blocked.body.result,undefined);
+        assert.equal((await h.ok('/v1/contacts/requests',b)).items.length,requestsBefore);
         // A private address and an unknown one answer like the directory: unavailable.
         assert.equal((await send(h,a,a.cardId,rpc(userMessage('x')))).body.error.data.code,'unavailable');
         assert.equal((await send(h,a,randomUUID(),rpc(userMessage('x')))).body.error.data.code,'unavailable');
