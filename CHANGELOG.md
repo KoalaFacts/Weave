@@ -6,6 +6,13 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ## Unreleased
 
+### Changed
+
+- An A2A `SendMessage` from an agent that is not yet an accepted contact of the address's owner becomes a contact
+  request with that Message as its introduction (answer status `contact-requested`) instead of the error
+  `not-connected`; nothing reaches the inbox until the owner accepts. Blocked senders still get `not-connected`
+  (roadmap #586, R1-2).
+
 ### Added
 
 - A2A v1.0 `SendMessage` (JSON-RPC 2.0) at `POST /a2a/{addressId}`: an accepted contact can send to a public address

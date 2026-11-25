@@ -1,10 +1,12 @@
 /** A2A v1.0 inbound endpoint for a public address (roadmap #586, R1-1): the JSON-RPC 2.0 binding of `SendMessage`.
  * An authenticated Weave agent that is an accepted contact of the address's owner sends an A2A Message; Weave stores it
- * in the owner's inbox exactly like `send_message` and answers with a Message that says only "queued". Weave runs no task,
+ * in the owner's inbox exactly like `send_message` and answers with a Message that says only "queued". A sender that is
+ * not a contact yet (R1-2) never reaches the inbox: its Message becomes the introduction of a contact request, exactly like
+ * `request_contact`, which the owner must accept before any message is delivered. Weave runs no task,
  * so the answer is never a Task and never says that the recipient read or processed anything. The content stays
  * untrusted peer data. Field names follow specification/a2a.proto (proto3 JSON) as of A2A v1.0.
  */
-import { atomic, type Env } from './database.ts';
+import { atomic, type Env, type Transaction } from './database.ts';
 import { publicAddressOwner } from './addresses.ts';
 import { checkMessage, messagePayload, shallowJson, uuidV7 } from './a2a-message.ts';
 import { idempotencyClaim } from './mcp-idempotency.ts';
@@ -12,6 +14,8 @@ import { sweep } from './cleanup.ts';
 import { terminalize, sendWithResolvedConnection } from './messages.ts';
 import { connectedGeneration, keyed, withoutSecrets } from './remote-private.ts';
 import { boundedBody, fail, invalidField, Problem, stringify } from './wire.ts';
+import { requestContact } from './contacts.ts';
+import { blocked, readChannel, relation } from './protocol.ts';
 
 const MAX_REQUEST_BYTES = 131072, MAX_DEPTH = 32;
 /** The only A2A version served; a request without `A2A-Version` is treated as 1.0. */
@@ -50,13 +54,27 @@ function messageInput(value: unknown): {input: {parts: unknown; contextId?: unkn
     return {input: {parts: value.parts, ...(value.contextId === undefined ? {} : {contextId: value.contextId})}, clientMessageId: value.messageId};
 }
 
-/** What the answer says for a receipt state; only `pending` is "queued", and none claims the recipient did or did not receive or act on it. */
-function outcome(state: unknown): {status: string; text: string} {
+/** What the answer says for a receipt; only `pending` is "queued", and none claims the recipient did or did not receive or act on it. */
+function outcome(receipt: Record<string, unknown>): {status: string; text: string} {
+    // A contact request (R1-2) carries its relation, not a message state: the owner decides before anything is delivered.
+    if (receipt.request !== undefined) return {status: 'contact-requested', text: 'You are not a contact of this address yet, so Weave sent this message '
+        + 'as a contact request. The recipient must accept it before your messages are delivered. This does not mean the recipient has read it.'};
+    const state = receipt.state;
     if (state === 'pending') return {status: 'queued', text: 'Queued for delivery to the recipient\'s Weave inbox. This does not mean the recipient has read or acted on it.'};
     if (state === 'acknowledged') return {status: 'acknowledged', text: 'The recipient\'s agent acknowledged receiving this message. This does not mean it acted on it.'};
     // Blocked or expired stops relay delivery only: the recipient may have read the body before then without acknowledging it.
     return {status: 'delivery-stopped', text: 'Weave stopped delivering this message (' + String(state) + '). The recipient may have read it before then, '
         + 'so whether it was received or acted on is unknown. Do not resend automatically.'};
+}
+/** The connected generation, or null when the sender may ask to become a contact instead. A blocked pair stays
+ * `not-connected`, as before, so the answer never reveals the block and no request is attempted. */
+async function connectedOrNone(tx: Transaction, senderId: string, recipient: string): Promise<bigint | null> {
+    try { return await connectedGeneration(tx, senderId, recipient); } catch (error) {
+        if (!(error instanceof Problem) || error.code !== 'not-connected') throw error;
+        const channel = await readChannel(tx, senderId, recipient);
+        if (channel && blocked(channel)) throw error;
+        return null;
+    }
 }
 /** Handles one JSON-RPC request to `/a2a/{addressId}` from the authenticated agent `senderId`. */
 export async function a2aSendMessage(env: Env, request: Request, addressId: string, senderId: string): Promise<Response> {
@@ -97,17 +115,22 @@ export async function a2aSendMessage(env: Env, request: Request, addressId: stri
         // A retry is answered first, so it keeps its receipt even if the address has since left the directory.
         const receipt = withoutSecrets(await atomic(env.db, async tx => keyed(tx, senderId, claim, async messageId => {
                 const stored = await tx.get('message', senderId, messageId);
-                if (!stored) fail(404, 'unavailable');
-                return terminalize(tx, stored);
+                // A contact request's introduction is stored as a message too (purpose 1): report the request instead.
+                if (stored && stored.purpose !== 1) return terminalize(tx, stored);
+                const request = await tx.get('request', senderId, messageId);
+                if (!request) fail(404, 'unavailable');
+                return relation(await readChannel(tx, senderId, request.summary.recipientMailboxId), request);
             }, async () => {
                 const recipient = await publicAddressOwner(tx, addressId);
                 if (recipient === senderId) invalidField('addressId', 'is your own address');
-                const generation = await connectedGeneration(tx, senderId, recipient);
                 const payload = messagePayload(message, tx.store.now);
+                const generation = await connectedOrNone(tx, senderId, recipient);
+                if (generation === null) return {result: await requestContact(tx, senderId, {requestId: payload.messageId, cardId: addressId, methodId: 'relay', payload}),
+                    resultId: payload.messageId};
                 return {result: await sendWithResolvedConnection(tx, senderId, recipient, generation, payload), resultId: payload.messageId};
             }))) as Record<string, unknown>;
         // A retry reports the receipt as it stands now: a message blocked or expired since the first send is not "queued".
-        const {status, text} = outcome(receipt.state);
+        const {status, text} = outcome(receipt);
         const reply = {messageId: uuidV7(BigInt(Date.now())), ...(message.contextId === undefined ? {} : {contextId: message.contextId}), role: 'ROLE_AGENT',
             parts: [{text}, {data: {weave: {status, receipt}}, mediaType: 'application/json'}]};
         return answer(id, {result: {message: reply}});
