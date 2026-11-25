@@ -64,11 +64,11 @@ export async function preflightUpdate(env:NodeJS.ProcessEnv,request:typeof fetch
     return {manifest:ratelimits.length?{...manifest,ratelimits}:manifest,expected,ratelimits};
 }
 
-export async function updateDemoIssuer(env:NodeJS.ProcessEnv=process.env,request:typeof fetch=fetch){
+export async function updateDemoIssuer(env:NodeJS.ProcessEnv=process.env,request:typeof fetch=fetch,deploy:typeof wrangler=wrangler){
     const {manifest,expected,ratelimits}=await preflightUpdate(env,request);
     const filename='wrangler.update.generated.jsonc';
     await writeFile(join(root,filename),JSON.stringify(manifest,null,2)+'\n',{flag:'wx',mode:0o600});
-    await wrangler(['deploy','--config',filename,'--keep-vars'],env);
+    await deploy(['deploy','--config',filename,'--keep-vars'],env);
     // The published version must still carry every binding and secret, then answer discovery.
     const published=await runningBindings(env,request);
     const changed=[...readbackMismatches(published,expected),...(sameLimits(published,ratelimits)?[]:['registration budgets']),

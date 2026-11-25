@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {preflightUpdate} from '../scripts/update-demo.ts';
+import {rm} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {preflightUpdate, updateDemoIssuer} from '../scripts/update-demo.ts';
 
 const env:NodeJS.ProcessEnv={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'a-token-never-to-log'};
 const kvId='c'.repeat(32),clientId='Iv23liRunningClientId';
@@ -72,4 +74,17 @@ test('preflightUpdate_RegistrationBudgets_CarriedOverExactlyAndAnyOtherBindingRe
         ['a budget without its period',{...budgets[0],simple:{limit:10}}],
     ] as const)
         await assert.rejects(()=>preflightUpdate(env,cloudflare(settings([...running,extra]))),/cannot preserve/,name);
+});
+
+test('updateDemoIssuer_RetiredGlobalBudgetStillPublished_RefusesAfterReadback',async()=>{
+    const budget={name:'REGISTRATION_LIMITER',type:'ratelimit',namespace_id:'1001',simple:{limit:10,period:60}};
+    const retiredGlobal={name:'REGISTRATION_GLOBAL_LIMITER',type:'ratelimit',namespace_id:'1002',simple:{limit:100,period:60}};
+    const generated=resolve(import.meta.dirname,'..','wrangler.update.generated.jsonc');
+    const deploys:string[][]=[];
+    try{
+        // The readback still shows the retired budget, as if the deploy had kept it: the update must say so.
+        await assert.rejects(()=>updateDemoIssuer(env,cloudflare(settings([...running,budget,retiredGlobal])),async args=>{deploys.push(args);}),
+            /readback differs in retired REGISTRATION_GLOBAL_LIMITER;/);
+        assert.equal(deploys.length,1,'the code was published once before the readback');
+    }finally{await rm(generated,{force:true});}
 });
