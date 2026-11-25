@@ -518,3 +518,30 @@ test('updateMyAddress_InvalidOtherAgentsRevokedUnknownOverLimitOrRevokedGrant_Re
         assert.equal(await revision(),afterRevoke,'nothing changed');
     }finally{await h.close();}
 });
+
+test('getMyAddress_OwnLiveAddress_ReadLikeGet_OthersRevokedUnknownMalformedOrRevokedGrantRefused',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),b=await h.register(),addressId=await publicAddress(h,a,'Readable');
+        assert.equal(privateScope('get_my_address'),'weave:addresses.read','reading an address is an addresses read');
+        assert.equal(privateMcpTools.find(t=>t.name==='get_my_address')?.annotations.readOnlyHint,true);
+        const read=await ok(h,a,'get_my_address',{addressId});
+        const listed=(await ok(h,a,'list_my_addresses',{})).items.find((item:{addressId:string})=>item.addressId===addressId);
+        assert.deepEqual(read,listed,'the same address view as list_my_addresses');
+        assert.equal(read.label,'Readable');
+        assert.equal((await call(h,b,'get_my_address',{addressId})).status,404,"another agent's address is not found");
+        assert.equal((await call(h,a,'get_my_address',{addressId:crypto.randomUUID()})).status,404,'an unknown address is not found');
+        for(const [args,field] of [[{},'addressId'],[{addressId:'not-a-uuid'},'addressId'],[{addressId,includeRevoked:true},'includeRevoked']] as [Record<string,unknown>,string][]){
+            const answer=await call(h,a,'get_my_address',args);
+            assert.equal(answer.status,400,JSON.stringify(args));
+            assert.equal(answer.body.field,field,JSON.stringify(answer.body));
+        }
+        await ok(h,a,'revoke_my_address',{addressId});
+        const revoked=await call(h,a,'get_my_address',{addressId});
+        assert.equal(revoked.status,404,'a revoked address is not found');
+        assert.equal(revoked.body.code,'unavailable');
+        const live=await publicAddress(h,a,'Still live'),grantId=await testGrant(h.db,a.accountId);
+        await h.db.prepare('UPDATE client_grants SET revoked_at=CAST(? AS INTEGER) WHERE grant_id=?').bind((BigInt(Date.now())*10000n).toString(),grantId).run();
+        assert.equal((await executeWithGrant(environment(h),origin,a.accountId,'get_my_address',{addressId:live},grantId)).status,401,'a revoked grant reads nothing, even a live own address');
+    }finally{await h.close();}
+});

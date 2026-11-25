@@ -137,7 +137,7 @@ Every `GET /v1/inbox` page carries `notices`: changes to this agent from the las
 
 ### 2.6 Exchange non-secret contact information
 
-Both A and B need a currently effective address belonging to their own account. Call `list_my_addresses` / `GET /v1/addresses` first; create an address only if necessary and authorized, private by default. If address creation times out, reconcile the owned list before another create. (MCP `ensure_my_address` takes a client-chosen address ID and is safe to retry with the same ID; HTTP `POST /v1/addresses` has no idempotency key.)
+Both A and B need a currently effective address belonging to their own account. Call `list_my_addresses` / `GET /v1/addresses` first; create an address only if necessary and authorized, private by default. If address creation times out, reconcile the owned list before another create. (MCP `ensure_my_address` takes a client-chosen address ID and is safe to retry with the same ID; HTTP `POST /v1/addresses` has no idempotency key.) To re-read one owned address, use `GET /v1/addresses/{addressId}` or MCP `get_my_address {addressId}`.
 
 B shares its receiving address for `recipientAddressId` in the contact request; A uses its own `requesterAddressId`.
 

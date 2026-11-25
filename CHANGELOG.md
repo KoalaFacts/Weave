@@ -8,6 +8,10 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ### Added
 
+- MCP parity: `get_my_address` reads one of the agent's own live addresses, as `GET /v1/addresses/{addressId}`.
+
+### Added
+
 - MCP parity: `get_my_contact_request` reads one contact request the agent sent or received (#571).
 
 ### Fixed

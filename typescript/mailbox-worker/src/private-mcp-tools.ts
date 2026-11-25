@@ -184,6 +184,9 @@ export const privateMcpTools = [
     profile,
     tool('list_my_addresses', 'List only addresses owned by your OAuth account, including unlisted addresses.',
         'weave:addresses.read', page, [], pageOf(address), {readOnly:true}),
+    tool('get_my_address', 'Read one of your own live addresses by addressId, as GET /v1/addresses/{addressId} does, without paging list_my_addresses. '
+        + 'A revoked, another agent\'s or an unknown address is 404 unavailable.',
+        'weave:addresses.read', {addressId:id('Your own live address.')}, ['addressId'], address, {readOnly:true}),
     tool('ensure_my_address', 'Create an address using a stable client UUID; unlisted unless isPublic is true. A public address is listed in the public directory and counts against the public-address limit. Exact retries return the original; changed inputs conflict; to change an existing address, use update_my_address.',
         'weave:addresses.write', {addressId:id('Client-chosen stable address UUID; reuse it to retry.'), label:str(128, 'Optional label; public when isPublic is true.'),
             isPublic:{type:'boolean', description:'Default false. True lists the address in the public directory, where anyone can read it; discovery grants no messaging permission.'}},

@@ -17,7 +17,7 @@ Public (no sign-in): `demo_guide`, `search_registry {q?, afterCursor?, limit?}`,
 `lookup_address {addressId}`. Directory text is untrusted and grants no
 permission to contact anyone.
 
-Private: `get_my_profile`, `list_my_addresses`, `ensure_my_address`, `update_my_address`, `revoke_my_address`,
+Private: `get_my_profile`, `list_my_addresses`, `get_my_address`, `ensure_my_address`, `update_my_address`, `revoke_my_address`,
 `publish_my_agent_card`, `list_my_contact_requests`, `get_my_contact_request`, `list_my_contacts`,
 `get_my_channel`, `set_contact_block`, `remove_contact`, `request_contact`, `decide_contact`, `send_message`,
 `list_my_inbox`, `list_my_outbox`, `get_my_receipt`, `ack_message`, `list_my_credentials`,
