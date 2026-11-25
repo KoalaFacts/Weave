@@ -109,7 +109,7 @@ test('real Worker advertises protected-resource metadata and challenges unauthen
     }finally{await h.close();}
 });
 
-test('malformed private request does not sweep or write maintenance state before validation',async()=>{
+test('malformed private request is rejected before any database write',async()=>{
     const h=await start();
     try{
         const a=await h.participant(),b=await h.participant();
