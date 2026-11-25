@@ -529,7 +529,7 @@ test("actionPage_UnknownOutcome_OffersSettleFormsUntilRecorded",async()=>{
   const page=async(settled:SettledActionView,map:ReadonlyMap<string,string>=tokens)=>html(actionPage({frozen:false,action:null,settled},human,actionId,map,now));
   const open=await page({status:"unknown",failure:null,settlement:null});
   const target='<form method="post" action="/account/actions/'+actionId+'">';
-  assert.ok(open.includes(target+'<input type="hidden" name="action" value="posted&#60;token&#62;"><label>Link to the post (optional) <input type="url" name="postUrl" maxlength="2048" placeholder="https://"></label> <button type="submit">It was posted</button></form>'),open);
+  assert.ok(open.includes(target+'<input type="hidden" name="action" value="posted&#60;token&#62;"><label>Link to the post (optional) <input type="url" name="postUrl" maxlength="2048" pattern="https://.+" placeholder="https://"></label> <button type="submit">It was posted</button></form>'),open);
   assert.ok(open.includes(target+'<input type="hidden" name="action" value="not&#60;token&#62;"><button type="submit">It was not posted</button></form>'),open);
   for(const status of ["approved","rejected","expired","dispatching","completed","failed"]){
     const body=await page({status,failure:null,settlement:null});

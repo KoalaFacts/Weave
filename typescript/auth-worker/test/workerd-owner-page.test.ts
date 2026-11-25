@@ -782,6 +782,8 @@ test("actionPage_SettleUnknownOutcome_RecordedOnceAndNeverSent",{timeout:60_000}
   const theirs=await shared.mf.dispatchFetch(issuer+"/account/actions/"+action.actionId,{method:"POST",redirect:"manual",headers:{"Content-Type":"application/x-www-form-urlencoded",
     Origin:issuer,Cookie:strangerCookie},body:new URLSearchParams({action:posted,postUrl:url}).toString()});
   assert.ok((await theirs.text()).includes("That request, key or connected client was not found."),"another human's session cannot use the owner's form");
+  // The owner page at /account does not take the action page's settle token.
+  assert.equal(result(await postAccount(notPosted,cookie)),"not-found");
   assert.equal(await database.prepare("SELECT count(*) n FROM external_action_settlements WHERE action_id=?").bind(action.actionId).first("n"),0);
   const recorded=await (await post(posted,{postUrl:url})).text();
   assert.ok(recorded.includes("Recorded. Weave keeps what you found with this action"),recorded);

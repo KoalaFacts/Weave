@@ -165,7 +165,7 @@ fresh sign-in rules as approving; `/account` refuses the token). `readActionPage
 recorded (the link only when it is a well-formed `https` URL) instead of the forms. Verification:
 `mailbox-worker/test/external-action-settlements.test.ts` (5 tests on real D1), auth-worker `test/owner-forms.test.ts`,
 `test/owner-page.test.ts` and the two-worker `actionPage_SettleUnknownOutcome_RecordedOnceAndNeverSent` in
-`test/workerd-owner-page.test.ts`, with mutations listed in the PR. Next: S3 the agent's reads and the inbox notice.
+`test/workerd-owner-page.test.ts` (which also checks `/account` refuses the token), with mutation checks recorded on its PR. Next: S3 the agent's reads and the inbox notice.
 
 ## Verification
 

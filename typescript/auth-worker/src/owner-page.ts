@@ -393,7 +393,7 @@ function settlementSection(settlement:SettlementView|null|undefined,actionId:str
   const target=esc(actionPagePath(actionId));
   return "<h2>What did you find on the platform?</h2><p>Check the platform, then record what you found. You can record it once; it never sends the action again.</p>"+
     '<form method="post" action="'+target+'"><input type="hidden" name="action" value="'+esc(posted)+'"><label>Link to the post (optional) '+
-    '<input type="url" name="postUrl" maxlength="2048" placeholder="https://"></label> <button type="submit">It was posted</button></form>'+
+    '<input type="url" name="postUrl" maxlength="2048" pattern="https://.+" placeholder="https://"></label> <button type="submit">It was posted</button></form>'+
     '<form method="post" action="'+target+'"><input type="hidden" name="action" value="'+esc(notPosted)+'"><button type="submit">It was not posted</button></form>';
 }
 
