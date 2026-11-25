@@ -131,7 +131,7 @@ Step 2 makes the mailbox honour owner grants on `/mcp`; the authorization server
 - **Managing agents.** `list_agents` (20 per page), `create_agent` and `rename_agent` need the new scope
   `weave:agents.manage`, are refused to agent tokens whatever scopes they list (`403 insufficient_scope`), take no
   header, and act only on the grant's human: another human's agent is not found. Creating still counts against
-  `OWNED_AGENTS_PER_HUMAN` (`agent-limit`) and the hourly registration limits by source address (`capacity`); creating
+  `OWNED_AGENTS_PER_HUMAN` (`agent-limit`; since 2026-11-25 the constant `ownedAgentsPerHuman`, see [agent binding](2026-11-01-agent-binding.md)) and the hourly registration limits by source address (`capacity`); creating
   and renaming re-check the grant in their own transaction. Names follow the existing visible-name rule.
 - **Not recorded.** As with an agent's grant, the mailbox does not log which grant made each call; messages and actions
   record their agent as before.

@@ -8,7 +8,7 @@ import {after,before,test} from "node:test";
 import {Miniflare} from "miniflare";
 import {stripTypeScriptTypes} from "node:module";
 import {initializeDatabase} from "../../mailbox-worker/scripts/latest-schema.ts";
-import {setRegistrationHour} from "../../mailbox-worker/test/registration-limits.ts";
+import {fillOwnedAgents,setRegistrationHour} from "../../mailbox-worker/test/registration-limits.ts";
 import {limits as mailboxLimits} from "../../mailbox-worker/src/limits.ts";
 import {demoOAuthClientId,demoOAuthClientMetadata} from "../../mailbox-worker/src/oauth-client-metadata.ts";
 import {signedCookieValue} from "../src/human-session.ts";
@@ -431,23 +431,20 @@ test("consent_OtherHumansAgentId_DeniedWithoutCode",{timeout:60_000},async()=>{
   assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,3002)),[]);
 });
 
-test("consent_EleventhNewAgent_ShowsLimitWithoutCode",{timeout:120_000},async()=>{
+test("consent_NewAgentOverTheOwnedLimit_ShowsLimitWithoutCode",{timeout:120_000},async()=>{
   const {mf}=shared;
   const auth=authorization();
   const session=await signIn(mf,auth,4001);
-  for(let i=1;i<=10;i++){
-    const next=authorization();
-    const consent=await openConsent(mf,next,session);
-    codeFrom(await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Agent "+i}),next);
-  }
+  const first=authorization(),opened=await openConsent(mf,first,session);
+  codeFrom(await post(mf,opened.cookie,{handle:opened.handle,decision:"approve",agent:"new",agentName:"Agent 1"}),first);
   const humanId=await humanIdOf(mf,4001);
-  assert.equal((await agentsOf(mf,humanId)).length,10);
+  await fillOwnedAgents(await mailboxDb(mf) as never,humanId);
   const consent=await openConsent(mf,auth,session);
-  const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Agent 11"});
+  const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Over"});
   assert.equal(response.status,400);
   assert.equal(response.headers.get("location"),null);
   assert.match(await response.text(),/already owns as many agents as this server allows/);
-  assert.equal((await agentsOf(mf,humanId)).length,10);
+  assert.equal(await (await mailboxDb(mf)).prepare("SELECT count(*) n FROM accounts WHERE human_id=?").bind(humanId).first("n"),mailboxLimits.ownedAgentsPerHuman);
 });
 
 test("consent_ExpiredOrTamperedSession_RedirectsToGithubWithoutCode",{timeout:60_000},async()=>{

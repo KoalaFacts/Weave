@@ -149,7 +149,6 @@ test('registerAgent_InvalidLabel_400', async () => {
     } finally { await h.close(); }
 });
 
-
 test('registerAgent_RecoveryReadOnly_NewKey503ExistingKeyReturns', async () => {
     const persist = await mkdtemp(join(tmpdir(), 'weave-d1-'));
     let h = await start({persist});

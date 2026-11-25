@@ -3,10 +3,11 @@ import { test } from 'node:test';
 import { start } from './harness.ts';
 import { agentPageSize, createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type HumanSignIn } from '../src/humans.ts';
 
-const defaultOwnedLimit = 10;
-const small = (overrides: Partial<Limits>): Limits => ({ ...limits, ownedAgentsPerHuman: defaultOwnedLimit, ...overrides });
 import type { Env } from '../src/database.ts';
 import { limits, type Limits } from '../src/limits.ts';
+import { fillAccounts } from './registration-limits.ts';
+const defaultOwnedLimit = 10;
+const small = (overrides: Partial<Limits>): Limits => ({ ...limits, ownedAgentsPerHuman: defaultOwnedLimit, ...overrides });
 
 const environment = (h: { db: unknown }, overrides: Partial<Env> = {}) => ({
     db: h.db, ...overrides }) as unknown as Env;
@@ -51,7 +52,6 @@ test('signInHuman_DifferentIds_ReturnDifferentHumans', async () => {
         assert.notEqual(await humanId(env, '1'), await humanId(env, '2'));
     } finally { await h.close(); }
 });
-
 
 test('signInHuman_ProviderCreatedAtChanged_FreezesHuman', async () => {
     const h = await start();
@@ -193,9 +193,10 @@ test('createOwnedAgent_SourceIpOverHourlyLimit_ReturnsRateLimited', async () => 
 test('createOwnedAgent_GlobalAccountCapReached_StillCreatesUpToPerHumanLimit', async () => {
     const h = await start();
     try {
-        const env = environment(h, {}), id = await humanId(env), limit = small({ registrationMaxAccounts: 1 });
+        const env = environment(h, {}), id = await humanId(env), limit = small({});
         await h.register();
-        await h.register();
+        await fillAccounts(h.db);
+        assert.equal((await h.request('/v1/accounts', h.stranger(), 'POST', {})).status, 429);
         for (let i = 0; i < defaultOwnedLimit; i++) assert.equal((await create(env, id, 'agent ' + i, limit)).ok, true);
         assert.deepEqual(await create(env, id, 'over', limit), { ok: false, reason: 'agent-limit' });
     } finally { await h.close(); }
@@ -226,7 +227,6 @@ test('humanDirectory_RecoveryReadOnly_RefusesWritesButAllowsReads', async () => 
     } finally { await h.close(); }
 });
 
-
 test('humanDirectory_FrozenAfterCreatingAgent_RefusesManagement', async () => {
     const h = await start();
     try {
@@ -255,7 +255,6 @@ test('createOwnedAgent_ConfiguredLimit_AllowsThatManyThenAgentLimit', async () =
         assert.deepEqual(await create(env, id, 'over', limit), { ok: false, reason: 'agent-limit' });
     } finally { await h.close(); }
 });
-
 
 test('listHumanAgents_MoreThanOnePage_PagesOldestFirstWithCursor', async () => {
     const h = await start();
