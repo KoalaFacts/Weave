@@ -82,6 +82,25 @@ test('a2aSendMessage_RetrySameMessageId_SameReceiptOneDelivery_DifferentContentC
     }finally{await h.close();}
 });
 
+test('a2aSendMessage_RetryAfterBlockOrAck_ReportsTheReceiptAsItStands',async()=>{
+    const h=await start();
+    try{
+        const {a,b}=await pair(h);const generation=await connect(h,a,b);
+        const acked=userMessage('to be acknowledged'),blocked=userMessage('to be blocked');
+        const first=await send(h,a,b.cardId,rpc(acked));
+        const ackId=first.body.result.message.parts[1].data.weave.receipt.messageId;
+        await h.ok('/v1/inbox/'+ackId+'/ack',b,'POST',{senderAccountId:a.accountId});
+        const afterAck=(await send(h,a,b.cardId,rpc(acked))).body.result.message;
+        assert.equal(afterAck.parts[1].data.weave.status,'acknowledged');assert.equal(afterAck.parts[1].data.weave.receipt.state,'acknowledged');
+        assert.match(afterAck.parts[0].text,/acknowledged receiving/);
+        await send(h,a,b.cardId,rpc(blocked));
+        await h.ok('/v1/contacts/blocks',b,'PUT',{peerAccountId:a.accountId,expectedGeneration:generation});
+        const afterBlock=(await send(h,a,b.cardId,rpc(blocked))).body.result.message;
+        assert.equal(afterBlock.parts[1].data.weave.status,'not-delivered');assert.equal(afterBlock.parts[1].data.weave.receipt.state,'blocked');
+        assert.match(afterBlock.parts[0].text,/not delivered \(blocked\)/);assert.doesNotMatch(afterBlock.parts[0].text,/Queued/);
+    }finally{await h.close();}
+});
+
 test('a2aSendMessage_NotAContactOrBlockedOrNotPublic_RefusedAndNothingStored',async()=>{
     const h=await start();
     try{
