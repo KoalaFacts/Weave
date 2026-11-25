@@ -6,21 +6,17 @@ import { epochSeconds } from './time.ts';
 import { visibleName } from './visible-text.ts';
 import { fail, hash, object } from './wire.ts';
 
-// Shared by self-registration and human-owned agent creation: global and per-source
-// hourly counters and the bounded cleanup of old counters. Total account capacity is
-// a self-registration concern only.
+// Shared by self-registration and human-owned agent creation: the per-source hourly
+// counter and the bounded cleanup of old counters (including the retired "global" ones).
+// Total account capacity is a self-registration concern only.
 export async function admitRegistration(tx: Transaction, sourceIp: string, limit: Limits = limits): Promise<boolean> {
     const hour = Number(tx.store.now / 36000000000n);
     const source = await hash('registration:' + hour + ':' + sourceIp);
-    const maxGlobal = limit.registrationGlobalPerHour, maxSource = limit.registrationPerIpPerHour;
-    const increments: [string,number][] = [];
-    for (const [id,max] of [['global',maxGlobal],[source,maxSource]] as const) {
-        const counter = await tx.get('registration-rate','',id);
-        const count = counter?.hour === hour ? counter.count : 0;
-        if (count >= max) return false; increments.push([id,count + 1]);
-    }
+    const counter = await tx.get('registration-rate','',source);
+    const count = counter?.hour === hour ? counter.count : 0;
     // Nothing is staged for a refusal, so a caller may return it without committing counters.
-    for (const [id,count] of increments) tx.put('registration-rate','',id,{ hour, count });
+    if (count >= limit.registrationPerIpPerHour) return false;
+    tx.put('registration-rate','',source,{ hour, count: count + 1 });
     tx.writes.push(tx.db.prepare("DELETE FROM rate_limits WHERE seq IN (SELECT seq FROM rate_limits WHERE policy='registration' AND window_start<CAST(? AS INTEGER) LIMIT 100)").bind((BigInt(hour)*36000000000n).toString()));
     return true;
 }

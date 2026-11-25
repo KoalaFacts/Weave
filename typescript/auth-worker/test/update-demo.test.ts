@@ -60,11 +60,11 @@ test('preflightUpdate_NoAccountOrToken_RefusesBeforeAnyRequest',async()=>{
 });
 
 test('preflightUpdate_RegistrationBudgets_CarriedOverExactlyAndAnyOtherBindingRefused',async()=>{
-    const budgets=[{name:'REGISTRATION_LIMITER',type:'ratelimit',namespace_id:'1001',simple:{limit:10,period:60}},
-        {name:'REGISTRATION_GLOBAL_LIMITER',type:'ratelimit',namespace_id:'1002',simple:{limit:100,period:60}}];
-    const {manifest}=await preflightUpdate(env,cloudflare(settings([...running,...budgets])));
+    const budgets=[{name:'REGISTRATION_LIMITER',type:'ratelimit',namespace_id:'1001',simple:{limit:10,period:60}}];
+    const retiredGlobal={name:'REGISTRATION_GLOBAL_LIMITER',type:'ratelimit',namespace_id:'1002',simple:{limit:100,period:60}};
+    const {manifest}=await preflightUpdate(env,cloudflare(settings([...running,...budgets,retiredGlobal])));
     assert.deepEqual(manifest.ratelimits,budgets.map(({name,namespace_id,simple})=>({name,namespace_id,simple})),
-        'a code update keeps open registration exactly as configured');
+        'a code update keeps the per-address budget exactly as configured and drops the retired global one');
     assert.equal((await preflightUpdate(env,cloudflare(settings(running)))).manifest.ratelimits,undefined,'no budgets are invented');
     for(const [name,extra] of [
         ['an unknown binding',{name:'SOMETHING_ELSE',type:'plain_text',text:'x'}],

@@ -5,7 +5,8 @@ import { agentPageSize, createOwnedAgent, humanHasAgent, listHumanAgents, signIn
 
 import type { Env } from '../src/database.ts';
 import { limits, type Limits } from '../src/limits.ts';
-import { fillAccounts } from './registration-limits.ts';
+import { fillAccounts, setRegistrationHour } from './registration-limits.ts';
+import { atomic } from '../src/database.ts';
 const defaultOwnedLimit = 10;
 const small = (overrides: Partial<Limits>): Limits => ({ ...limits, ownedAgentsPerHuman: defaultOwnedLimit, ...overrides });
 
@@ -243,8 +244,26 @@ test('humanDirectory_FrozenAfterCreatingAgent_RefusesManagement', async () => {
 });
 
 test('limits_Constants_MatchTheOwnerDecision', () => {
-    assert.deepEqual({ ...limits }, { registrationMaxAccounts: 10000, registrationGlobalPerHour: 1000, registrationPerIpPerHour: 100, ownedAgentsPerHuman: 10000 });
+    assert.deepEqual({ ...limits }, { registrationMaxAccounts: 10000, registrationPerIpPerHour: 100, ownedAgentsPerHuman: 10000 });
     assert.equal(Object.isFrozen(limits), true);
+});
+
+test('createOwnedAgent_FullRetiredGlobalCounter_StillCreatesAndCountsOnlyTheSource', async () => {
+    const h = await start();
+    try {
+        const env = environment(h), id = await humanId(env);
+        // A counter from before the global limit was removed (owner, 2026-11-25), full for this hour: it no longer refuses.
+        await atomic(h.db as never, async tx => {
+            tx.put('registration-rate', '', 'global', { hour: Number(tx.store.now / 36000000000n), count: 1_000_000 });
+        });
+        assert.equal((await create(env, id)).ok, true);
+        const rows = await h.db.prepare("SELECT bucket_key,count FROM rate_limits WHERE policy='registration' ORDER BY bucket_key='global'").all();
+        assert.deepEqual(rows.results.map((r: any) => r.count), [1, 1_000_000], 'only the source counter moves');
+        // The per-source limit still refuses, with nothing written.
+        await setRegistrationHour(h.db as never, 100, '203.0.113.7');
+        assert.deepEqual(await create(env, id, 'Second', small({ ownedAgentsPerHuman: 10 })), { ok: false, reason: 'rate-limited' });
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(id).first('n'), 1);
+    } finally { await h.close(); }
 });
 
 test('createOwnedAgent_ConfiguredLimit_AllowsThatManyThenAgentLimit', async () => {

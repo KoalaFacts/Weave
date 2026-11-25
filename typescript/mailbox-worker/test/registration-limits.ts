@@ -12,11 +12,11 @@ export async function fillAccounts(db: Database, free = 0): Promise<void> {
         SELECT printf('00000000-0000-4000-8000-%012d',i),NULL,NULL,NULL,0,0 FROM n`).bind(missing).run();
 }
 
-/** Sets this hour's registration counter to `count`: for one source IP, or across every source when none is given. */
-export async function setRegistrationHour(db: Database, count: number, sourceIp?: string): Promise<void> {
+/** Sets this hour's registration counter for one source to `count`; the default is the CF-Connecting-IP Miniflare's dispatchFetch sends. */
+export async function setRegistrationHour(db: Database, count: number, sourceIp = '127.0.0.1'): Promise<void> {
     await atomic(db, async tx => {
         const hour = Number(tx.store.now / 36000000000n);
-        const id = sourceIp === undefined ? 'global' : await hash('registration:' + hour + ':' + sourceIp);
+        const id = await hash('registration:' + hour + ':' + sourceIp);
         tx.put('registration-rate', '', id, { hour, count });
     });
 }

@@ -33,8 +33,9 @@ the mailbox changes. The job then deploys the mailbox Worker and runs
    - the GitHub client secret and the human-session key, checked by metadata only. The optional sign-in allowlist
      is kept if it is set.
 3. rebuilds the configuration from those bindings, using the same `demoManifest` the first publication uses:
-   - it carries the two registration budgets (`REGISTRATION_LIMITER`, `REGISTRATION_GLOBAL_LIMITER`) over exactly,
-     because dropping either would close dynamic client registration;
+   - it carries the registration budget `REGISTRATION_LIMITER` over exactly, because dropping it would close
+     dynamic client registration (until 2026-11-25 it also carried `REGISTRATION_GLOBAL_LIMITER`; that budget is now
+     retired: the update leaves it out, so the published version drops it, and the readback refuses if it remains);
    - it refuses when the running Worker has any other binding. A code update keeps every binding as it is, or it
      changes nothing;
 4. publishes only the code;

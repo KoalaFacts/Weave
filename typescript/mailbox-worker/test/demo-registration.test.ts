@@ -335,8 +335,8 @@ test('real Worker commits a lost registration once, resumes its saved key, and e
     const h = await start({ bindings: {} });
     let loseResponse = true;
     try {
-        // One registration left this hour across every source.
-        await setRegistrationHour(h.db, limits.registrationGlobalPerHour - 1);
+        // One registration left this hour for the caller's source.
+        await setRegistrationHour(h.db, limits.registrationPerIpPerHour - 1);
         const app = ui(async (path, options) => {
             const response = await h.mf.dispatchFetch('http://localhost' + path, options);
             if (path === '/v1/accounts' && loseResponse) {

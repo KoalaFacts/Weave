@@ -11,6 +11,12 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 - Cleanup limits are constants in the mailbox Worker (`src/limits.ts`), no longer Worker settings (owner decision on
   #365, 2026-11-25): business cleanup stays off (0 messages, 0 ms), as the demo has always run it. The demo variables
   `CLEANUP_MAX_MESSAGES` and `CLEANUP_TIME_BUDGET_MS` are no longer read and can be deleted after the deploy.
+- New agents have no hourly limit across all sources any more (owner request on #365, 2026-11-25): only the 100 per
+  source address per hour remains, for self-registered and human-owned agents together. Old `global` counter rows age out
+  through the existing bounded cleanup.
+- The auth Worker's open dynamic client registration (`/register`) has only the per-address `REGISTRATION_LIMITER`
+  budget; `REGISTRATION_GLOBAL_LIMITER` (100 per minute across all sources) is retired, and the next `update-demo`
+  publishes the Worker without it, so nothing needs deleting by hand.
 
 ## 0.2.0 — 2026-11-25
 

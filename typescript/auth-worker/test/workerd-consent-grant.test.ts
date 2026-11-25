@@ -356,7 +356,7 @@ test("consent_Microsoft365CopilotCallback_ConfidentialClientReadsSelectedProfile
   const readScope="weave:addresses.read";
   // Provision a confidential client through the SDK in local workerd only.
   const limiter=(namespace:string)=>({type:"rate-limit",namespace,simple:{limit:10,period:60}});
-  const instance=await start({REGISTRATION_LIMITER:limiter("copilot-test-ip"),REGISTRATION_GLOBAL_LIMITER:limiter("copilot-test-global")});
+  const instance=await start({REGISTRATION_LIMITER:limiter("copilot-test-ip")});
   try{
     const {mf}=instance;
     const registration=await mf.dispatchFetch(issuer+"/register",{method:"POST",
@@ -512,8 +512,8 @@ test("consent_RateLimitedNewAgent_Returns429WithoutCode",{timeout:60_000},async(
   const instance=await start();
   try{
     const {mf}=instance;
-    // One registration left this hour across every source.
-    await setRegistrationHour(await mailboxDb(mf) as never,mailboxLimits.registrationGlobalPerHour-1);
+    // One registration left this hour for the caller's source.
+    await setRegistrationHour(await mailboxDb(mf) as never,mailboxLimits.registrationPerIpPerHour-1);
     const first=await authorizeAgent(mf,7001,"new","Only one");
     const auth=authorization();
     const consent=await openConsent(mf,auth,first.session);

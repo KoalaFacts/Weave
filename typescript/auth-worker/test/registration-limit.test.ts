@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {limitRegistration,registrationLimiterKey,registrationOpen} from "../src/registration-limit.ts";
+import {limitRegistration,registrationLimiterKey,registrationOpen,type RegistrationLimitEnv} from "../src/registration-limit.ts";
 
 test("registrationLimiterKey_Ipv4_KeepsAddress",()=>{
   assert.equal(registrationLimiterKey("203.0.113.9"),"v4:203.0.113.9");
@@ -43,54 +43,45 @@ function limiter(result:boolean|Error,calls:Call[]=[]):RateLimit{
 const post=(ip?:string)=>new Request("https://auth.weave.example/register",
   {method:"POST",headers:ip?{"CF-Connecting-IP":ip}:{}});
 
-test("limitRegistration_BothAllow_PassesWithPerIpAndGlobalKeys",async()=>{
-  const perIp:Call[]=[],global:Call[]=[];
-  const result=await limitRegistration({REGISTRATION_LIMITER:limiter(true,perIp),
-    REGISTRATION_GLOBAL_LIMITER:limiter(true,global)},post("2001:db8:1:2::7"));
+test("limitRegistration_Allowed_PassesWithPerIpKeyOnly",async()=>{
+  const perIp:Call[]=[];
+  const result=await limitRegistration({REGISTRATION_LIMITER:limiter(true,perIp)},post("2001:db8:1:2::7"));
   assert.equal(result,null);
   assert.deepEqual(perIp,[{key:"v6:2001:0db8:0001:0002::/64"}]);
-  assert.deepEqual(global,[{key:"global"}]);
 });
 
-test("limitRegistration_LimiterThrows_Returns503",async()=>{
-  for(const env of [
-    {REGISTRATION_LIMITER:limiter(Error("down")),REGISTRATION_GLOBAL_LIMITER:limiter(true)},
-    {REGISTRATION_LIMITER:limiter(true),REGISTRATION_GLOBAL_LIMITER:limiter(Error("down"))}
-  ]){
-    const result=await limitRegistration(env,post("203.0.113.9"));
-    assert.equal(result?.status,503);
-    assert.equal(result?.headers.get("cache-control"),"no-store");
-  }
-});
-
-test("limitRegistration_MissingEitherBinding_Returns503",async()=>{
-  for(const env of [{},{REGISTRATION_LIMITER:limiter(true)},{REGISTRATION_GLOBAL_LIMITER:limiter(true)}]){
-    assert.equal((await limitRegistration(env,post("203.0.113.9")))?.status,503);
-    assert.equal(registrationOpen(env),false);
-  }
-  assert.equal(registrationOpen({REGISTRATION_LIMITER:limiter(true),REGISTRATION_GLOBAL_LIMITER:limiter(true)}),true);
-});
-
-test("limitRegistration_PerIpDenied_Returns429WithoutSpendingGlobal",async()=>{
+test("limitRegistration_RetiredGlobalBindingDenying_IsIgnored",async()=>{
+  // A live Worker may still carry the retired binding until its next update; it must not refuse anyone.
   const global:Call[]=[];
-  const result=await limitRegistration({REGISTRATION_LIMITER:limiter(false),
-    REGISTRATION_GLOBAL_LIMITER:limiter(true,global)},post("203.0.113.9"));
-  assert.equal(result?.status,429);
-  assert.equal(result?.headers.get("retry-after"),"60");
+  const env={REGISTRATION_LIMITER:limiter(true),REGISTRATION_GLOBAL_LIMITER:limiter(false,global)};
+  assert.equal(await limitRegistration(env,post("203.0.113.9")),null);
   assert.deepEqual(global,[]);
 });
 
-test("limitRegistration_GlobalDenied_Returns429",async()=>{
-  const result=await limitRegistration({REGISTRATION_LIMITER:limiter(true),
-    REGISTRATION_GLOBAL_LIMITER:limiter(false)},post());
+test("limitRegistration_LimiterThrows_Returns503",async()=>{
+  const result=await limitRegistration({REGISTRATION_LIMITER:limiter(Error("down"))},post("203.0.113.9"));
+  assert.equal(result?.status,503);
+  assert.equal(result?.headers.get("cache-control"),"no-store");
+});
+
+test("limitRegistration_MissingBinding_Returns503",async()=>{
+  // The retired global binding alone does not open registration.
+  for(const env of [{},{REGISTRATION_GLOBAL_LIMITER:limiter(true)} as unknown as RegistrationLimitEnv]){
+    assert.equal((await limitRegistration(env,post("203.0.113.9")))?.status,503);
+    assert.equal(registrationOpen(env),false);
+  }
+  assert.equal(registrationOpen({REGISTRATION_LIMITER:limiter(true)}),true);
+});
+
+test("limitRegistration_PerIpDenied_Returns429",async()=>{
+  const result=await limitRegistration({REGISTRATION_LIMITER:limiter(false)},post("203.0.113.9"));
   assert.equal(result?.status,429);
   assert.equal(result?.headers.get("retry-after"),"60");
 });
 
 test("limitRegistration_NonPost_SpendsNoBudget",async()=>{
-  const perIp:Call[]=[],global:Call[]=[];
-  const result=await limitRegistration({REGISTRATION_LIMITER:limiter(true,perIp),
-    REGISTRATION_GLOBAL_LIMITER:limiter(true,global)},new Request("https://auth.weave.example/register"));
+  const perIp:Call[]=[];
+  const result=await limitRegistration({REGISTRATION_LIMITER:limiter(true,perIp)},new Request("https://auth.weave.example/register"));
   assert.equal(result,null);
-  assert.deepEqual([perIp,global],[[],[]]);
+  assert.deepEqual(perIp,[]);
 });
