@@ -291,6 +291,11 @@ test('publicMcp_LookupAndSearch_ReturnCardUnverified',async()=>{
         const listed=(await run('search_registry',{q:'Searchable'})).items.find((i:{addressId:string})=>i.addressId===addressId);
         assert.deepEqual(listed.agentCard,card());
         assert.equal(listed.agentCardVerified,false);
+        // The Weave-hosted A2A interface sits beside the declared card on both public MCP tools (roadmap #586, R1-3).
+        for(const entry of [found,listed]){
+            assert.equal(entry.a2aInterface.protocolBinding,'JSONRPC');assert.equal(entry.a2aInterface.protocolVersion,'1.0');
+            assert.equal(new URL(entry.a2aInterface.url).pathname,'/a2a/'+addressId);
+        }
     }finally{await h.close();}
 });
 

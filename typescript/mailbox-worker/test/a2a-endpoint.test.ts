@@ -189,5 +189,8 @@ test('directory_PublicAddress_AdvertisesWeaveA2aInterfaceThatAcceptsSendMessage'
         const body=await response.json() as any;
         assert.equal(body.result.message.parts[1].data.weave.status,'queued');
         assert.equal((await inboxFrom(h,b,a)).length,1);
+        // Only public directory reads carry it; the owner's own address listing does not.
+        const own=await h.ok('/v1/addresses',b);
+        assert.ok(own.items.length>0);assert.ok(own.items.every((item:any)=>item.a2aInterface===undefined));
     }finally{await h.close();}
 });
