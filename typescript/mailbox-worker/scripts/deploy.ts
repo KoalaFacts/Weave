@@ -177,12 +177,8 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             !single(worker.bindings,'OAUTH_RESOURCE','plain_text',resource)))
             throw Error('Existing first-party OAuth issuer/resource differs from approved values; no mutation attempted.');
         // Stage issuer, resource and AUTH_SERVER together in maintenance when
-        // absent, or preserve the exact existing set. Mixed legacy introspection
-        // credentials are never eligible for this first-party rollout.
-        if((!authBinding&&['OAUTH_ISSUER','OAUTH_RESOURCE']
-                .some(name=>worker.bindings.some(binding=>binding?.name===name)))||
-           ['OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
-             'OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
+        // absent, or preserve the exact existing set.
+        if(!authBinding&&['OAUTH_ISSUER','OAUTH_RESOURCE']
                 .some(name=>worker.bindings.some(binding=>binding?.name===name)))
             throw Error('Resource OAuth bootstrap secrets are not preapproved; no mutation attempted.');
         const as=await inspect<WorkerSettings>('/workers/scripts/weave-auth-demo/settings','Approved existing OAuth authorization Worker');
@@ -259,9 +255,6 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             typeof oauthExisting.get('OAUTH_ISSUER')!.text!=='string'||
             oauthExisting.get('OAUTH_RESOURCE')!.text!=='https://demo.weave-389.workers.dev/mcp')
             throw Error('Invalid existing OAuth resource or issuer; no mutation attempted.');
-        if(['OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID','OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
-            .some(name=>worker.bindings.some(binding=>binding.name===name)))
-            throw Error('Mixed OAuth Service Binding and RFC7662 introspection settings; no mutation attempted.');
         config.services=[{binding:'AUTH_SERVER',service:authBinding.service,...(authBinding.entrypoint?{entrypoint:authBinding.entrypoint}:{})}];
     }
     const binding=bindings[0];

@@ -100,7 +100,7 @@ test('approvalOrigin_OnlyAFirstPartyHttpsIssuer_HasThePage', () => {
     const service = {} as Env['AUTH_SERVER'];
     assert.equal(approvalOrigin({AUTH_SERVER: service, OAUTH_ISSUER: 'https://auth.weave.example'}), 'https://auth.weave.example');
     assert.equal(approvalOrigin({AUTH_SERVER: service, OAUTH_ISSUER: 'https://auth.weave.example/'}), 'https://auth.weave.example');
-    // A third-party issuer reached by introspection hosts no Weave owner page.
+    // An issuer without the Service Binding is not a configured deployment and hosts no owner page.
     assert.equal(approvalOrigin({OAUTH_ISSUER: 'https://idp.example'}), null);
     for (const issuer of [undefined, '', 'http://auth.weave.example', 'not a url'])
         assert.equal(approvalOrigin({AUTH_SERVER: service, OAUTH_ISSUER: issuer}), null, String(issuer));

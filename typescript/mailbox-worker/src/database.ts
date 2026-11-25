@@ -12,15 +12,10 @@ export interface Statement {
 }
 export interface Database { prepare(sql: string): Statement; batch(statements: Statement[]): Promise<unknown[]>; }
 export interface Env {
-    // Optional delegated OAuth resource-server configuration. Confidential values
-    // are injected as Worker secrets, never committed to wrangler.jsonc.
+    // Optional OAuth resource-server configuration: the issuer and resource URLs plus the private
+    // Service Binding to the first-party auth Worker, all three together or none.
     OAUTH_ISSUER?: string;
     OAUTH_RESOURCE?: string;
-    OAUTH_INTROSPECTION_URL?: string;
-    OAUTH_INTROSPECTION_TRUSTED_ORIGIN?: string;
-    OAUTH_CLIENT_ID?: string;
-    OAUTH_CLIENT_SECRET?: string;
-    // Optional, exclusive private RPC alternative to HTTPS RFC7662 introspection.
     AUTH_SERVER?: OAuthServiceBinding;
     db: Database;
     MAINTENANCE_MODE?: string;

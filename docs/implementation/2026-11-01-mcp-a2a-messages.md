@@ -85,6 +85,8 @@ not repeated here. The preceding slice is the
   cannot carry a `grantId`, so that mode still validates tokens but never
   authorizes a private call. The remote pair example now needs grant-bearing
   tokens and uses the new `message` / `idempotencyKey` contract.
+  *2026-11-25: the introspection mode is deleted; the Service Binding is the only
+  mode (owner decision on #365).*
 - New D1 tables: `client_grants`, `mcp_idempotency`, `address_agent_cards`. The
   product is unreleased, so `src/schema.ts` changed directly with no migration.
 

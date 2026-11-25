@@ -74,8 +74,8 @@ export async function planDigest(row: Pick<Row, 'action_id' | 'account_id' | 'pr
 }
 
 /**
- * The origin of the first-party authorization server, which hosts the owner's page for one action. Only a Service Binding
- * deployment has one: a third-party issuer (introspection) has no such page.
+ * The origin of the first-party authorization server, which hosts the owner's page for one action; null when the
+ * deployment has no OAuth Service Binding.
  */
 export function approvalOrigin(env: Pick<Env, 'AUTH_SERVER' | 'OAUTH_ISSUER'>): string | null {
     if (env.AUTH_SERVER === undefined || !env.OAUTH_ISSUER || !URL.canParse(env.OAUTH_ISSUER)) return null;

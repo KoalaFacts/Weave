@@ -492,8 +492,7 @@ test('explicit first-party rollout refuses existing foreign, mixed or ambiguous 
         approved.map(binding=>binding.name==='AUTH_SERVER'?{...binding,environment:'staging'}:binding),
         approved.map(binding=>binding.name==='OAUTH_ISSUER'?{...binding,text:'https://other.example'}:binding),
         approved.map(binding=>binding.name==='OAUTH_RESOURCE'?{...binding,text:'https://other.example/mcp'}:binding),
-        [...approved,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}],
-        [...approved,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]
+        [...approved,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}]
     ];
     for(const bindings of cases){
         const f=firstPartyBootstrap({bindings});
@@ -516,7 +515,6 @@ test('OAuth binding bootstrap fails closed before maintenance when preapproved i
     const issuerMetadata=/Approved OAuth issuer lacks the expected authorization-code, CIMD and PKCE metadata/;
     const cases=[
         [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}]}),resourcePolicy],
-        [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]}),resourcePolicy],
         // Human sign-in prerequisites on the AS: GitHub app, session key and the HumanDirectory binding.
         ...['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','MAILBOX'].map(name=>
             [firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!==name)}),incompleteAs]),
