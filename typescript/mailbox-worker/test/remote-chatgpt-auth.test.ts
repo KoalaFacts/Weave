@@ -24,7 +24,7 @@ const rpc=(name:string)=>({jsonrpc:'2.0',id:17,method:'tools/call',params:{name,
 const request=(value:unknown,bearer?:string)=>new Request(config.resource,{method:'POST',
     headers:{...headers,...(bearer?{Authorization:'Bearer '+bearer}:{})},body:JSON.stringify(value)});
 const unused=async(_url:URL):Promise<Response>=>{throw Error('Public directory must not be touched');};
-const env=(db:Env['db']):Env=>({db,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'});
+const env=(db:Env['db']):Env=>({db});
 const introspection=(scopes:string)=>async()=>new Response(JSON.stringify({
     active:true,iss:config.issuer,aud:config.resource,sub:accountId,
     scope:scopes,iat:Math.floor(Date.now()/1000)-10,exp:Math.floor(Date.now()/1000)+120

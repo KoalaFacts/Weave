@@ -1,21 +1,11 @@
 import { atomic, type Env } from './database';
-import { fail } from './wire';
 import { pruneIdempotency } from './mcp-idempotency.ts';
+import { cleanup, type CleanupPolicy } from './limits.ts';
 
-export const CLEANUP_HARD_CAP = 100000;
-// D1 is also bounded by 48 statements/request. Two 64-message transactions leave
-// headroom; the 100k policy cap is not a promise to process 100k on this Worker.
+// D1 is also bounded by 48 statements/request: at most two 64-message transactions per scheduled round.
 const BATCH_SIZE = 64, MAX_BATCHES = 2;
-export function cleanupPolicy(env: Env): {maximum:number;milliseconds:number} {
-    const number=(text:string|undefined,fallback:number,max:number) => {
-        if(text===undefined)return fallback;
-        if(!/^\d+$/.test(text)||Number(text)>max)fail(503,'storage');
-        return Number(text);
-    };
-    return {maximum:number(env.CLEANUP_MAX_MESSAGES,128,CLEANUP_HARD_CAP),milliseconds:number(env.CLEANUP_TIME_BUDGET_MS,2000,10000)};
-}
-export async function sweep(env: Env,scheduled=false): Promise<{messages:number;batches:number}> {
-    const policy=cleanupPolicy(env),deadline=performance.now()+policy.milliseconds;
+export async function sweep(env: Env,scheduled=false,policy: CleanupPolicy=cleanup): Promise<{messages:number;batches:number}> {
+    const deadline=performance.now()+policy.milliseconds;
     let messages=0,batches=0;
     while(messages<policy.maximum&&batches<(scheduled?MAX_BATCHES:1)&&performance.now()<deadline){
         const first=batches===0,limit=Math.min(BATCH_SIZE,policy.maximum-messages);

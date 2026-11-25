@@ -24,7 +24,7 @@ async function history(h, sender, recipient, count) {
 
 test('expired, accepted and rejected history remains participant-visible across pages and restart without cleanup', async () => {
     const persist = await mkdtemp(join(tmpdir(), 'weave-contact-history-'));
-    const bindings = { CLEANUP_MAX_MESSAGES:'0', CLEANUP_TIME_BUDGET_MS:'0' };
+    const bindings = {};
     let h = await start({ persist, bindings });
     try {
         const a = await h.register(), b = await h.register(), outsider = await h.register();

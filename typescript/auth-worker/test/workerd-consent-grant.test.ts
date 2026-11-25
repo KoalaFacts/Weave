@@ -132,8 +132,6 @@ function options(storage:string,authEnv:Record<string,unknown>={},mailboxEnv:Rec
           db:{type:"d1"},
           OAUTH_ISSUER:{type:"text",value:issuer},
           OAUTH_RESOURCE:{type:"text",value:resource},
-          CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
           ...mailboxEnv
         }
       }

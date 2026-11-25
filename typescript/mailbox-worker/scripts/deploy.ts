@@ -54,8 +54,8 @@ export function deploymentConfig(base: WorkerConfig,env: NodeJS.ProcessEnv,root=
     if(base.name!=='demo'||base.d1_databases?.length!==1||base.d1_databases[0].binding!=='db')throw Error('Expected existing Worker demo and binding db.');
     if(base.services!==undefined)throw Error('OAuth Service Bindings must be provisioned separately by an operator, not by this generic release.');
     if(!/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ACCOUNT_ID??''))throw Error('CLOUDFLARE_ACCOUNT_ID must identify the existing account.');
-    // Business sweeps stay disabled for this demo, including with inherited environment values.
-    const vars={...base.vars,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+    // Cleanup limits are code (src/limits.ts), not settings: nothing here can turn business sweeps on.
+    const vars={...base.vars};
     return {...base,account_id:env.CLOUDFLARE_ACCOUNT_ID,main:resolve(root,base.main),workers_dev:true,vars,
         d1_databases:[{...base.d1_databases[0]}]};
 }

@@ -16,7 +16,7 @@ const {sweep}=await bundle('src/cleanup.ts') as typeof import('../src/cleanup.ts
 const origin='https://demo.test';
 type Harness=Awaited<ReturnType<typeof start>>;
 type Participant=AgentCredential&{cardId:string};
-const environment=(h:Harness,cleanup='0'):Env=>({db:h.db,CLEANUP_MAX_MESSAGES:cleanup,CLEANUP_TIME_BUDGET_MS:'2000'});
+const environment=(h:Harness):Env=>({db:h.db});
 const call=async(env:Env,owner:string,name:string,args:Record<string,unknown>)=>{
     const response=await executePrivateMcp(env,origin,owner,name,args);
     return {status:response.status,body:await response.json()};
@@ -297,7 +297,7 @@ test('idempotency_ExpiredRowsPrunedByLaterWrite',async()=>{
         await ok(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:text('old'),idempotencyKey:'old'});
         const day=864000000000n,now=BigInt(Date.now())*10000n;
         await h.db.prepare("UPDATE mcp_idempotency SET created_at=CAST(? AS INTEGER) WHERE idempotency_key='old'").bind((now-day-10000n).toString()).run();
-        // The sweep is disabled (CLEANUP_MAX_MESSAGES=0, as deployed); a later keyed write still prunes the expired row.
+        // Business cleanup is off in code (src/limits.ts), as deployed; a later keyed write still prunes the expired row.
         await ok(env,b.accountId,'send_message',{recipientAccountId:a.accountId,message:text('later'),idempotencyKey:'later'});
         const keys=(await h.db.prepare('SELECT idempotency_key FROM mcp_idempotency ORDER BY idempotency_key').all<{idempotency_key:string}>()).results;
         assert.deepEqual(keys.map(r=>r.idempotency_key),['later']);
@@ -330,7 +330,7 @@ test('idempotency_Prune24h',async()=>{
         assert.notEqual(reused.messageId,first.messageId);
         await h.db.prepare("UPDATE mcp_idempotency SET created_at=CAST(? AS INTEGER) WHERE idempotency_key='old'").bind((now-day-10000n).toString()).run();
         await h.db.prepare("DELETE FROM maintenance_state WHERE name='sweep'").run();
-        await sweep(environment(h,'128'));
+        await sweep(environment(h),false,{maximum:128,milliseconds:2000});
         const keys=(await h.db.prepare('SELECT idempotency_key FROM mcp_idempotency WHERE account_id=? ORDER BY idempotency_key').bind(a.accountId).all<{idempotency_key:string}>()).results;
         assert.deepEqual(keys.map(r=>r.idempotency_key),['fresh']);
     }finally{await h.close();}

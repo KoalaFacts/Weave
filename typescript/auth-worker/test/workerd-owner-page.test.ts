@@ -164,8 +164,6 @@ function options(storage:string,authEnv:Record<string,unknown>={}){
         env:{
           db:{type:"d1"},
           EXTERNAL_MEDIA:{type:"r2"},
-          CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
           EXTERNAL_ACTION_TEST_ENDPOINT:{type:"text",value:providerEndpoint},
           GOOGLE_CLIENT_ID:{type:"text",value:"weave-test.apps.googleusercontent.com"},
           GOOGLE_CLIENT_SECRET:{type:"text",value:"google-test-secret"},

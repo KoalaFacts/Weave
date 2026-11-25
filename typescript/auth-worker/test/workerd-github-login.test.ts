@@ -83,8 +83,6 @@ function options(storage:string,authEnv:Record<string,unknown>={},mailboxEnv:Rec
         manifest:{mainModule:"mailbox.js",modules:{"mailbox.js":{type:"esm",contents:mailboxBundle}}},
         env:{
           db:{type:"d1"},
-          CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
           ...mailboxEnv
         }
       }

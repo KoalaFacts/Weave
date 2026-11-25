@@ -11,7 +11,7 @@ test('contact history remains visible on desktop and native mobile after introdu
     await mkdir(evidence, { recursive:true });
     let h, fixture;
     try {
-        h = await start({ bindings:{ CLEANUP_MAX_MESSAGES:'0', CLEANUP_TIME_BUDGET_MS:'0' } });
+        h = await start({ bindings:{} });
         fixture = new BrowserFixture(evidence, (await h.mf.ready).origin);
         const a = await h.register(), b = await h.register();
         for (const [index,status] of ['pending','accepted','rejected'].entries()) {

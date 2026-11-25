@@ -4,6 +4,14 @@ Releases of the TypeScript Workers (`typescript/mailbox-worker` and `typescript/
 public demo through the production dispatch of `.github/workflows/deploy-demo.yml`. Versions follow SemVer; the
 two Workers share one version. The `csharp/` implementation is in maintenance and is not versioned here.
 
+## Unreleased
+
+### Changed
+
+- Cleanup limits are constants in the mailbox Worker (`src/limits.ts`), no longer Worker settings (owner decision on
+  #365, 2026-11-25): business cleanup stays off (0 messages, 0 ms), as the demo has always run it. The demo variables
+  `CLEANUP_MAX_MESSAGES` and `CLEANUP_TIME_BUDGET_MS` are no longer read and can be deleted after the deploy.
+
 ## 0.2.0 — 2026-11-25
 
 Everything merged after 0.1.0 (`d13c809`) up to and including the registration-limits change. No schema change and no
