@@ -64,9 +64,7 @@ function options(storage:string,limits:Limits){
           AUTH_SERVER:{type:"worker",worker:"weave-registration-regression"},
           db:{type:"d1"},
           OAUTH_ISSUER:{type:"text",value:issuer},
-          OAUTH_RESOURCE:{type:"text",value:resource},
-          CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"}
+          OAUTH_RESOURCE:{type:"text",value:resource}
         }
       }
     }]

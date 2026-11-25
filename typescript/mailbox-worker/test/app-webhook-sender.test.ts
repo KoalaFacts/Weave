@@ -20,7 +20,7 @@ const key = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('ba
 
 async function scenario(run: (s: {h: Harness; receiver: Receiver}) => Promise<void>, bindings: Record<string, string> = {EXTERNAL_CREDENTIAL_KEY: key}) {
     const receiver: Receiver = {received: [], respond: () => new Response('ok')};
-    const h = await start({bindings: {EXTERNAL_ACTION_TEST_ENDPOINT: endpoint, CLEANUP_MAX_MESSAGES: '0', ...bindings}, outboundService: async (request: Request) => {
+    const h = await start({bindings: {EXTERNAL_ACTION_TEST_ENDPOINT: endpoint, ...bindings}, outboundService: async (request: Request) => {
         if (request.url === endpoint) return Response.json({externalId: 'post-1'});
         const received = {url: request.url, headers: request.headers, body: await request.text()};
         receiver.received.push(received);

@@ -90,8 +90,6 @@ function options(storage:string){
           db:{type:"d1"},
           OAUTH_ISSUER:{type:"text",value:issuer},
           OAUTH_RESOURCE:{type:"text",value:resource},
-          CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
           EXTERNAL_CREDENTIAL_KEY:{type:"text",value:randomBytes(32).toString("base64url")},
           // Registers the test-only provider so a plan can be proposed; nothing is ever executed here.
           EXTERNAL_ACTION_TEST_ENDPOINT:{type:"text",value:"https://provider.test/post"}

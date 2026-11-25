@@ -15,7 +15,7 @@ const { oauthPrivateAccess, executePrivateMcp } = await import('data:text/javasc
 
 const origin = 'https://demo.test', resource = origin + '/mcp', clientId = 'https://client.example/oauth-client.json';
 const environment = (db: Database, overrides: Partial<Env> = {}): Env => ({
-    db, CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', ...overrides });
+    db, ...overrides });
 let subjects = 700000;
 async function owner(env: Env) {
     const human = await signInHuman(env, { provider: 'github', subject: String(++subjects), providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'owner' + subjects });

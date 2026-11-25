@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { start, payload } from './harness.ts';
+import { scheduledCleanup } from './enabled-cleanup.ts';
 import { seedRequest,seedMessage,seedChannel,relationSnapshot } from './storage-fixtures.ts';
 
 const DAY = 86400000;
@@ -24,7 +25,7 @@ async function history(h, sender, recipient, count) {
 
 test('expired, accepted and rejected history remains participant-visible across pages and restart without cleanup', async () => {
     const persist = await mkdtemp(join(tmpdir(), 'weave-contact-history-'));
-    const bindings = { CLEANUP_MAX_MESSAGES:'0', CLEANUP_TIME_BUDGET_MS:'0' };
+    const bindings = {};
     let h = await start({ persist, bindings });
     try {
         const a = await h.register(), b = await h.register(), outsider = await h.register();
@@ -61,8 +62,7 @@ test('enabled scheduled cleanup preserves every contact request and current loca
         const p=payload('old body must not be retained',Date.now()-9*DAY);
         await seedMessage(h.db,{receipt:{messageId:p.messageId,senderMailboxId:a.agentId,recipientMailboxId:b.agentId,state:'pending',expiresAt:p.expiresAt,terminalAt:null},payload:p});
         const before=await relationSnapshot(h.db);
-        const result = await (await h.mf.getWorker()).scheduled({ cron:'*/5 * * * *', scheduledTime:Date.now() });
-        assert.equal(result.outcome,'ok');
+        await scheduledCleanup(h.db);
         assert.deepEqual(await relationSnapshot(h.db),before);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records").first('n'),0);
         assert.deepEqual((await h.ok('/v1/contacts/requests',b)).items.map(r=>r.status),['expired','expired','accepted','rejected']);

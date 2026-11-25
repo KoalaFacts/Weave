@@ -25,8 +25,6 @@ export interface Env {
     db: Database;
     MAINTENANCE_MODE?: string;
     RECOVERY_READ_ONLY?: string;
-    CLEANUP_MAX_MESSAGES?: string;
-    CLEANUP_TIME_BUDGET_MS?: string;
     // Enables the test-only external action provider. Never set in a deployed configuration.
     EXTERNAL_ACTION_TEST_ENDPOINT?: string;
     // Google OAuth client for connecting YouTube, and the 32-byte base64url key sealing credential secrets. Worker secrets.

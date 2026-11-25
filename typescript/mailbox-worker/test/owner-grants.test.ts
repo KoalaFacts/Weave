@@ -21,7 +21,7 @@ const { oauthPrivateAccess } = await import('data:text/javascript;base64,' + Buf
 const origin = 'https://demo.test', resource = origin + '/mcp', clientId = 'https://office.example/oauth-client.json';
 const manage = 'weave:agents.manage';
 const environment = (db: Database, overrides: Partial<Env> = {}): Env => ({
-    db, CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', ...overrides });
+    db, ...overrides });
 let subjects = 800000;
 async function human(env: Env) {
     const signed = await signInHuman(env, { provider: 'github', subject: String(++subjects), providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'owner' + subjects });

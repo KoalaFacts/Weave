@@ -25,7 +25,7 @@ async function scenario(run: (s: {h: Awaited<ReturnType<typeof start>>; env: Env
     await once(server, 'listening');
     const endpoint = `http://127.0.0.1:${(server.address() as {port: number}).port}/post`;
     const h = await start();
-    const env = {db: h.db, CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_ACTION_TEST_ENDPOINT: endpoint} as Env;
+    const env = {db: h.db, EXTERNAL_ACTION_TEST_ENDPOINT: endpoint} as Env;
     try { await run({h, env, calls, endpoint}); } finally { await h.close(); server.close(); }
 }
 

@@ -94,9 +94,7 @@ function options(storage:string){
           AUTH_SERVER:{type:"worker",worker:authName},
           db:{type:"d1"},
           OAUTH_ISSUER:{type:"text",value:issuer},
-          OAUTH_RESOURCE:{type:"text",value:resource},
-          CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"}
+          OAUTH_RESOURCE:{type:"text",value:resource}
         }
       }
     },{

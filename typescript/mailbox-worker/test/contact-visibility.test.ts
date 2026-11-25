@@ -7,7 +7,7 @@ import { start, payload } from './harness.ts';
 
 test('pending contact persists for both participants across Worker restart and read-only inbox access', async t => {
     const persist=await mkdtemp(join(tmpdir(),'weave-contact-visibility-'));
-    const bindings={CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+    const bindings={};
     let h=await start({persist,bindings});
     try {
         const a=await h.register(),b=await h.participant(),outsider=await h.register();
