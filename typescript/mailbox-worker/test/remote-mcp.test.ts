@@ -76,13 +76,11 @@ test('maintenance and Origin checks also guard the actual MCP route',async()=>{
 
 test('root and resource-specific well-known OAuth discovery must agree without any agent credential',async()=>{
     const routes=['/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource'];
-    const configured={
-        OAUTH_ISSUER:'https://trusted-issuer.example',OAUTH_RESOURCE:'https://localhost/mcp',
-        OAUTH_INTROSPECTION_URL:'https://trusted-issuer.example/introspect',
-        OAUTH_CLIENT_ID:'weave-resource',OAUTH_CLIENT_SECRET:'synthetic-local-test-secret'
-    };
-    for(const [bindings,expectedStatus] of [[{},404],[configured,200],[{OAUTH_ISSUER:configured.OAUTH_ISSUER},503]]){
-        const h=await start({bindings});
+    const configured={OAUTH_ISSUER:'https://trusted-issuer.example',OAUTH_RESOURCE:'https://localhost/mcp'};
+    // The authorization server is never asked during discovery.
+    const authServer={AUTH_SERVER:async()=>new Response('unused',{status:500})};
+    for(const [bindings,services,expectedStatus] of [[{},undefined,404],[configured,authServer,200],[{OAUTH_ISSUER:configured.OAUTH_ISSUER},undefined,503]] as const){
+        const h=await start({bindings,services});
         try{
             for(const route of routes){
                 const response=await h.mf.dispatchFetch('https://localhost'+route,{headers:{Accept:'application/json'}});

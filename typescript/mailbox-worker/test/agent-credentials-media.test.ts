@@ -19,8 +19,7 @@ const tiktok = {__type: 'tiktok', privacy_level: 'PUBLIC_TO_EVERYONE', duet: fal
 async function scenario(run: (s: {h: Harness; env: Env}) => Promise<void>) {
     // The Worker verifies what this process signs, so both hold the same key and origin.
     const h = await start({bindings: {EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: origin}});
-    const env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
-        CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: origin,
+    const env = {db: h.db, EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: origin,
         EXTERNAL_MEDIA: await h.mf.getR2Bucket('EXTERNAL_MEDIA')} as unknown as Env;
     try { await run({h, env}); } finally { await h.close(); }
 }

@@ -1,7 +1,7 @@
 import { atomic, type Env, type Transaction } from './database.ts';
 import { confirmKeyRequest, revokeKeyForOwner } from './agent-keys.ts';
 import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, rejectBindingRequest } from './binding-requests.ts';
-import { ownedAgentLimit, ownedAgentPage, requireReadable, writesRefused } from './humans.ts';
+import { OWNED_AGENTS_PER_HUMAN, ownedAgentPage, requireReadable, writesRefused } from './humans.ts';
 import { rejectKeyRequest } from './key-requests.ts';
 import { maxLiveOwnerGrants, revokeGrantIn, stopAppDecisionsIn } from './client-grants.ts';
 import { maxLiveWebhooks, type WebhookView } from './app-webhooks.ts';
@@ -191,12 +191,12 @@ function validShape(input: unknown): OwnerAction | null {
 
 type DecidedAction = Exclude<OwnerAction, {kind: 'issue-recovery-code'}>;
 
-async function decide(env: Env, tx: Transaction, input: DecidedAction, at: bigint): Promise<OwnerDecision> {
+async function decide(env: Env, tx: Transaction, input: DecidedAction, at: bigint, ownedPerHuman: number): Promise<OwnerDecision> {
     const human = await tx.db.prepare('SELECT subject,frozen_at FROM humans WHERE human_id=?').bind(input.humanId).first<{subject: string; frozen_at: string | null}>();
     if (!human) return notFound;
     if (human.frozen_at !== null) return {ok: false, reason: 'frozen'};
     switch (input.kind) {
-        case 'confirm-binding': return confirmBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.keysDigest, ownedAgentLimit(env), at);
+        case 'confirm-binding': return confirmBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.keysDigest, ownedPerHuman, at);
         case 'reject-binding': return rejectBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
         case 'confirm-key': return confirmKeyRequest(tx, input.humanId, input.requestId, at);
         case 'reject-key': return rejectKeyRequest(tx, input.humanId, input.requestId, at);
@@ -215,9 +215,10 @@ async function decide(env: Env, tx: Transaction, input: DecidedAction, at: bigin
 /**
  * One owner decision, in a single transaction that re-reads the human. A malformed action is `not-found`; a destructive one on a
  * session that is too old (or dated in the future) is `stale-authentication` before anything is read. Storage failures are
- * `unavailable`, never thrown to the authorization server.
+ * `unavailable`, never thrown to the authorization server. `ownedPerHuman` is OWNED_AGENTS_PER_HUMAN except in tests.
  */
-export async function ownerAction(env: Env, input: OwnerAction, clock: () => bigint = nowUtc): Promise<OwnerActionResult> {
+export async function ownerAction(env: Env, input: OwnerAction, clock: () => bigint = nowUtc,
+    ownedPerHuman: number = OWNED_AGENTS_PER_HUMAN): Promise<OwnerActionResult> {
     if (writesRefused(env)) return unavailable;
     const action = validShape(input);
     if (!action) return notFound;
@@ -229,7 +230,7 @@ export async function ownerAction(env: Env, input: OwnerAction, clock: () => big
     try {
         if (action.kind === 'issue-recovery-code') return await issueRecoveryCode(env, {humanId: action.humanId, agentId: action.agentId}, clock);
         // The transaction time is the injected clock, so key rows and the churn window of confirm-key use the same time as every decision.
-        return await atomic(env.db, tx => decide(env, tx, action, tx.store.now), clock);
+        return await atomic(env.db, tx => decide(env, tx, action, tx.store.now, ownedPerHuman), clock);
     } catch {
         console.error('owner-action: storage failure');
         return unavailable;

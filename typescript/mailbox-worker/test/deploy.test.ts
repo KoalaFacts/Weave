@@ -33,14 +33,13 @@ function fixture({status=200,failAt=0,bindingResult=[dbBinding],databaseResult=d
     },verifyMigration:async()=>{events.push('migration');return {alreadyCompleted:true,checksum:completedMigration.checksum};},planSchema:async()=>({statements:[],preservedUnmanagedTables:['d1_migrations']}),applySchema:async()=>{events.push('schema');}};
     return f;
 }
-test('deployment configuration targets only the existing Worker and retains demo limits',()=>{
-    const config=deploymentConfig(base,env);assert.equal(config.name,'demo');assert.equal(config.d1_databases[0].binding,'db');assert.equal(config.workers_dev,true);assert.equal(config.vars.REGISTRATION_MAX_ACCOUNTS,'100');assert.equal(config.vars.REGISTRATION_PER_IP_PER_HOUR,'10');assert.equal(config.vars.REGISTRATION_GLOBAL_PER_HOUR,'100');assert.equal(config.vars.WEAVE_HOST,undefined);assert.equal(config.d1_databases[0].migrations_dir,undefined);
+test('deployment configuration targets only the existing Worker',()=>{
+    const config=deploymentConfig(base,env);assert.equal(config.name,'demo');assert.equal(config.d1_databases[0].binding,'db');assert.equal(config.workers_dev,true);assert.equal(config.vars.WEAVE_HOST,undefined);assert.equal(config.d1_databases[0].migrations_dir,undefined);
     assert.throws(()=>deploymentConfig(base,{...env,CLOUDFLARE_ACCOUNT_ID:''}),/CLOUDFLARE_ACCOUNT_ID/);
 });
-test('checked-in registration and disabled cleanup override inherited settings',()=>{
-    assert.equal(base.vars.CLEANUP_MAX_MESSAGES,'0');assert.equal(base.vars.CLEANUP_TIME_BUDGET_MS,'0');
-    const config=deploymentConfig({...base,vars:{...base.vars,CLEANUP_MAX_MESSAGES:'128',CLEANUP_TIME_BUDGET_MS:'2000'}},{...env,WEAVE_HOST:'https://stale.example.test',WEAVE_REGISTRATION_ENABLED:'false',CLEANUP_MAX_MESSAGES:'128'});
-    assert.equal(config.vars.CLEANUP_MAX_MESSAGES,'0');assert.equal(config.vars.CLEANUP_TIME_BUDGET_MS,'0');assert.equal(config.vars.REGISTRATION_ENABLED,'true');assert.equal(config.vars.WEAVE_HOST,undefined);
+test('deployment variables are the checked-in ones; inherited environment values never become Worker settings',()=>{
+    const config=deploymentConfig(base,{...env,WEAVE_HOST:'https://stale.example.test',MAINTENANCE_MODE:'true'});
+    assert.deepEqual(config.vars,base.vars);
 });
 test('deployment pauses all work, verifies the completed migration and schema, retains recovery before activating',async()=>{
     const f=fixture();const result=await deploy(f.options);
@@ -492,8 +491,7 @@ test('explicit first-party rollout refuses existing foreign, mixed or ambiguous 
         approved.map(binding=>binding.name==='AUTH_SERVER'?{...binding,environment:'staging'}:binding),
         approved.map(binding=>binding.name==='OAUTH_ISSUER'?{...binding,text:'https://other.example'}:binding),
         approved.map(binding=>binding.name==='OAUTH_RESOURCE'?{...binding,text:'https://other.example/mcp'}:binding),
-        [...approved,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}],
-        [...approved,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]
+        [...approved,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}]
     ];
     for(const bindings of cases){
         const f=firstPartyBootstrap({bindings});
@@ -511,12 +509,11 @@ test('first-party bootstrap accepts the default production environment Cloudflar
 });
 test('OAuth binding bootstrap fails closed before maintenance when preapproved infrastructure or public issuer is absent',async()=>{
     // Each case names the refusal it must hit, so a case cannot pass by failing for an unrelated reason.
-    const resourcePolicy=/Resource OAuth bootstrap secrets are not preapproved/;
+    const resourcePolicy=/Existing OAuth issuer or resource settings without AUTH_SERVER are not preapproved/;
     const incompleteAs=/Approved OAuth authorization Worker has incomplete live bindings/;
     const issuerMetadata=/Approved OAuth issuer lacks the expected authorization-code, CIMD and PKCE metadata/;
     const cases=[
         [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}]}),resourcePolicy],
-        [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]}),resourcePolicy],
         // Human sign-in prerequisites on the AS: GitHub app, session key and the HumanDirectory binding.
         ...['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','MAILBOX'].map(name=>
             [firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!==name)}),incompleteAs]),

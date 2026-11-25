@@ -13,8 +13,7 @@ type Harness = Awaited<ReturnType<typeof start>>;
 const key = randomBytes(32).toString('base64url');
 const hookId = '112233445566778899', channelId = '998877665544332211', token = 'T'.repeat(68);
 const webhookUrl = `https://discord.com/api/webhooks/${hookId}/${token}`;
-const environment = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
-    REGISTRATION_GLOBAL_PER_HOUR: '100', EXTERNAL_CREDENTIAL_KEY: key}) as unknown as Env;
+const environment = (h: Harness) => ({db: h.db, EXTERNAL_CREDENTIAL_KEY: key}) as unknown as Env;
 const connectDiscord = (env: Env, {webhookUrl, ...owner}: {humanId: string; authAt: number; agentId: string; webhookUrl: string}) =>
     connectAccount(env, {...owner, provider: 'discord', fields: {webhookUrl}});
 

@@ -19,7 +19,7 @@ const recoveryUrl = origin + '/v1/key-requests';
 const tokenUrl = origin + '/v1/token';
 
 function env(h: Harness): Env {
-    return {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100'} as unknown as Env;
+    return {db: h.db} as unknown as Env;
 }
 /** A human-owned agent with no keys, as `/account` creates it. */
 async function owned(h: Harness, subject = '123'): Promise<{agentId: string; humanId: string}> {

@@ -5,7 +5,7 @@
  */
 import { appDecideExternalAction, appPendingAction, appPendingActions } from './app-decisions.ts';
 import { listWebhooks, registerWebhook, revokeWebhook } from './app-webhooks.ts';
-import { createOwnedAgent, listHumanAgents, renameOwnedAgent } from './humans.ts';
+import { createOwnedAgent, listHumanAgents, ownedAgentLimits, renameOwnedAgent, type OwnedAgentLimits } from './humans.ts';
 import { ownerGrantCheck } from './client-grants.ts';
 import { atomic, type Env } from './database.ts';
 import { fail, invalidField, json, problem } from './wire.ts';
@@ -14,7 +14,8 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const digest = /^[A-Za-z0-9_-]{43}$/;
 const agentView = (accountId: string, displayName: string | null) => ({accountId, displayName});
 
-export async function executeOwnerMcp(env: Env, humanId: string, name: string, args: Record<string, unknown>, grantId: string, sourceIp: string): Promise<Response> {
+export async function executeOwnerMcp(env: Env, humanId: string, name: string, args: Record<string, unknown>, grantId: string, sourceIp: string,
+    limits: OwnedAgentLimits = ownedAgentLimits): Promise<Response> {
     const check = ownerGrantCheck(humanId, grantId);
     const only = (allowed: string[], required: string[]) => {
         const unknown = Object.keys(args).find(key => !allowed.includes(key));
@@ -40,7 +41,7 @@ export async function executeOwnerMcp(env: Env, humanId: string, name: string, a
         if (name === 'create_agent') {
             only(['displayName'], ['displayName']);
             const requested = displayName();
-            const created = await createOwnedAgent(env, {humanId, displayName: requested, sourceIp}, check);
+            const created = await createOwnedAgent(env, {humanId, displayName: requested, sourceIp}, check, limits);
             if (created.ok) return json(agentView(created.accountId, requested));
             if (created.reason === 'invalid') invalidField('displayName', 'must be 1 to 128 visible characters');
             if (created.reason === 'agent-limit') fail(409, 'agent-limit');

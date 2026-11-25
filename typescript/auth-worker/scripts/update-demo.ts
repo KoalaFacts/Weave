@@ -12,8 +12,10 @@ const root=resolve(import.meta.dirname,'..');
 const hexId=/^[0-9a-f]{32}$/i;
 /** Every binding the manifest recreates, plus the secrets a deploy keeps. */
 const recreated=new Set(['OAUTH_ISSUER','OAUTH_RESOURCE','GITHUB_CLIENT_ID','OAUTH_KV','CONSENT_NONCES','MAILBOX',...secretNames]);
-/** Optional bindings the code uses and the update carries over unchanged: the two registration budgets. */
-const limiters=new Set(['REGISTRATION_LIMITER','REGISTRATION_GLOBAL_LIMITER']);
+/** Optional bindings the code uses and the update carries over unchanged: the per-address registration budget. */
+const limiters=new Set(['REGISTRATION_LIMITER']);
+/** Bindings the code no longer reads; an update leaves them out, so publishing removes them. */
+const retired=new Set(['REGISTRATION_GLOBAL_LIMITER']);
 type RateLimit={name:string;namespace_id:string;simple:{limit:number;period:number}};
 
 /** A registration budget exactly as configured, or null when it is not one this update can recreate. */
@@ -53,7 +55,7 @@ export async function preflightUpdate(env:NodeJS.ProcessEnv,request:typeof fetch
     // A code update must not drop configuration: each other binding is carried over exactly, or the update is refused.
     const ratelimits:RateLimit[]=[];
     for(const binding of bindings){
-        if(recreated.has(binding.name))continue;
+        if(recreated.has(binding.name)||retired.has(binding.name))continue;
         const kept=limiters.has(binding.name)?rateLimit(binding):null;
         if(!kept)throw Error('The running OAuth Worker has a binding this update cannot preserve; no change made.');
         ratelimits.push(kept);

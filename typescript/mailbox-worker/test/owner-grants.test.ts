@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { build } from 'esbuild';
 import { start } from './harness.ts';
-import { createOwnedAgent, signInHuman } from '../src/humans.ts';
+import { createOwnedAgent, ownedAgentLimits, signInHuman } from '../src/humans.ts';
+import { executeOwnerMcp } from '../src/owner-tools.ts';
 import { maxLiveOwnerGrants, recordGrant, recordOwnerGrant, revokeGrant } from '../src/client-grants.ts';
 import { ownerAction, ownerOverview } from '../src/owner-actions.ts';
 import { type Database, type Env } from '../src/database.ts';
@@ -19,8 +20,7 @@ const { oauthPrivateAccess } = await import('data:text/javascript;base64,' + Buf
 const origin = 'https://demo.test', resource = origin + '/mcp', clientId = 'https://office.example/oauth-client.json';
 const manage = 'weave:agents.manage';
 const environment = (db: Database, overrides: Partial<Env> = {}): Env => ({
-    db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
-    REGISTRATION_GLOBAL_PER_HOUR: '100', CLEANUP_MAX_MESSAGES: '0', CLEANUP_TIME_BUDGET_MS: '0', ...overrides });
+    db, ...overrides });
 let subjects = 800000;
 async function human(env: Env) {
     const signed = await signInHuman(env, { provider: 'github', subject: String(++subjects), providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'owner' + subjects });
@@ -153,11 +153,14 @@ test('ownerGrant_ManageTools_ListCreateRenameTheHumansAgentsOnly', async () => {
 test('ownerGrant_CreateAtTheLimit_AgentLimitCodeNothingWritten', async () => {
     const h = await start();
     try {
-        const env = environment(h.db, { OWNED_AGENTS_PER_HUMAN: '1' }), humanId = await human(env), grantId = crypto.randomUUID();
+        const env = environment(h.db), humanId = await human(env), grantId = crypto.randomUUID();
         await agentOf(env, humanId, 'Only');
         assert.deepEqual(await recordOwnerGrant(env, { grantId, humanId, clientId }), { ok: true });
-        const refused = await resultOf(await mcp(env, () => ownerClaims(humanId, grantId))({ name: 'create_agent', args: { displayName: 'Second' } }));
-        assert.deepEqual(refused.structuredContent, { status: 409, code: 'agent-limit' });
+        // The owner tool itself, with a limit of one agent per human instead of the deployed one.
+        const refused = await executeOwnerMcp(env, humanId, 'create_agent', { displayName: 'Second' }, grantId, '198.51.100.4',
+            { ...ownedAgentLimits, ownedPerHuman: 1 });
+        assert.equal(refused.status, 409);
+        assert.equal((await refused.json() as { code: string }).code, 'agent-limit');
         assert.equal(await h.db.prepare('SELECT count(*) AS n FROM accounts WHERE human_id=?').bind(humanId).first('n'), 1);
     } finally { await h.close(); }
 });

@@ -1,9 +1,7 @@
-/** Rate-limit bindings for open dynamic client registration; both are required for /register to be open. */
+/** The rate-limit binding for open dynamic client registration; /register is open only when it is bound. */
 export interface RegistrationLimitEnv{
   /** Per-address budget, keyed by registrationLimiterKey. */
   REGISTRATION_LIMITER?:RateLimit;
-  /** One shared budget across all addresses, keyed "global". */
-  REGISTRATION_GLOBAL_LIMITER?:RateLimit;
 }
 
 const ipv4=/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
@@ -50,8 +48,8 @@ export function registrationLimiterKey(connectingIp:string|null):string{
   return "v6:"+groups.slice(0,4).map(x=>x.toString(16).padStart(4,"0")).join(":")+"::/64";
 }
 
-/** Registration is offered (and advertised) only when both budgets are bound. */
-export const registrationOpen=(env:RegistrationLimitEnv)=>!!env.REGISTRATION_LIMITER&&!!env.REGISTRATION_GLOBAL_LIMITER;
+/** Registration is offered (and advertised) only when the budget is bound. */
+export const registrationOpen=(env:RegistrationLimitEnv)=>!!env.REGISTRATION_LIMITER;
 
 const tooManyRegistrations=()=>new Response("Too many registrations",
   {status:429,headers:{"Cache-Control":"no-store","Retry-After":"60"}});
@@ -59,13 +57,10 @@ const registrationUnavailable=()=>new Response("Authorization not configured",{s
 
 /** Fail closed: a missing binding or a limiter fault means no open registration. Null lets the request through. */
 export async function limitRegistration(env:RegistrationLimitEnv,req:Request):Promise<Response|null>{
-  if(!env.REGISTRATION_LIMITER||!env.REGISTRATION_GLOBAL_LIMITER)return registrationUnavailable();
+  if(!env.REGISTRATION_LIMITER)return registrationUnavailable();
   if(req.method!=="POST")return null;
   try{
-    // Per-address first, so one address over its own budget cannot spend the shared one.
     const perAddress=await env.REGISTRATION_LIMITER.limit({key:registrationLimiterKey(req.headers.get("CF-Connecting-IP"))});
-    if(!perAddress.success)return tooManyRegistrations();
-    const global=await env.REGISTRATION_GLOBAL_LIMITER.limit({key:"global"});
-    return global.success?null:tooManyRegistrations();
+    return perAddress.success?null:tooManyRegistrations();
   }catch{return registrationUnavailable();}
 }

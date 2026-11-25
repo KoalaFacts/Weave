@@ -35,7 +35,7 @@ const expireNow = (h: Harness, requestId: string) => h.db.prepare('UPDATE bindin
 const cancel = (h: Harness, cred: AgentCredential, requestId: string) => h.request('/v1/binding-requests/' + requestId, cred, 'DELETE') as unknown as Promise<Response>;
 const read = (h: Harness, cred: AgentCredential, requestId: string) => h.request('/v1/binding-requests/' + requestId, cred) as unknown as Promise<Response>;
 function env(h: Harness): Env {
-    return {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100'} as unknown as Env;
+    return {db: h.db} as unknown as Env;
 }
 async function human(h: Harness, subject: string): Promise<string> {
     const result = await signInHuman(env(h), {provider: 'github', subject, providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'person' + subject});
@@ -221,7 +221,7 @@ test('createBinding_DailyLimit_RetryAfterIsWhenTheWindowFreesARequest', async ()
 });
 
 test('createBinding_TwentyFirstPendingForOneHuman_429', async () => {
-    const h = await start({bindings: {REGISTRATION_PER_IP_PER_HOUR: '100'}});
+    const h = await start();
     try {
         for (let i = 0; i < 20; i++) await created(h, await h.register(), 'github:7');
         const late = await h.register();

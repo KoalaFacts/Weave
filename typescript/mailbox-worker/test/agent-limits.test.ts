@@ -19,10 +19,7 @@ const recoveryUrl = origin + '/v1/key-requests';
 const assertionType = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const ticksPerHour = 36000000000n;
 const dayTicks = 864000000000n;
-// Enough registrations for the multi-agent scenarios; the registration counters are not under test here.
-const bindings = {REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '10000', REGISTRATION_MAX_ACCOUNTS: '1000'};
-
-const env = (h: Harness) => ({db: h.db, ...bindings, REGISTRATION_ENABLED: 'true'}) as unknown as Env;
+const env = (h: Harness) => ({db: h.db}) as Env;
 const nowTicks = () => BigInt(Date.now()) * 10000n;
 
 async function participant(h: Harness): Promise<Participant> {
@@ -82,7 +79,7 @@ async function revokedRows(h: Harness, accountId: string, count: number, created
 }
 
 test('send_UnclaimedThirtyFirstInHour_429WithRetryAfter', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         await clearOfUtcHourEnd();
         const c = await connect(h);
@@ -94,7 +91,7 @@ test('send_UnclaimedThirtyFirstInHour_429WithRetryAfter', async () => {
 });
 
 test('send_RetrySameMessageIdAtLimit_ReturnsOriginalReceipt', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         await clearOfUtcHourEnd();
         const c = await connect(h), first = envelope(c);
@@ -108,7 +105,7 @@ test('send_RetrySameMessageIdAtLimit_ReturnsOriginalReceipt', async () => {
 });
 
 test('send_ClaimedAgent_AllowsMoreThanUnclaimed', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const c = await connect(h);
         await h.claim(c.a);
@@ -117,7 +114,7 @@ test('send_ClaimedAgent_AllowsMoreThanUnclaimed', async () => {
 });
 
 test('contactRequest_UnclaimedEleventh_429', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         await clearOfUtcHourEnd();
         const a = await participant(h), inputs = [];
@@ -131,7 +128,7 @@ test('contactRequest_UnclaimedEleventh_429', async () => {
 });
 
 test('address_UnclaimedFourth_429', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const a = await h.register();
         const created = [];
@@ -144,7 +141,7 @@ test('address_UnclaimedFourth_429', async () => {
 });
 
 test('address_UnclaimedSecondPublic_429AndPrivateStill200', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const a = await h.register();
         await h.address(a, {isPublic: true});
@@ -154,7 +151,7 @@ test('address_UnclaimedSecondPublic_429AndPrivateStill200', async () => {
 });
 
 test('address_MakePublicOverLimit_429Unchanged', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const a = await h.register();
         await h.address(a, {isPublic: true});
@@ -167,7 +164,7 @@ test('address_MakePublicOverLimit_429Unchanged', async () => {
 });
 
 test('address_ClaimedFifthPublic_200SixthPublic429', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const a = await h.register();
         await h.claim(a);
@@ -178,7 +175,7 @@ test('address_ClaimedFifthPublic_200SixthPublic429', async () => {
 });
 
 test('token_UnclaimedThirtyFirstInHour_429TemporarilyUnavailable', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         await clearOfUtcHourEnd();
         const a = await h.register();
@@ -193,7 +190,7 @@ test('token_UnclaimedThirtyFirstInHour_429TemporarilyUnavailable', async () => {
 });
 
 test('token_InvalidAssertionsDoNotConsume', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const a = await h.register();
         for (let n = 0; n < 10; n++) assert.equal((await tokenRequest(h, a.key, a.accountId, origin + '/v1/keys')).status, 401);
@@ -202,7 +199,7 @@ test('token_InvalidAssertionsDoNotConsume', async () => {
 });
 
 test('hourlyWindow_PreviousHourCounter_Ignored', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         await clearOfUtcHourEnd();
         const a = await h.register();
@@ -218,7 +215,7 @@ test('hourlyWindow_PreviousHourCounter_Ignored', async () => {
 });
 
 test('addKey_EleventhKeyRowInDay_429', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const a = await h.register();
         // The registration key plus nine added keys are ten key rows created within 24 h.
@@ -234,7 +231,7 @@ test('addKey_EleventhKeyRowInDay_429', async () => {
 });
 
 test('addKey_DailyAdditionsLimit_RetryAfterIsWhenTheWindowFreesAnAddition', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const a = await h.register();
         const second = 10_000_000n, minute = 60n * second;
@@ -262,7 +259,7 @@ test('addKey_DailyAdditionsLimit_RetryAfterIsWhenTheWindowFreesAnAddition', asyn
 });
 
 test('addKey_ConfirmedKeyRequestCountsOnceAgainstDailyAdditions', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const a = await h.register();
         const humanId = await h.claim(a);
@@ -279,7 +276,7 @@ test('addKey_ConfirmedKeyRequestCountsOnceAgainstDailyAdditions', async () => {
 });
 
 test('contactRequest_ClaimedSixtyFirst_429WithRetryAfter', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         await clearOfUtcHourEnd();
         const a = await participant(h);
@@ -293,7 +290,7 @@ test('contactRequest_ClaimedSixtyFirst_429WithRetryAfter', async () => {
 });
 
 test('token_ClaimedHundredTwentyFirst_429WithRetryAfter', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         await clearOfUtcHourEnd();
         const a = await h.register();
@@ -308,7 +305,7 @@ test('token_ClaimedHundredTwentyFirst_429WithRetryAfter', async () => {
 });
 
 test('addKey_ThousandKeyRows_429', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const a = await h.register();
         await revokedRows(h, a.accountId, 999, nowTicks() - dayTicks - ticksPerHour);
@@ -320,7 +317,7 @@ test('addKey_ThousandKeyRows_429', async () => {
 });
 
 test('recovery_OthersKeyRequestsDoNotBlockButKeyRowsDo', async () => {
-    const h = await start({bindings});
+    const h = await start();
     try {
         const human = await signInHuman(env(h), {provider: 'github', subject: '123', providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'owner'});
         const humanId = (human as {humanId: string}).humanId;

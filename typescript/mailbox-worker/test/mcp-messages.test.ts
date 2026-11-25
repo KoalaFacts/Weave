@@ -16,8 +16,7 @@ const {sweep}=await bundle('src/cleanup.ts') as typeof import('../src/cleanup.ts
 const origin='https://demo.test';
 type Harness=Awaited<ReturnType<typeof start>>;
 type Participant=AgentCredential&{cardId:string};
-const environment=(h:Harness,cleanup='0'):Env=>({db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-    REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:cleanup,CLEANUP_TIME_BUDGET_MS:'2000'});
+const environment=(h:Harness):Env=>({db:h.db});
 const call=async(env:Env,owner:string,name:string,args:Record<string,unknown>)=>{
     const response=await executePrivateMcp(env,origin,owner,name,args);
     return {status:response.status,body:await response.json()};
@@ -331,7 +330,7 @@ test('idempotency_Prune24h',async()=>{
         assert.notEqual(reused.messageId,first.messageId);
         await h.db.prepare("UPDATE mcp_idempotency SET created_at=CAST(? AS INTEGER) WHERE idempotency_key='old'").bind((now-day-10000n).toString()).run();
         await h.db.prepare("DELETE FROM maintenance_state WHERE name='sweep'").run();
-        await sweep(environment(h,'128'));
+        await sweep(environment(h),false,{maximum:128,milliseconds:2000});
         const keys=(await h.db.prepare('SELECT idempotency_key FROM mcp_idempotency WHERE account_id=? ORDER BY idempotency_key').bind(a.accountId).all<{idempotency_key:string}>()).results;
         assert.deepEqual(keys.map(r=>r.idempotency_key),['fresh']);
     }finally{await h.close();}

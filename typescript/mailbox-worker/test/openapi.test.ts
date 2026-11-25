@@ -17,7 +17,7 @@ function responseShape(operation, value) {
 }
 
 test('OpenAPI is an anonymous no-store JSON asset independent of account storage', async () => {
-    const h = await start({migrate:false,bindings:{REGISTRATION_ENABLED:'false'}});
+    const h = await start({migrate:false});
     try {
         const response = await h.request('/openapi.json');
         assert.equal(response.status,200);
@@ -195,9 +195,11 @@ test('documented account/address/contact/message/ACK responses match real Worker
 });
 
 test('429 contract distinguishes public-rate Retry-After from registration capacity', async () => {
-    const h = await start({bindings:{REGISTRATION_MAX_ACCOUNTS:'1'}});
+    const h = await start();
     try {
         await h.register();
+        // Spend this source's registrations for the hour.
+        await h.db.prepare("UPDATE rate_limits SET count=1000000 WHERE policy='registration'").run();
         const capacity = await h.request('/v1/accounts',h.stranger(),'POST',{});
         assert.equal(capacity.status,429);
         assert.equal(capacity.headers.get('retry-after'),null);

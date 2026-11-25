@@ -26,8 +26,7 @@ async function scenario(run: (s: {h: Harness; provider: Provider}) => Promise<vo
     try { await run({h, provider}); } finally { await h.close(); }
 }
 
-const environment = (h: Harness, overrides: Partial<Env> = {}) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
-    REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100', EXTERNAL_ACTION_TEST_ENDPOINT: endpoint, ...overrides}) as unknown as Env;
+const environment = (h: Harness, overrides: Partial<Env> = {}) => ({db: h.db, EXTERNAL_ACTION_TEST_ENDPOINT: endpoint, ...overrides}) as unknown as Env;
 const ticks = () => (BigInt(Date.now()) * 10000n).toString();
 
 async function setCredential(h: Harness, accountId: string, revision = 'rev-1', target = 'urn:li:person:alpha', display = 'Desk Alpha') {
@@ -1209,8 +1208,7 @@ test('listPastExternalActions_RevokedKey_Unauthenticated', () => scenario(async 
 // The owner's pending actions are every agent's, named, whichever page of agents the overview shows.
 test('ownerOverview_ActionOfAgentBeyondFirstPage_ListedWithItsName', () => scenario(async ({h}) => {
     const {agent: first, humanId} = await ownedAgent(h);
-    const many = environment(h, {OWNED_AGENTS_PER_HUMAN: '50', REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '1000'});
-    for (let i = 0; i < 25; i++) assert.equal((await createOwnedAgent(many, {humanId, displayName: 'filler ' + i, sourceIp: '203.0.113.7'})).ok, true);
+    for (let i = 0; i < 25; i++) assert.equal((await createOwnedAgent(environment(h), {humanId, displayName: 'filler ' + i, sourceIp: '203.0.113.7'})).ok, true);
     const late = await h.register({displayName: 'Late desk'});
     await h.db.prepare('UPDATE accounts SET human_id=?,created_at=created_at+1000000000 WHERE account_id=?').bind(humanId, late.accountId).run();
     await setCredential(h, late.accountId);

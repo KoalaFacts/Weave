@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { start, payload } from './harness.ts';
-import { createOwnedAgent, signInHuman } from '../src/humans.ts';
-import { agentKey } from './agent-key.ts';
+import { registerAgent, registrationLimits } from '../src/accounts.ts';
+import { agentKey, dpopProof } from './agent-key.ts';
 
 test('registration creates zero addresses and returns the registered key; invalid profiles and missing or unknown credentials are refused', async () => {
     const h=await start();
@@ -79,31 +79,23 @@ test('UTC scheduling hides future and expired addresses and denies their contact
             assert.equal((await h.request('/v1/addresses',a,'POST',profile)).status,400);
     } finally {await h.close();}
 });
-test('D1 concurrent registration is idempotent, capacity and rate limits persist across restart', async () => {
-    const persist=await mkdtemp(join(tmpdir(),'weave-d1-')); let h=await start({persist,bindings:{REGISTRATION_PER_IP_PER_HOUR:'1'}});
+test('D1 concurrent registration is idempotent, and the hourly registration count persists across restart', async () => {
+    const persist=await mkdtemp(join(tmpdir(),'weave-d1-')); let h=await start({persist});
+    const url='http://localhost/v1/accounts',limits={...registrationLimits,perIpPerHour:1};
+    const direct=(db:any)=>{const other=agentKey();return registerAgent({db},new Request(url,{method:'POST',
+        headers:{DPoP:dpopProof(other,{method:'POST',url}),'CF-Connecting-IP':'198.51.100.20'}}),{},limits);};
     try {
         const key=agentKey(),[a,b]=await Promise.all([h.register({},key),h.register({},key)]); assert.deepEqual(a,b);
         const address=await h.address(a,{label:'persistent'});
         const stored=await h.db.prepare("SELECT * FROM accounts").all();
         assert.equal(stored.results.length,1); assert.equal(JSON.stringify(stored.results[0]).includes(key.privateJwk.d!),false);
-        await h.close();h=await start({persist,migrate:false,bindings:{REGISTRATION_PER_IP_PER_HOUR:'1'}});
+        await direct(h.db);
+        await h.close();h=await start({persist,migrate:false});
         assert.deepEqual(await h.ok('/v1/accounts',a,'POST',{}),{agentId:a.accountId,accountId:a.accountId,displayName:null,description:null,kid:a.kid});
         assert.deepEqual((await h.ok('/v1/addresses',a)).items,[address]);
-        assert.equal((await h.request('/v1/accounts',h.stranger(),'POST',{})).status,429);
-        await h.close();h=await start({persist,migrate:false,bindings:{REGISTRATION_ENABLED:'false'}});
-        assert.deepEqual(await h.ok('/v1/accounts',a,'POST',{}),{agentId:a.accountId,accountId:a.accountId,displayName:null,description:null,kid:a.kid});
-        assert.equal((await h.request('/v1/accounts',h.stranger(),'POST',{})).status,404);
+        // That source's registration before the restart still counts against an hourly limit of one.
+        await assert.rejects(direct(h.db),{status:429,code:'capacity'});
     } finally {await h.close();await rm(persist,{recursive:true,force:true});}
-});
-test('register_HumanOwnedAgents_DoNotConsumeSelfRegistrationCapacity', async () => {
-    const h=await start({bindings:{REGISTRATION_MAX_ACCOUNTS:'1'}});
-    try {
-        const env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'1',REGISTRATION_PER_IP_PER_HOUR:'100',REGISTRATION_GLOBAL_PER_HOUR:'100'} as any;
-        const human=await signInHuman(env,{provider:'github',subject:'123',providerCreatedAt:'2020-01-01T00:00:00Z',displayLogin:'alice'}) as any;
-        for(let i=0;i<2;i++)assert.equal((await createOwnedAgent(env,{humanId:human.humanId,displayName:'owned '+i,sourceIp:'203.0.113.7'})).ok,true);
-        await h.register();
-        assert.equal((await h.request('/v1/accounts',h.stranger(),'POST',{})).status,429);
-    } finally {await h.close();}
 });
 test('directory and public-card cursors do not reveal private row counts', async () => {
     const h=await start();

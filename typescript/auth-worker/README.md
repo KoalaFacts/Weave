@@ -17,7 +17,7 @@ refused. The SDK's browser-bound `beginConsent` handle is linked to an
 independently random 256-bit nonce kept in a per-handle SQLite Durable Object.
 The consent page identifies the client, redirect domain, requested scopes and
 the signed-in GitHub login, and offers an **agent picker**: one of the human's
-own agents, or a new agent (at most `OWNED_AGENTS_PER_HUMAN` per human, 10 when unset, with hourly creation limits). The picker lists the first 20 agents; an owner with more can name another of their agents by its account ID. `/account` shows 20 agents at a time with links to the next page and back to the first; pending actions and binding requests are listed for all agents on every page, and so are the actions that stopped waiting in the last 7 days (at most 20, newest first, each linking to its own page). Pending actions are capped at the 200 oldest; when either list leaves some out, the page says so.
+own agents, or a new agent (at most `OWNED_AGENTS_PER_HUMAN`, 10000, per human, with an hourly per-source creation limit). The picker lists the first 20 agents; an owner with more can name another of their agents by its account ID. `/account` shows 20 agents at a time with links to the next page and back to the first; pending actions and binding requests are listed for all agents on every page, and so are the actions that stopped waiting in the last 7 days (at most 20, newest first, each linking to its own page). Pending actions are capped at the 200 oldest; when either list leaves some out, the page says so.
 The user explicitly chooses Allow or Deny. On Allow the AS validates the SDK
 consent cookie, re-reads the human session, atomically consumes the nonce in a
 DO transaction, then creates the new agent or confirms the chosen one is owned
@@ -56,16 +56,14 @@ the operator-owned MCP Worker's `AUTH_SERVER` Service Binding to
 `service:weave-auth-demo` (default `AuthServer` WorkerEntrypoint; no named `entrypoint`), and review customer consent,
 CIMD/DCR policy and revocation. Client ID Metadata Documents (strictly public
 fetch) are the primary client path; open dynamic client registration at
-`/register` is a fallback behind two rate-limit bindings: `REGISTRATION_LIMITER`
-allows 10 per minute per source address (an IPv4 `CF-Connecting-IP` as is, an
+`/register` is a fallback behind the `REGISTRATION_LIMITER` rate-limit binding,
+which allows 10 per minute per source address (an IPv4 `CF-Connecting-IP` as is, an
 IPv6 one by its /64, an IPv4-mapped IPv6 one as its IPv4 address, anything
-else as one shared `unknown` key), and `REGISTRATION_GLOBAL_LIMITER` allows 100
-per minute across all addresses. Either budget refused returns 429 with
+else as one shared `unknown` key). A refusal returns 429 with
 `Retry-After: 60`. A missing binding or a limiter fault returns 503 and the
-registration endpoint is advertised in metadata only when both are bound.
-Both are Cloudflare rate-limit bindings: per-location, eventually consistent
-budgets, not an exact global cap. Under abuse the global budget can deny the
-DCR fallback to everyone for a minute; CIMD clients are unaffected because they
+registration endpoint is advertised in metadata only when it is bound.
+It is a Cloudflare rate-limit binding: a per-location, eventually consistent
+budget, not an exact cap. There is no budget across all addresses; CIMD clients
 never call `/register`. Validate source SHAs, Node24 `npm ci`/typecheck, real workerd KV/DO +
 MCP D1 E2E, full repository CI/coverage/security/licence and independent
 review before any merge/release. The committed dependency locks and branch workflow cover Node24 source/type checks,
@@ -105,7 +103,7 @@ Then run `npm run prepare:demo`. It writes
 only public issuer/resource/client-ID values, resource IDs and the `MAILBOX`
 Service Binding to the `demo` Worker's `HumanDirectory` entrypoint. No token,
 GitHub client secret or session key is written, and the generated manifest has
-no `REGISTRATION_LIMITER` or `REGISTRATION_GLOBAL_LIMITER`, so open dynamic client registration stays closed and unadvertised. The test workflow independently bundles this generated manifest
+no `REGISTRATION_LIMITER`, so open dynamic client registration stays closed and unadvertised. The test workflow independently bundles this generated manifest
 with Wrangler `--dry-run` using **dummy** IDs; neither CI nor this script
 deploys the Worker or creates KV/DO state.
 

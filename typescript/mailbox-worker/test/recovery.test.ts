@@ -4,6 +4,10 @@ import { mkdtemp,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { start,payload} from './harness.ts';
+import { build } from 'esbuild';
+// cleanup.ts uses bundler-resolution imports; evaluate the bundled production module.
+const built=await build({entryPoints:['src/cleanup.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
+const {sweep}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64'));
 async function connect(h,a,b){
     const p=payload('recovery introduction'),input={requestVersion:2,requestId:p.messageId,requesterAccountId:a.accountId,requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,payload:p};
     const request=await h.ok('/v1/contacts/requests',a,'POST',input),decision={requesterAccountId:a.accountId,expectedGeneration:request.generation,status:'accepted',reply:null};
@@ -28,11 +32,12 @@ test('retained recovery bundle reads post-cutover writes and performs no rate, c
         const send=async text=>{const p=payload(text);await h.ok('/v1/messages',a,'POST',{version:2,recipientAccountId:b.accountId,contactGeneration:first.request.generation,connectionToken:first.contact.connectionToken,payload:p});return p;};
         const acked=await send('ack before recovery');await h.ok('/v1/inbox/'+acked.messageId+'/ack',b,'POST',{senderAccountId:a.accountId});
         const expired=await send('cleanup before recovery');
-        // Advance only this synthetic record's lifetime so the real scheduled
-        // cleanup path can run without changing the production clock.
+        // Advance only this synthetic record's lifetime so the real cleanup sweep
+        // can run without changing the production clock. The deployed policy cleans
+        // nothing (CLEANUP_MAX_MESSAGES is 0), so the sweep runs under an enabling one.
         await h.db.prepare('UPDATE mailbox_records SET expires_at=? WHERE message_id=?').bind((BigInt(Date.now()-9*86400000)*10000n).toString(),expired.messageId).run();
         await h.db.prepare("DELETE FROM maintenance_state WHERE name='sweep'").run();
-        assert.equal((await (await h.mf.getWorker()).scheduled({scheduledTime:Date.now(),cron:'*/5 * * * *'})).outcome,'ok');
+        await sweep({db:h.db},true,{maximum:128,milliseconds:2000});
         assert.equal(await h.db.prepare('SELECT count(*) n FROM mailbox_records WHERE message_id=?').bind(expired.messageId).first('n'),0);
         const c=await h.register({displayName:'Registered after cutover'});await h.address(c,{label:'New public address',isPublic:true});
         await h.ok('/v1/addresses/'+b.cardId,b,'DELETE');const replacement=await h.address(b);

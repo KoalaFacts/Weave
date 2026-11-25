@@ -21,8 +21,7 @@ const integrations = [
     {id: 'cm4linkedin000000000000001', name: 'Koala Facts', identifier: 'linkedin-page', profile: 'koalafacts', disabled: false},
     {id: 'cm4disabled000000000000001', name: 'Old', identifier: 'x', profile: 'old', disabled: true},
     {id: 'cm4unsupported0000000000001', name: 'Shop', identifier: 'gmb', profile: 'shop', disabled: false}];
-const environment = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
-    REGISTRATION_GLOBAL_PER_HOUR: '100', EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: 'http://localhost'}) as unknown as Env;
+const environment = (h: Harness) => ({db: h.db, EXTERNAL_CREDENTIAL_KEY: key, EXTERNAL_MEDIA_ORIGIN: 'http://localhost'}) as unknown as Env;
 
 type Postiz = {posts: any[]; uploads: string[]; fetched: Buffer[]; listed: URL[]; post: () => Response; upload: (bytes: Buffer) => Response; list: () => Response};
 async function scenario(run: (s: {h: Harness; p: Postiz; env: Env}) => Promise<void>) {

@@ -12,27 +12,14 @@ export interface Statement {
 }
 export interface Database { prepare(sql: string): Statement; batch(statements: Statement[]): Promise<unknown[]>; }
 export interface Env {
-    // Optional delegated OAuth resource-server configuration. Confidential values
-    // are injected as Worker secrets, never committed to wrangler.jsonc.
+    // OAuth resource-server configuration: the issuer, this resource, and the private
+    // Service Binding to the authorization server that validates tokens. All or none.
     OAUTH_ISSUER?: string;
     OAUTH_RESOURCE?: string;
-    OAUTH_INTROSPECTION_URL?: string;
-    OAUTH_INTROSPECTION_TRUSTED_ORIGIN?: string;
-    OAUTH_CLIENT_ID?: string;
-    OAUTH_CLIENT_SECRET?: string;
-    // Optional, exclusive private RPC alternative to HTTPS RFC7662 introspection.
     AUTH_SERVER?: OAuthServiceBinding;
     db: Database;
     MAINTENANCE_MODE?: string;
     RECOVERY_READ_ONLY?: string;
-    CLEANUP_MAX_MESSAGES?: string;
-    CLEANUP_TIME_BUDGET_MS?: string;
-    REGISTRATION_ENABLED: string;
-    REGISTRATION_MAX_ACCOUNTS: string;
-    REGISTRATION_PER_IP_PER_HOUR: string;
-    REGISTRATION_GLOBAL_PER_HOUR: string;
-    // How many agents one human may own; 10 when unset (humans.ts ownedAgentLimit).
-    OWNED_AGENTS_PER_HUMAN?: string;
     // Enables the test-only external action provider. Never set in a deployed configuration.
     EXTERNAL_ACTION_TEST_ENDPOINT?: string;
     // Google OAuth client for connecting YouTube, and the 32-byte base64url key sealing credential secrets. Worker secrets.

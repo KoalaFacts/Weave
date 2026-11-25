@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { start, payload } from './harness.ts';
 import { seedRequest,seedMessage,seedChannel,relationSnapshot } from './storage-fixtures.ts';
+import { build } from 'esbuild';
+// cleanup.ts uses bundler-resolution imports; evaluate the bundled production module.
+const built = await build({ entryPoints:['src/cleanup.ts'], bundle:true, write:false, platform:'node', format:'esm', logLevel:'silent' });
+const { sweep } = await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64'));
 
 const DAY = 86400000;
 async function history(h, sender, recipient, count) {
@@ -24,15 +28,14 @@ async function history(h, sender, recipient, count) {
 
 test('expired, accepted and rejected history remains participant-visible across pages and restart without cleanup', async () => {
     const persist = await mkdtemp(join(tmpdir(), 'weave-contact-history-'));
-    const bindings = { CLEANUP_MAX_MESSAGES:'0', CLEANUP_TIME_BUDGET_MS:'0' };
-    let h = await start({ persist, bindings });
+    let h = await start({ persist });
     try {
         const a = await h.register(), b = await h.register(), outsider = await h.register();
         const summaries = await history(h, a, b, 12);
         // Issue every token before the snapshot: issuance is a write and is not under test.
         for (const as of [a, b, outsider]) await h.token(as);
         const expected = summaries.map(r => ['pending','needsAction'].includes(r.status) ? {...r,status:'expired'} : r);
-        await h.close(); h = await start({ persist, migrate:false, bindings });
+        await h.close(); h = await start({ persist, migrate:false });
         const revision = await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
         for (const participant of [a,b]) {
             const first = await h.ok('/v1/contacts/requests', participant);
@@ -61,8 +64,8 @@ test('enabled scheduled cleanup preserves every contact request and current loca
         const p=payload('old body must not be retained',Date.now()-9*DAY);
         await seedMessage(h.db,{receipt:{messageId:p.messageId,senderMailboxId:a.agentId,recipientMailboxId:b.agentId,state:'pending',expiresAt:p.expiresAt,terminalAt:null},payload:p});
         const before=await relationSnapshot(h.db);
-        const result = await (await h.mf.getWorker()).scheduled({ cron:'*/5 * * * *', scheduledTime:Date.now() });
-        assert.equal(result.outcome,'ok');
+        // The deployed policy cleans nothing (CLEANUP_MAX_MESSAGES is 0): run the scheduled sweep under an enabling one.
+        await sweep({ db:h.db }, true, { maximum:128, milliseconds:2000 });
         assert.deepEqual(await relationSnapshot(h.db),before);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records").first('n'),0);
         assert.deepEqual((await h.ok('/v1/contacts/requests',b)).items.map(r=>r.status),['expired','expired','accepted','rejected']);

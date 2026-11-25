@@ -37,8 +37,7 @@ async function scenario(run: (s: {h: Harness; g: Google; env: Env}) => Promise<v
         return new Response('refused', {status: 599});
     }});
     // The owner's confirm checks the deploy runs the YouTube adapter, which needs the media bucket as well as the Google client.
-    const env = {db: h.db, EXTERNAL_MEDIA: await h.mf.getR2Bucket('EXTERNAL_MEDIA'), REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
-        REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100', ...bindings} as unknown as Env;
+    const env = {db: h.db, EXTERNAL_MEDIA: await h.mf.getR2Bucket('EXTERNAL_MEDIA'), ...bindings} as unknown as Env;
     try { await run({h, g, env}); } finally { await h.close(); }
 }
 

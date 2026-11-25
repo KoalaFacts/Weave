@@ -52,7 +52,7 @@ function provider(env:Env):OAuthAuthorizationServer<Env>{
     // CIMD stays the primary client path. Open RFC 7591 registration is a fallback
     // for clients without a metadata document; fetch() rate-limits it per address
     // and globally, and the consent page labels such clients as unverified. It is
-    // advertised only when both budgets are bound, so metadata never points at a 503.
+    // advertised only when the budget is bound, so metadata never points at a 503.
     ...registrationOpen(env)?{clientRegistrationEndpoint:"/register"}:{}
   });
 }

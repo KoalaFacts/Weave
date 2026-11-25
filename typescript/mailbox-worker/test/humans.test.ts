@@ -1,14 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start } from './harness.ts';
-import { agentPageSize, createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type HumanSignIn } from '../src/humans.ts';
-
-const defaultOwnedLimit = 10;
+import { agentPageSize, createOwnedAgent, humanHasAgent, listHumanAgents, ownedAgentLimits, signInHuman, type HumanSignIn, type OwnedAgentLimits } from '../src/humans.ts';
 import type { Env } from '../src/database.ts';
 
 const environment = (h: { db: unknown }, overrides: Partial<Env> = {}) => ({
-    db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
-    REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100', ...overrides }) as unknown as Env;
+    db: h.db, ...overrides }) as unknown as Env;
 const github = (subject: string, displayLogin = 'alice', providerCreatedAt = '2020-01-01T00:00:00Z'): HumanSignIn =>
     ({ provider: 'github', subject, providerCreatedAt, displayLogin });
 const humanId = async (env: Env, subject = '123') => {
@@ -16,7 +13,10 @@ const humanId = async (env: Env, subject = '123') => {
     assert.equal(result.ok, true);
     return (result as { humanId: string }).humanId;
 };
-const create = (env: Env, id: string, displayName = 'Claude Code') => createOwnedAgent(env, { humanId: id, displayName, sourceIp: '203.0.113.7' });
+const create = (env: Env, id: string, displayName = 'Claude Code', limits: OwnedAgentLimits = ownedAgentLimits, sourceIp = '203.0.113.7') =>
+    createOwnedAgent(env, { humanId: id, displayName, sourceIp }, undefined, limits);
+/** Ten agents per human, far below the deployed limit. */
+const ownedTen = { ...ownedAgentLimits, ownedPerHuman: 10 };
 
 test('signInHuman_SameGithubId_ReturnsSameHumanAndUpdatesLogin', async () => {
     const h = await start();
@@ -47,24 +47,6 @@ test('signInHuman_DifferentIds_ReturnDifferentHumans', async () => {
     try {
         const env = environment(h);
         assert.notEqual(await humanId(env, '1'), await humanId(env, '2'));
-    } finally { await h.close(); }
-});
-
-test('signInHuman_RegistrationDisabled_ExistingHumanSignsInButUnknownHumanIsNotCreated', async () => {
-    const h = await start();
-    try {
-        const open = environment(h), known = await humanId(open, '123');
-        const closed = environment(h, { REGISTRATION_ENABLED: 'false' });
-        // Closing registration must not lock out a previously registered human.
-        assert.deepEqual(await signInHuman(closed, github('123', 'alice-renamed')),
-            { ok: true, humanId: known });
-        // But external GitHub login alone must not bypass the same registration
-        // gate used for new agents and self-registered agents.
-        assert.deepEqual(await signInHuman(closed, github('456')),
-            { ok: false, reason: 'unavailable' });
-        assert.equal(await h.db.prepare('SELECT count(*) AS n FROM humans').first('n'), 1);
-        assert.equal(await h.db.prepare('SELECT display_login FROM humans WHERE human_id=?')
-            .bind(known).first('display_login'), 'alice-renamed');
     } finally { await h.close(); }
 });
 
@@ -100,8 +82,8 @@ test('createOwnedAgent_EleventhAgent_ReturnsAgentLimit', async () => {
     const h = await start();
     try {
         const env = environment(h), id = await humanId(env);
-        for (let i = 0; i < defaultOwnedLimit; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
-        assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
+        for (let i = 0; i < 10; i++) assert.equal((await create(env, id, 'agent ' + i, ownedTen)).ok, true);
+        assert.deepEqual(await create(env, id, 'Claude Code', ownedTen), { ok: false, reason: 'agent-limit' });
         assert.equal((await listHumanAgents(env, id)).agents.length, 10);
     } finally { await h.close(); }
 });
@@ -110,8 +92,8 @@ test('createOwnedAgent_ConcurrentAtNine_OnlyOneSucceeds', async () => {
     const h = await start();
     try {
         const env = environment(h), id = await humanId(env);
-        for (let i = 0; i < 9; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
-        const results = await Promise.all([create(env, id, 'left'), create(env, id, 'right')]);
+        for (let i = 0; i < 9; i++) assert.equal((await create(env, id, 'agent ' + i, ownedTen)).ok, true);
+        const results = await Promise.all([create(env, id, 'left', ownedTen), create(env, id, 'right', ownedTen)]);
         assert.equal(results.filter(r => r.ok).length, 1);
         assert.deepEqual(results.find(r => !r.ok), { ok: false, reason: 'agent-limit' });
         assert.equal((await listHumanAgents(env, id)).agents.length, 10);
@@ -199,20 +181,22 @@ test('createOwnedAgent_OnlyInvisibleJoiners_CannotConsumeOwnerQuota', async () =
 test('createOwnedAgent_SourceIpOverHourlyLimit_ReturnsRateLimited', async () => {
     const h = await start();
     try {
-        const env = environment(h, { REGISTRATION_PER_IP_PER_HOUR: '1' }), id = await humanId(env);
-        assert.equal((await create(env, id)).ok, true);
-        assert.deepEqual(await create(env, id), { ok: false, reason: 'rate-limited' });
+        const env = environment(h), id = await humanId(env), limits = { ...ownedAgentLimits, perIpPerHour: 1 };
+        assert.equal((await create(env, id, 'first', limits)).ok, true);
+        assert.deepEqual(await create(env, id, 'second', limits), { ok: false, reason: 'rate-limited' });
+        // Another source address is still under its own hourly limit.
+        assert.equal((await create(env, id, 'third', limits, '203.0.113.8')).ok, true);
     } finally { await h.close(); }
 });
 
 test('createOwnedAgent_GlobalAccountCapReached_StillCreatesUpToPerHumanLimit', async () => {
     const h = await start();
     try {
-        const env = environment(h, { REGISTRATION_MAX_ACCOUNTS: '1' }), id = await humanId(env);
+        const env = environment(h), id = await humanId(env), limits = { ...ownedTen, maxAccounts: 1 };
         await h.register();
         await h.register();
-        for (let i = 0; i < defaultOwnedLimit; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
-        assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
+        for (let i = 0; i < 10; i++) assert.equal((await create(env, id, 'agent ' + i, limits)).ok, true);
+        assert.deepEqual(await create(env, id, 'Claude Code', limits), { ok: false, reason: 'agent-limit' });
     } finally { await h.close(); }
 });
 
@@ -241,15 +225,6 @@ test('humanDirectory_RecoveryReadOnly_RefusesWritesButAllowsReads', async () => 
     } finally { await h.close(); }
 });
 
-test('createOwnedAgent_RegistrationDisabled_ReturnsUnavailable', async () => {
-    const h = await start();
-    try {
-        const open = environment(h), id = await humanId(open);
-        assert.deepEqual(await create(environment(h, { REGISTRATION_ENABLED: 'false' }), id), { ok: false, reason: 'unavailable' });
-        assert.deepEqual((await listHumanAgents(open, id)).agents, []);
-    } finally { await h.close(); }
-});
-
 test('humanDirectory_FrozenAfterCreatingAgent_RefusesManagement', async () => {
     const h = await start();
     try {
@@ -265,29 +240,10 @@ test('humanDirectory_FrozenAfterCreatingAgent_RefusesManagement', async () => {
     } finally { await h.close(); }
 });
 
-test('createOwnedAgent_ConfiguredLimit_AllowsThatManyThenAgentLimit', async () => {
-    const h = await start();
-    try {
-        const env = environment(h, { OWNED_AGENTS_PER_HUMAN: '25', REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '1000' }), id = await humanId(env);
-        for (let i = 0; i < 25; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true, 'agent ' + i);
-        assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
-    } finally { await h.close(); }
-});
-
-test('createOwnedAgent_MalformedLimit_FailsClosedWithoutCreating', async () => {
-    const h = await start();
-    try {
-        const open = environment(h), id = await humanId(open);
-        for (const value of ['0', '-1', '1.5', '100001', 'many', ' 5', '05'])
-            await assert.rejects(create(environment(h, { OWNED_AGENTS_PER_HUMAN: value }), id), { status: 503 }, value);
-        assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(id).first('n'), 0);
-    } finally { await h.close(); }
-});
-
 test('listHumanAgents_MoreThanOnePage_PagesOldestFirstWithCursor', async () => {
     const h = await start();
     try {
-        const env = environment(h, { OWNED_AGENTS_PER_HUMAN: '100', REGISTRATION_PER_IP_PER_HOUR: '1000', REGISTRATION_GLOBAL_PER_HOUR: '1000' }), id = await humanId(env);
+        const env = environment(h), id = await humanId(env);
         const created: string[] = [];
         for (let i = 0; i < agentPageSize + 5; i++) created.push((await create(env, id, 'agent ' + i) as { accountId: string }).accountId);
         const first = await listHumanAgents(env, id);

@@ -14,8 +14,7 @@ const connectTelegram = (env: Env, {botToken, chat, ...owner}: {humanId: string;
     connectAccount(env, {...owner, provider: 'telegram', fields: {botToken, chat}});
 const key = randomBytes(32).toString('base64url');
 const token = '123456789:' + 'A'.repeat(35), botId = 123456789, chatId = -1001234567890;
-const environment = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
-    REGISTRATION_GLOBAL_PER_HOUR: '100', EXTERNAL_CREDENTIAL_KEY: key}) as unknown as Env;
+const environment = (h: Harness) => ({db: h.db, EXTERNAL_CREDENTIAL_KEY: key}) as unknown as Env;
 const ok = (result: unknown) => Response.json({ok: true, result});
 const refused = (status: number, description = 'Bad Request') => Response.json({ok: false, error_code: status, description}, {status});
 

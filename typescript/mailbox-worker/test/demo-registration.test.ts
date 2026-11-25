@@ -330,7 +330,7 @@ test('resumeFromKeyFile_SameAgent', async () => {
 });
 
 test('real Worker commits a lost registration once, resumes its saved key, and enforces quota for the next agent', async () => {
-    const h = await start({ bindings: { REGISTRATION_MAX_ACCOUNTS: '1' } });
+    const h = await start();
     let loseResponse = true;
     try {
         const app = ui(async (path, options) => {
@@ -358,6 +358,8 @@ test('real Worker commits a lost registration once, resumes its saved key, and e
         const backup = await app.downloads[0].blob.text();
         await app.click('disconnect'); app.get('agentKey').value = backup; await app.click('register');
         assert.equal(app.get('identity').textContent, identity);
+        // Spend this source's registrations for the hour, so the next new agent meets the quota.
+        await h.db.prepare("UPDATE rate_limits SET count=1000000 WHERE policy='registration'").run();
         await app.click('disconnect'); await app.click('createAccount');
         assert.match(app.get('status').textContent, /rejected \(429\)/);
         assert.equal(app.get('identity').textContent, 'No account connected.');

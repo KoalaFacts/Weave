@@ -54,8 +54,7 @@ export function deploymentConfig(base: WorkerConfig,env: NodeJS.ProcessEnv,root=
     if(base.name!=='demo'||base.d1_databases?.length!==1||base.d1_databases[0].binding!=='db')throw Error('Expected existing Worker demo and binding db.');
     if(base.services!==undefined)throw Error('OAuth Service Bindings must be provisioned separately by an operator, not by this generic release.');
     if(!/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ACCOUNT_ID??''))throw Error('CLOUDFLARE_ACCOUNT_ID must identify the existing account.');
-    // Business sweeps stay disabled for this demo, including with inherited environment values.
-    const vars={...base.vars,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+    const vars={...base.vars};
     return {...base,account_id:env.CLOUDFLARE_ACCOUNT_ID,main:resolve(root,base.main),workers_dev:true,vars,
         d1_databases:[{...base.d1_databases[0]}]};
 }
@@ -177,14 +176,10 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             !single(worker.bindings,'OAUTH_RESOURCE','plain_text',resource)))
             throw Error('Existing first-party OAuth issuer/resource differs from approved values; no mutation attempted.');
         // Stage issuer, resource and AUTH_SERVER together in maintenance when
-        // absent, or preserve the exact existing set. Mixed legacy introspection
-        // credentials are never eligible for this first-party rollout.
-        if((!authBinding&&['OAUTH_ISSUER','OAUTH_RESOURCE']
-                .some(name=>worker.bindings.some(binding=>binding?.name===name)))||
-           ['OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
-             'OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
+        // absent, or preserve the exact existing set.
+        if(!authBinding&&['OAUTH_ISSUER','OAUTH_RESOURCE']
                 .some(name=>worker.bindings.some(binding=>binding?.name===name)))
-            throw Error('Resource OAuth bootstrap secrets are not preapproved; no mutation attempted.');
+            throw Error('Existing OAuth issuer or resource settings without AUTH_SERVER are not preapproved; no mutation attempted.');
         const as=await inspect<WorkerSettings>('/workers/scripts/weave-auth-demo/settings','Approved existing OAuth authorization Worker');
         const kv=as.bindings?.filter(binding=>binding?.name==='OAUTH_KV')??[];
         const nonce=as.bindings?.filter(binding=>binding?.name==='CONSENT_NONCES')??[];
@@ -259,9 +254,6 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             typeof oauthExisting.get('OAUTH_ISSUER')!.text!=='string'||
             oauthExisting.get('OAUTH_RESOURCE')!.text!=='https://demo.weave-389.workers.dev/mcp')
             throw Error('Invalid existing OAuth resource or issuer; no mutation attempted.');
-        if(['OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID','OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
-            .some(name=>worker.bindings.some(binding=>binding.name===name)))
-            throw Error('Mixed OAuth Service Binding and RFC7662 introspection settings; no mutation attempted.');
         config.services=[{binding:'AUTH_SERVER',service:authBinding.service,...(authBinding.entrypoint?{entrypoint:authBinding.entrypoint}:{})}];
     }
     const binding=bindings[0];

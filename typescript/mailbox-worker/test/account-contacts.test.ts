@@ -89,7 +89,7 @@ test('oversize JSON and decoded payload are rejected before cleanup or any datab
 });
 
 test('new server rows share one operation time and unchanged address/card writes preserve timestamps and counters',async()=>{
-    const h=await start({bindings:{CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'}});
+    const h=await start();
     try{
         const a=await h.participant(),b=await h.participant(),r=await request(h,a,b);
         for(const table of ['accounts','account_addresses','legacy_channels'])assert.equal(await h.db.prepare(`SELECT count(*) n FROM ${table} WHERE created_at IS NULL OR updated_at IS NULL OR created_at<>updated_at`).first('n'),0,table+' new server timestamps');
@@ -106,7 +106,7 @@ test('new server rows share one operation time and unchanged address/card writes
 });
 
 test('concurrent send, old acceptance replay and owner deletion cannot restore delivery or the deleted contact',async()=>{
-    const h=await start({bindings:{CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'}});
+    const h=await start();
     try{
         const a=await h.participant(),b=await h.participant(),r=await request(h,a,b),accepted=await accept(h,a,b,r),p=payload('concurrent send');
         const [remove,send,replay]=await Promise.all([

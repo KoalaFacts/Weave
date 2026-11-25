@@ -1,5 +1,5 @@
 /** Private MCP operations reuse the existing account-scoped Worker business paths.
- * The authenticated account is derived exclusively from OAuth introspection,
+ * The authenticated account is derived exclusively from the OAuth token the authorization server validated,
  * never from tool parameters. Channel tokens stay server-side.
  */
 import { atomic, type Env, type Transaction } from './database';
@@ -18,7 +18,7 @@ import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyCla
 import { grantCaller, liveGrant } from './client-grants.ts';
 import { executeOwnerMcp } from './owner-tools.ts';
 import { ownerMcpTools } from './private-mcp-tools.ts';
-import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
+import { authorizeOAuth, type GrantLookup, type OAuthConfiguration } from './remote-oauth.ts';
 import { executeExternalAction, getExternalAction, listPastExternalActions, listWaitingExternalActions, proposalKey, proposeExternalAction } from './external-actions.ts';
 import { listAgentCredentials } from './external-credentials.ts';
 import { createMediaUpload, getMedia, importMedia } from './external-media.ts';
@@ -96,7 +96,7 @@ function inboxText(page:{items:any[]}):string{
 const grantGuard=(accountId:string,grantId:string)=>grantCaller(accountId,grantId).check;
 /** The production private-tool access: the consent grant, its human's current ownership and that human's freeze state are
  * read on every call, and again inside every write's own transaction. */
-export function oauthPrivateAccess(env:Env,origin:string,config:OAuthOptions,request:Request,
+export function oauthPrivateAccess(env:Env,origin:string,config:OAuthConfiguration,request:Request,
     lookup:GrantLookup=grantId=>liveGrant(env.db,grantId)):PrivateAccess{
     let grantId:string|null=null;
     return {tools:privateMcpTools,scope:privateScope,

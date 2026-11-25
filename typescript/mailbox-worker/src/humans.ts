@@ -1,4 +1,4 @@
-import { admitRegistration } from './accounts.ts';
+import { admitRegistration, registrationLimits, type RegistrationLimits } from './accounts.ts';
 import { atomic, type Env, type Transaction } from './database.ts';
 import { nowUtc, utcTicks } from './time.ts';
 import { visibleName } from './visible-text.ts';
@@ -6,14 +6,11 @@ import { fail } from './wire.ts';
 
 // A Human is a person who signed in with an external identity provider and owns
 // agents. Owned agents are created without an agent key; their access is granted later.
-const defaultOwnedAgentLimit = 10, maxOwnedAgentLimit = 100000;
-/** Agents one human may own: `OWNED_AGENTS_PER_HUMAN` (1 to 100000), 10 when unset. A malformed value fails closed. */
-export function ownedAgentLimit(env: Env): number {
-    const text = env.OWNED_AGENTS_PER_HUMAN;
-    if (text === undefined) return defaultOwnedAgentLimit;
-    if (typeof text !== 'string' || !/^[1-9][0-9]{0,5}$/.test(text) || Number(text) > maxOwnedAgentLimit) fail(503, 'storage');
-    return Number(text);
-}
+/** Agents one human may own. */
+export const OWNED_AGENTS_PER_HUMAN = 10000;
+/** The limits on creating an owned agent; a test passes smaller ones instead of creating thousands of agents. */
+export type OwnedAgentLimits = RegistrationLimits & { ownedPerHuman: number };
+export const ownedAgentLimits: OwnedAgentLimits = { ...registrationLimits, ownedPerHuman: OWNED_AGENTS_PER_HUMAN };
 /** Agents per page wherever a human's agents are listed. Small enough that a page's agent IDs fit one D1 statement's bound parameters. */
 export const agentPageSize = 20;
 
@@ -51,10 +48,6 @@ export async function signInHuman(env: Env, input: HumanSignIn): Promise<SignInR
             .bind(input.provider, input.subject).first<{ human_id: string; provider_created_at: string; display_login: string; frozen_at: string | null }>();
         const now = nowUtc().toString();
         if (!row) {
-            // Existing humans may sign in while registrations are closed, but
-            // a first-time GitHub login must not create a new human behind the
-            // operator's registration gate.
-            if (env.REGISTRATION_ENABLED !== 'true') return { ok: false as const, reason: 'unavailable' as const };
             const humanId = crypto.randomUUID();
             tx.writes.push(tx.db.prepare('INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,frozen_at,created_at,updated_at) VALUES(?,?,?,?,?,NULL,?,?)')
                 .bind(humanId, input.provider, input.subject, input.providerCreatedAt, input.displayLogin, now, now));
@@ -102,8 +95,8 @@ export async function humanHasAgent(env: Env, humanId: string, accountId: string
 
 /** `check` runs first inside the write transaction, for a caller whose authority must still hold at commit (an owner grant). */
 export async function createOwnedAgent(env: Env, input: { humanId: string; displayName: string; sourceIp: string },
-    check?: (tx: Transaction) => Promise<void>): Promise<CreateAgentResult> {
-    if (writesRefused(env) || env.REGISTRATION_ENABLED !== 'true') return { ok: false, reason: 'unavailable' };
+    check?: (tx: Transaction) => Promise<void>, limits: OwnedAgentLimits = ownedAgentLimits): Promise<CreateAgentResult> {
+    if (writesRefused(env)) return { ok: false, reason: 'unavailable' };
     const invalid = { ok: false, reason: 'invalid' } as const;
     if (typeof input?.humanId !== 'string' || !uuidPattern.test(input.humanId) || typeof input.sourceIp !== 'string'
         // Bidi or invisible characters could spoof a name in the OAuth agent picker; an invisible-only name must never
@@ -116,8 +109,8 @@ export async function createOwnedAgent(env: Env, input: { humanId: string; displ
         // A frozen GitHub identity has lost its management rights; its agents are not deleted.
         if (human.frozen_at !== null) return { ok: false as const, reason: 'frozen' as const };
         const owned = await tx.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(input.humanId).first<number>('n');
-        if (owned === null || owned >= ownedAgentLimit(env)) return { ok: false as const, reason: 'agent-limit' as const };
-        if (!await admitRegistration(env, tx, input.sourceIp)) return { ok: false as const, reason: 'rate-limited' as const };
+        if (owned === null || owned >= limits.ownedPerHuman) return { ok: false as const, reason: 'agent-limit' as const };
+        if (!await admitRegistration(tx, input.sourceIp, limits)) return { ok: false as const, reason: 'rate-limited' as const };
         const accountId = crypto.randomUUID();
         if (await tx.get('account', '', accountId)) fail(409, 'conflict');
         tx.put('account', '', accountId, { accountId, humanId: input.humanId, displayName: input.displayName, description: null });

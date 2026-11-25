@@ -7,8 +7,7 @@ import { start, payload } from './harness.ts';
 
 test('pending contact persists for both participants across Worker restart and read-only inbox access', async t => {
     const persist=await mkdtemp(join(tmpdir(),'weave-contact-visibility-'));
-    const bindings={CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
-    let h=await start({persist,bindings});
+    let h=await start({persist});
     try {
         const a=await h.register(),b=await h.participant(),outsider=await h.register();
         const p=payload('Local fixture introduction');
@@ -28,7 +27,7 @@ test('pending contact persists for both participants across Worker restart and r
         assert.deepEqual(await h.ok('/v1/contacts/requests',outsider),{items:[],nextCursor:null});
         assert.equal((await h.request(exact,outsider)).status,404);
         t.diagnostic('POST 200; D1 request row 1; sender list 1; recipient list 1; unrelated account list 0, exact lookup 404.');
-        await h.close();h=await start({persist,migrate:false,bindings});
+        await h.close();h=await start({persist,migrate:false});
         // Use the saved local fixture credential directly, without any registration/restore call.
         for(const participant of [a,b]) {
             assert.deepEqual(await h.ok('/v1/contacts/requests',participant),{items:[relation.request],nextCursor:null});

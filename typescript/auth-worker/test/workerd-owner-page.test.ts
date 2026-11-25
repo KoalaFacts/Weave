@@ -163,12 +163,6 @@ function options(storage:string,authEnv:Record<string,unknown>={}){
         env:{
           db:{type:"d1"},
           EXTERNAL_MEDIA:{type:"r2"},
-          REGISTRATION_ENABLED:{type:"text",value:"true"},
-          REGISTRATION_MAX_ACCOUNTS:{type:"text",value:"1000"},
-          REGISTRATION_PER_IP_PER_HOUR:{type:"text",value:"1000"},
-          REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"1000"},
-          CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"},
           EXTERNAL_ACTION_TEST_ENDPOINT:{type:"text",value:providerEndpoint},
           GOOGLE_CLIENT_ID:{type:"text",value:"weave-test.apps.googleusercontent.com"},
           GOOGLE_CLIENT_SECRET:{type:"text",value:"google-test-secret"},
@@ -485,18 +479,6 @@ test("account_IssueRecoveryCode_Stale_RedirectsToGithub",{timeout:60_000},async(
   assert.equal(location.searchParams.get("prompt"),"select_account");
   const issued=await (await db()).prepare("SELECT count(*) n FROM recovery_codes WHERE account_id=?").bind(agent.accountId).first<number>("n");
   assert.equal(issued,0);
-});
-
-test("account_HumanAtTenAgents_ShowsAgentLimit",{timeout:120_000},async()=>{
-  const human=await seedHuman();
-  for(let i=0;i<10;i++)await ownedAgent(human,"owned"+i);
-  const agent=await registerAgent("eleventh"),view=await requestBinding(agent,human);
-  const response=await postAccount(await tokenFor(human,"Confirm binding"),await sessionCookie(human));
-  assert.equal(result(response),"agent-limit");
-  const page=await (await shared.mf.dispatchFetch(issuer+response.headers.get("location")!,{redirect:"manual",headers:{Cookie:await sessionCookie(human)}})).text();
-  assert.ok(page.includes("You already own as many agents as this server allows."));
-  assert.equal(await ownerOf(agent),null);
-  assert.equal(await bindingStatus(agent,view.requestId),"pending");
 });
 
 test("account_MailboxRpcThrows_503AndLogsCategory",{timeout:60_000},async()=>{

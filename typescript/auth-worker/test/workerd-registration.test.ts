@@ -31,7 +31,7 @@ async function outbound(request:Request):Promise<Response>{
   }
   return new Response("blocked",{status:502});
 }
-type Limits={perIp?:number;global?:number};
+type Limits={perIp?:number};
 const limiter=(namespace:string,limit:number)=>({type:"rate-limit",namespace,simple:{limit,period:60}});
 function options(storage:string,limits:Limits){
   const common={compatibilityDate:"2026-10-13",compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"]};
@@ -51,8 +51,7 @@ function options(storage:string,limits:Limits){
           GITHUB_CLIENT_SECRET:{type:"text",value:githubClientSecret},
           HUMAN_SESSION_KEY:{type:"text",value:sessionKey},
           MAILBOX:{type:"worker",worker:"weave-mailbox-regression",exportName:"HumanDirectory"},
-          ...limits.perIp?{REGISTRATION_LIMITER:limiter("weave-registration",limits.perIp)}:{},
-          ...limits.global?{REGISTRATION_GLOBAL_LIMITER:limiter("weave-registration-global",limits.global)}:{}
+          ...limits.perIp?{REGISTRATION_LIMITER:limiter("weave-registration",limits.perIp)}:{}
         },
         exports:{ConsentNonce:{type:"durable-object",storage:"sqlite"}}
       }
@@ -65,18 +64,12 @@ function options(storage:string,limits:Limits){
           db:{type:"d1"},
           OAUTH_ISSUER:{type:"text",value:issuer},
           OAUTH_RESOURCE:{type:"text",value:resource},
-          REGISTRATION_ENABLED:{type:"text",value:"true"},
-          REGISTRATION_MAX_ACCOUNTS:{type:"text",value:"1000"},
-          REGISTRATION_PER_IP_PER_HOUR:{type:"text",value:"1000"},
-          REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"1000"},
-          CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
-          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"}
-        }
+          }
       }
     }]
   };
 }
-async function withWorker(run:(mf:Miniflare)=>Promise<void>,limits:Limits={perIp:10,global:100}){
+async function withWorker(run:(mf:Miniflare)=>Promise<void>,limits:Limits={perIp:10}){
   const storage=await mkdtemp(join(tmpdir(),"weave-auth-registration-"));
   const mf=new Miniflare(options(storage,limits) as ConstructorParameters<typeof Miniflare>[0]);
   try{
@@ -100,13 +93,12 @@ const registrationEndpoint=async(mf:Miniflare)=>{
   return (await response.json() as {registration_endpoint?:string}).registration_endpoint;
 };
 
-test("metadata_BothLimiterBindings_AdvertisesRegistrationEndpoint",{timeout:60_000},async()=>{
+test("metadata_LimiterBinding_AdvertisesRegistrationEndpoint",{timeout:60_000},async()=>{
   await withWorker(async mf=>{assert.equal(await registrationEndpoint(mf),issuer+"/register");});
 });
 
 test("metadata_MissingLimiterBinding_DoesNotAdvertiseRegistration",{timeout:60_000},async()=>{
-  for(const limits of [{},{perIp:10},{global:100}] as Limits[])
-    await withWorker(async mf=>{assert.equal(await registrationEndpoint(mf),undefined,JSON.stringify(limits));},limits);
+  await withWorker(async mf=>{assert.equal(await registrationEndpoint(mf),undefined);},{});
 });
 
 test("register_PublicClient_ReturnsClientIdAndConsentLabelsUnverified",{timeout:60_000},async()=>{
@@ -163,20 +155,9 @@ test("register_TwoAddressesInOneIpv6Slash64_ShareOneBudget",{timeout:60_000},asy
   });
 });
 
-test("register_GlobalBudgetExhausted_Returns429ForNewAddresses",{timeout:60_000},async()=>{
-  await withWorker(async mf=>{
-    for(let index=1;index<=3;index++)assert.equal((await register(mf,"198.51.100."+index)).status,201,"registration "+index);
-    const refused=await register(mf,"198.51.100.4");
-    assert.equal(refused.status,429);
-    assert.equal(refused.headers.get("retry-after"),"60");
-    assert.equal(refused.headers.get("cache-control"),"no-store");
-  },{perIp:10,global:3});
-});
-
 test("register_MissingLimiterBinding_Returns503AndOtherRoutesWork",{timeout:60_000},async()=>{
-  for(const limits of [{},{perIp:10},{global:100}] as Limits[])
-    await withWorker(async mf=>{
-      assert.equal((await register(mf,"203.0.113.1")).status,503,JSON.stringify(limits));
-      assert.equal((await mf.dispatchFetch(issuer+"/.well-known/oauth-authorization-server")).status,200);
-    },limits);
+  await withWorker(async mf=>{
+    assert.equal((await register(mf,"203.0.113.1")).status,503);
+    assert.equal((await mf.dispatchFetch(issuer+"/.well-known/oauth-authorization-server")).status,200);
+  },{});
 });

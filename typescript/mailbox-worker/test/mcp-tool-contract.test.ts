@@ -82,9 +82,7 @@ test('real D1 results of every private tool conform to their published output sc
         response.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({externalId:'post-contract'})));}).listen(0,'127.0.0.1');
     await once(provider,'listening');
     try{
-        const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0',
-            EXTERNAL_ACTION_TEST_ENDPOINT:`http://127.0.0.1:${(provider.address() as {port:number}).port}/post`,
+        const env:Env={db:h.db, EXTERNAL_ACTION_TEST_ENDPOINT:`http://127.0.0.1:${(provider.address() as {port:number}).port}/post`,
             EXTERNAL_CREDENTIAL_KEY:mediaKey,EXTERNAL_MEDIA_ORIGIN:origin,EXTERNAL_MEDIA:inProcessMedia(await h.mf.getR2Bucket('EXTERNAL_MEDIA')) as unknown as Env['EXTERNAL_MEDIA']};
         const a=await h.participant(),b=await h.participant();
         const seen=new Set<string>();
@@ -202,8 +200,7 @@ test('public tool results conform to their output schemas and argument errors na
 test('private paging limit errors name the field instead of a bare 400',async()=>{
     const h=await start();
     try{
-        const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
-            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+        const env:Env={db:h.db};
         const a=await h.participant();
         const response=await executePrivateMcp(env,origin,a.accountId,'list_my_inbox',{limit:100});
         assert.equal(response.status,400);

@@ -14,8 +14,7 @@ for(const replace of [false,true])for(const acknowledge of [false,true]){
     test(`real D1 retained MCP send survives ${replace?'replaced':'removed'} contact with ${acknowledge?'acknowledged':'pending'} delivery`,async()=>{
         const h=await start();
         try{
-            const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',REGISTRATION_PER_IP_PER_HOUR:'10',
-                REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+            const env:Env={db:h.db};
             const a=await h.participant(),b=await h.participant(),c=await h.participant();
             const accept=async()=>{
                 const requested=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
