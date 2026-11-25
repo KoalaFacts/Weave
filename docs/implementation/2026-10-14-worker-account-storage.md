@@ -28,6 +28,13 @@ The Node migration runner uses Wrangler's official remote D1 binding, preserving
 
 Before active cutover, deployment retains a separate schema-aware recovery version and records its ID, bundle hashes and exact command. Recovery reads the current normalized tables, including post-conversion registrations, revoked addresses, accepted/deleted contacts, ACKs and cleanup results. It rejects business writes and streaming, and performs no scheduled cleanup or public rate writes. This provides read-only recovery availability. Never select the pre-conversion Worker or overwrite newer data with a frozen database snapshot.
 
+Storage failures stay fail-closed: an error that is not an expected `Problem` answers `503 {"code":"storage"}`. Since
+2026-11-24 (after a demo outage whose cause the Worker never recorded) `problem()` in `src/wire.ts` also writes one
+`storage-unavailable` log line with the error class and, only for messages that start with `D1_…:`, the first 300
+characters of the D1 message (also when it is the direct `cause` of a wrapping error). Other messages are not logged,
+because some quote request input (JSON parse errors do), and neither is `D1_TYPE_ERROR`, which can quote a bound value.
+`test/storage-problem.test.ts` pins the format, the bound, the message filter and that expected problems are not logged.
+
 ## Verification boundaries
 
 The regression suite exercises real workerd/D1 conversion, interruption/resume, exact integers beyond Number precision, raw/empty/cleared BLOBs, preserved migration history, unchanged retries, oversize rejection before writes, concurrent send/delete/old-acceptance replay, sequence exhaustion, and recovery after new writes. A separate local rehearsal generated data through the actual prior Worker bundle before conversion and retained all three bundle hashes.
