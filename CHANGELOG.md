@@ -6,6 +6,11 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ## Unreleased
 
+## 0.2.0 — 2026-11-25
+
+Everything merged after 0.1.0 (`d13c809`) up to and including #573. No schema change and no opt-in on the
+production dispatch; one MCP tool is added and no published HTTP or MCP contract changes incompatibly.
+
 ### Added
 
 - MCP parity: `get_my_contact_request` reads one contact request the agent sent or received (#571).
