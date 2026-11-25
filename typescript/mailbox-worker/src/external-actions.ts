@@ -477,6 +477,26 @@ export async function rejectExternalAction(tx: Transaction, human: OwnerHuman, a
     return {ok: true};
 }
 
+/** What the owner found on the platform for an action whose outcome is `unknown`. */
+export type SettlementFinding = 'posted' | 'not_posted';
+/** The longest post link a settlement keeps, as the table's check allows. */
+export const settlementUrlMaxLength = 2048;
+
+/**
+ * Owner settlement of one of their own agents' actions whose outcome is `unknown` (#560 option 1): records once what the owner
+ * found on the platform, with an optional https post link only for `posted`. The action keeps status `unknown` and is never re-sent;
+ * a retry still needs a new proposal and approval. Any other status is `not-pending`; a second settlement is `not-pending` too.
+ */
+export async function settleExternalAction(tx: Transaction, human: OwnerHuman, actionId: string, finding: SettlementFinding, postUrl: string | null, at: bigint): Promise<OwnerDecision> {
+    const row = await ownedByHuman(tx, human, actionId);
+    if (!row) return {ok: false, reason: 'not-found'};
+    if (row.status !== 'unknown') return {ok: false, reason: 'not-pending'};
+    if (await tx.db.prepare('SELECT 1 FROM external_action_settlements WHERE action_id=?').bind(actionId).first() !== null) return {ok: false, reason: 'not-pending'};
+    tx.writes.push(tx.db.prepare(`INSERT INTO external_action_settlements(action_id,finding,post_url,settled_by,settled_at)
+        VALUES(?,?,?,?,CAST(? AS INTEGER))`).bind(actionId, finding, finding === 'posted' ? postUrl : null, human.humanId, at.toString()));
+    return {ok: true};
+}
+
 /** Media IDs an action's content names: a top-level mediaId and every media[].mediaId. */
 export function mediaIdsOf(content: string): string[] {
     let value: unknown;
