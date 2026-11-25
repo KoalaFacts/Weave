@@ -61,7 +61,7 @@ function pagination(url:URL,args:Record<string,unknown>):void {
 }
 function urlFor(origin:string,path:string):URL{return new URL(path,origin);}
 /** A keyed write replays its stored result ID; otherwise it writes and records the key in the same transaction. */
-async function keyed<T>(tx:Transaction,accountId:string,claim:IdempotencyClaim|null,replay:(resultId:string)=>Promise<T>,
+export async function keyed<T>(tx:Transaction,accountId:string,claim:IdempotencyClaim|null,replay:(resultId:string)=>Promise<T>,
     write:()=>Promise<{result:T;resultId:string}>):Promise<T>{
     const replayed=claim&&await replayedResultId(tx,accountId,claim);
     if(replayed)return replay(replayed);
@@ -70,7 +70,7 @@ async function keyed<T>(tx:Transaction,accountId:string,claim:IdempotencyClaim|n
     return result;
 }
 /** The current generation of an accepted, unblocked channel; anything else is not a connection. */
-async function connectedGeneration(tx:Transaction,owner:string,peer:string):Promise<bigint>{
+export async function connectedGeneration(tx:Transaction,owner:string,peer:string):Promise<bigint>{
     const channel=await readChannel(tx,owner,peer);
     const request=channel?.currentRequest&&await tx.get('request',channel.currentRequest.requesterMailboxId,channel.currentRequest.requestId);
     if(!channel||!request||!relation(channel,request).isConnected)fail(409,'not-connected');

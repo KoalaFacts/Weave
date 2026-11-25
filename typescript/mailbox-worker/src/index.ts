@@ -1,3 +1,4 @@
+import { a2aSendMessage } from './a2a-endpoint.ts';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentPage } from './humans.ts';
 import { demo, connect } from './demo';
@@ -126,6 +127,9 @@ export default {
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return json(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
             if (!account) fail(401,'unauthenticated');
+            // A2A v1.0 SendMessage (JSON-RPC) to a public address, from an accepted contact of its owner.
+            const a2aRoute = /^\/a2a\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(url.pathname);
+            if (a2aRoute) { if (method !== 'POST') fail(404,'unavailable'); return await a2aSendMessage(env,request,a2aRoute[1],account.accountId); }
             if (url.pathname === '/v1/keys' || url.pathname.startsWith('/v1/keys/')) {
                 if (url.pathname === '/v1/keys') {
                     if (method === 'GET') return json(await listAgentKeys(env,account.accountId));

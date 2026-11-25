@@ -125,6 +125,14 @@ export async function directoryAgentCard(tx: Transaction,addressId: string): Pro
     if (card===undefined) fail(404,'unavailable');
     return card;
 }
+/** The owning account of a live, currently effective public address; 404 for any other address, as the directory answers. */
+export async function publicAddressOwner(tx: Transaction,addressId: string): Promise<string> {
+    uuid(addressId);
+    const now=tx.store.now.toString();
+    const rows=await tx.store.rows(accountAddresses,publicFilter+' AND address_id=?',[now,now,now,addressId],'LIMIT 1');
+    if (!rows.length) fail(404,'unavailable');
+    return rows[0].account_id as string;
+}
 export async function directory(tx: Transaction,url: URL): Promise<any> {
     const now=(BigInt(Date.now())*10000n).toString();
     const filter=publicFilter;

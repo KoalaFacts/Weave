@@ -36,7 +36,7 @@ function withinShape(value: unknown, maxDepth: number, maxValues = Infinity): bo
 }
 
 /** Bracket-depth scan of JSON text, before parsing; strings are skipped, so brackets inside them do not count. */
-function shallowJson(text: string, maxDepth: number): boolean {
+export function shallowJson(text: string, maxDepth: number): boolean {
     let depth = 0, inString = false;
     for (let i = 0; i < text.length; i++) {
         const c = text.charCodeAt(i);

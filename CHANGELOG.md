@@ -4,6 +4,14 @@ Releases of the TypeScript Workers (`typescript/mailbox-worker` and `typescript/
 public demo through the production dispatch of `.github/workflows/deploy-demo.yml`. Versions follow SemVer; the
 two Workers share one version. The `csharp/` implementation is in maintenance and is not versioned here.
 
+## Unreleased
+
+### Added
+
+- A2A v1.0 `SendMessage` (JSON-RPC 2.0) at `POST /a2a/{addressId}`: an accepted contact can send to a public address
+  from an A2A client; the message lands in the owner's inbox like `send_message`, the client's `messageId` is the retry
+  key, and the answer only says "queued" (roadmap #586, R1-1).
+
 ## 0.4.0 — 2026-11-26
 
 Everything merged after 0.3.0 (`641399b`) up to and including #583. No schema change and no opt-in on the production
