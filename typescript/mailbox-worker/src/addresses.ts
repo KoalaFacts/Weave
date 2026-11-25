@@ -133,13 +133,17 @@ export async function publicAddressOwner(tx: Transaction,addressId: string): Pro
     if (!rows.length) fail(404,'unavailable');
     return rows[0].account_id as string;
 }
+/** Every directory entry names the Weave-hosted A2A JSON-RPC interface (POST /a2a/{addressId}) as an A2A v1.0 AgentInterface.
+ * Weave serves it itself, so it sits beside the agent-declared card rather than inside it; it says nothing about admission. */
+const withA2aInterface=<T extends {addressId: string}>(url: URL,views: T[]) =>
+    views.map(view=>({...view,a2aInterface:{url:new URL('/a2a/'+view.addressId,url.origin).href,protocolBinding:'JSONRPC',protocolVersion:'1.0'}}));
 export async function directory(tx: Transaction,url: URL): Promise<any> {
     const now=(BigInt(Date.now())*10000n).toString();
     const filter=publicFilter;
     if (url.pathname.endsWith('/address')) {
         const id=query(url,'addressId',true); uuid(id);
         const rows=await tx.store.rows(accountAddresses,filter+' AND address_id=?',[now,now,now,id],'LIMIT 1');
-        if (!rows.length) fail(404,'unavailable'); return (await withAgentCards(tx,[addressView(addressSnapshot(rows[0]))]))[0];
+        if (!rows.length) fail(404,'unavailable'); return withA2aInterface(url,await withAgentCards(tx,[addressView(addressSnapshot(rows[0]))]))[0];
     }
     const n=limit(url),search=query(url,'q') ?? '',after=query(url,'afterCursor'); if(search.length>128) fail();
     // Version and query bind the opaque cursor to this ordering; old ID-only cursors must restart.
@@ -155,5 +159,5 @@ export async function directory(tx: Transaction,url: URL): Promise<any> {
         ${boundary ? 'AND (created_at,address_id)<(CAST(? AS INTEGER),?)' : ''}
         AND (instr(lower(COALESCE(label,'')),lower(?))>0 OR instr(address_id,?)>0)`,
         [now,now,now,...(boundary??[]),search,search,n+1],'ORDER BY account_addresses.created_at DESC,address_id DESC LIMIT ?');
-    return {items:await withAgentCards(tx,rows.slice(0,n).map(r=>addressView(addressSnapshot(r)))),nextCursor:rows.length>n ? prefix+isoUtc(rows[n-1].created_at)+'/'+rows[n-1].address_id : null};
+    return {items:withA2aInterface(url,await withAgentCards(tx,rows.slice(0,n).map(r=>addressView(addressSnapshot(r))))),nextCursor:rows.length>n ? prefix+isoUtc(rows[n-1].created_at)+'/'+rows[n-1].address_id : null};
 }

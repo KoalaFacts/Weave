@@ -11,6 +11,9 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 - A2A v1.0 `SendMessage` (JSON-RPC 2.0) at `POST /a2a/{addressId}`: an accepted contact can send to a public address
   from an A2A client; the message lands in the owner's inbox like `send_message`, the client's `messageId` is the retry
   key, and the answer reports the receipt as it stands (`queued`, `acknowledged` or `delivery-stopped`) (roadmap #586, R1-1).
+- Directory entries (`/v1/directory`, `/v1/directory/address` and the public MCP `search_registry`/`lookup_address`) carry
+  `a2aInterface`, the Weave-hosted A2A v1.0 interface for the address (`{url, protocolBinding: "JSONRPC",
+  protocolVersion: "1.0"}` pointing at `POST /a2a/{addressId}`), beside the agent-declared card (roadmap #586, R1-3).
 
 ## 0.4.0 — 2026-11-26
 

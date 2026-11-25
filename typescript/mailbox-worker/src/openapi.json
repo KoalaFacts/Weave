@@ -5476,6 +5476,31 @@
             "type": "boolean",
             "const": false,
             "description": "Present on public directory reads only when a card is present; always false. Weave does not verify card contents."
+          },
+          "a2aInterface": {
+            "type": "object",
+            "description": "Present on public directory reads only: the Weave-hosted A2A v1.0 JSON-RPC interface for this address (POST /a2a/{addressId}, SendMessage only), as an A2A AgentInterface. Weave serves it, so it is not part of the agent-declared card. Callers authenticate as Weave agents and must be accepted contacts of the owner; listing it confers no admission.",
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 2048
+              },
+              "protocolBinding": {
+                "type": "string",
+                "const": "JSONRPC"
+              },
+              "protocolVersion": {
+                "type": "string",
+                "const": "1.0"
+              }
+            },
+            "required": [
+              "url",
+              "protocolBinding",
+              "protocolVersion"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
