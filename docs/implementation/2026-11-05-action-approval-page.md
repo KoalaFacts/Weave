@@ -16,6 +16,7 @@ The action itself carries this address as `approvalUrl` (HTTP API and the MCP ac
 know the authorization server. It is set only while the action is pending, and only on a relay with a first-party
 authorization server: one reached through the `AUTH_SERVER` Service Binding at an HTTPS `OAUTH_ISSUER`. A third-party
 issuer (introspection) hosts no such page, so it is null there, as it is once the action is decided or expired.
+*2026-11-25: the introspection mode is deleted, so `approvalUrl` is null only on a relay without OAuth configured.*
 
 This was chosen over letting the app approve on the owner's behalf, option A1 in the owner's discussion. A2 keeps
 the existing guarantee: Weave itself verifies the human, so approval does not depend on the app's own security. A1
