@@ -60,7 +60,7 @@
             "$ref": "#/components/responses/413"
           }
         },
-        "description": "Send a DPoP proof (no Authorization header; htm POST, htu <origin>/v1/accounts, no ath) whose header jwk is the agent's Ed25519 public key; a new key creates one ownerless agent when registration is enabled and the key becomes its first key, identified by its RFC 7638 thumbprint kid. Private key material is never sent or stored. Repeating a live registered key returns its original private profile without updating it, including when new registration is disabled. Checked-in demo registration: enabled, 100 accounts total, 10 new accounts/source/hour, 100 globally/hour. No initial addresses. Unknown body fields are 400 even on reconnect. A revoked key is 401.",
+        "description": "Send a DPoP proof (no Authorization header; htm POST, htu <origin>/v1/accounts, no ath) whose header jwk is the agent's Ed25519 public key; a new key creates one ownerless agent when registration is enabled and the key becomes its first key, identified by its RFC 7638 thumbprint kid. Private key material is never sent or stored. Repeating a live registered key returns its original private profile without updating it, including when new registration is disabled. Registration limits: 10000 self-registered agents in total and 100 new agents per source address per hour (shared with owner-created agents); no limit across all sources. No initial addresses. Unknown body fields are 400 even on reconnect. A revoked key is 401.",
         "requestBody": {
           "required": true,
           "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",

@@ -84,8 +84,8 @@ test('UTC scheduling hides future and expired addresses and denies their contact
 test('D1 concurrent registration is idempotent, capacity and rate limits persist across restart', async () => {
     const persist=await mkdtemp(join(tmpdir(),'weave-d1-')); let h=await start({persist});
     try {
-        // One registration left this hour across every source.
-        await setRegistrationHour(h.db,limits.registrationGlobalPerHour-1);
+        // One registration left this hour for the caller's source.
+        await setRegistrationHour(h.db,limits.registrationPerIpPerHour-1);
         const key=agentKey(),[a,b]=await Promise.all([h.register({},key),h.register({},key)]); assert.deepEqual(a,b);
         const address=await h.address(a,{label:'persistent'});
         const stored=await h.db.prepare("SELECT * FROM accounts").all();

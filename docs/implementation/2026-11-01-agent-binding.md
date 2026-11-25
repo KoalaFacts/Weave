@@ -147,6 +147,12 @@ listed; binding, keys and the unclaimed limits above are unchanged.
   `typescript/mailbox-worker/src/limits.ts`; `OWNED_AGENTS_PER_HUMAN` is no
   longer read. The hourly registration limits moved there too (1000 globally,
   100 per source address).
+- **Since 2026-11-25 (later) only the per-source hourly limit remains** (owner
+  request on #365): the 1000-per-hour limit across all sources is removed, so a
+  busy hour elsewhere no longer refuses a new agent. Stale `global` counter rows
+  are deleted by the bounded cleanup in `admitRegistration`.
+  `createOwnedAgent_FullRetiredGlobalCounter_StillCreatesAndCountsOnlyTheSource`
+  fails on the previous code (mutation check: restoring the global check).
 - **Lists are paged.** D1 refuses a statement with more than 100 bound
   parameters, and the owner overview passed every owned agent's ID into `IN (…)`
   lists, so with the limit raised it would have failed past about 90 agents

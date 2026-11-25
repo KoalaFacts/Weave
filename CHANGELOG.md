@@ -6,6 +6,15 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ## Unreleased
 
+### Changed
+
+- New agents have no hourly limit across all sources any more (owner request on #365, 2026-11-25): only the 100 per
+  source address per hour remains, for self-registered and human-owned agents together. Old `global` counter rows age out
+  through the existing bounded cleanup.
+- The auth Worker's open dynamic client registration (`/register`) has only the per-address `REGISTRATION_LIMITER`
+  budget; `REGISTRATION_GLOBAL_LIMITER` (100 per minute across all sources) is retired, and the next `update-demo`
+  publishes the Worker without it, so nothing needs deleting by hand.
+
 ## 0.3.0 — 2026-11-25
 
 Everything merged after 0.2.0 (`b7ffadd`) up to and including #580: the last two parts of the owner's "fewer runtime
