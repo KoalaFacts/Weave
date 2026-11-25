@@ -3,15 +3,11 @@ import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { start, payload } from './harness.ts';
 import { seedMessage,seedRequest,seedChannel,messageRow,relationSnapshot,messageSnapshot } from './storage-fixtures.ts';
-import { build } from 'esbuild';
 import { cleanup } from '../src/limits.ts';
+import { scheduledCleanup } from './enabled-cleanup.ts';
 const DAY=86400000;
-// The production cleanup module, evaluated with the policy a test chooses; the deployed policy is `cleanup` (off).
-const built=await build({entryPoints:['src/cleanup.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
-const {sweep}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/cleanup.ts');
-const enabled={maximum:128,milliseconds:2000};
 async function worker(h){const result=await (await h.mf.getWorker()).scheduled({cron:'*/5 * * * *',scheduledTime:Date.now()});assert.equal(result.outcome,'ok');}
-async function scheduled(h,policy=enabled){return sweep({db:h.db},true,policy);}
+async function scheduled(h,policy=undefined){return scheduledCleanup(h.db,policy);}
 async function seed(h,sender,recipient,p,state='pending',terminalAt=null){
     const record={receipt:{messageId:p.messageId,senderMailboxId:sender,recipientMailboxId:recipient,state,expiresAt:p.expiresAt,terminalAt},generation:1,version:1,payload:p,size:Buffer.from(p.bytes,'base64').length,expiresTicks:(BigInt(Date.parse(p.expiresAt))*10000n).toString(),fingerprint:'synthetic-retention-fixture',purpose:0,request:null};
     await seedMessage(h.db,record);return record;
