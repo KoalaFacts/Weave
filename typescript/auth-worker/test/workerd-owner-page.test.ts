@@ -201,7 +201,10 @@ subscribe("undici:client:sendHeaders",message=>{
 subscribe("undici:client:connected",message=>{
   const {socket,connectParams}=message as {socket:import("node:net").Socket;connectParams:{port:string|number}};
   if(String(connectParams.port)!==sharedPort)return;
-  socket.once("end",()=>{if(sharedPort)serverClosed.push(lastRequest.get(socket)??"(no request)");});
+  const closed=(how:string)=>()=>{if(sharedPort)serverClosed.push(how+" after "+(lastRequest.get(socket)??"(no request)"));};
+  socket.once("end",closed("closed"));
+  // undici destroys idle sockets itself (UND_ERR_INFO); only a reset from workerd counts.
+  socket.once("error",(error:NodeJS.ErrnoException)=>{if(error.code==="ECONNRESET"||error.code==="EPIPE")closed("reset")();});
 });
 before(async()=>{shared=await start();sharedPort=new URL(String(await shared.mf.ready)).port;},{timeout:60_000});
 after(async()=>{sharedPort="";await stop(shared);});
