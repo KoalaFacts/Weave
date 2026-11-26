@@ -24,6 +24,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "stale-authentication":"Sign in with GitHub again, then retry: this needs a sign-in from the last 10 minutes.",
   frozen:"This GitHub identity is frozen; contact the operator.",
   "not-found":"That request, key or connected client was not found.",
+  "invalid-link":"That link is not a full https:// address, so nothing was recorded. Check it and try again, or leave it empty.",
   "not-pending":"That request was already decided or cancelled.",
   expired:"That request has expired.",
   "agent-limit":"You already own as many agents as this server allows.",
@@ -344,7 +345,7 @@ function settledPlan(about:SettledPlanView|null|undefined):string{
 }
 
 /** A link the page may show for a published post: an absolute https URL only, so a stored value can never run script. */
-const publishedLink=(url:string|null|undefined)=>typeof url==="string"&&url.startsWith("https://")&&URL.canParse(url)?url:null;
+export const publishedLink=(url:string|null|undefined)=>typeof url==="string"&&url.startsWith("https://")&&URL.canParse(url)?url:null;
 
 /**
  * Which app decided, when the owner let one approve or reject for them; a mailbox that predates it, or a malformed value, adds nothing.

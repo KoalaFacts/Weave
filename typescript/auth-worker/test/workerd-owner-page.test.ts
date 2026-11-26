@@ -785,6 +785,10 @@ test("actionPage_SettleUnknownOutcome_RecordedOnceAndNeverSent",{timeout:60_000}
   // The owner page at /account does not take the action page's settle token.
   assert.equal(result(await postAccount(notPosted,cookie)),"not-found");
   assert.equal(await database.prepare("SELECT count(*) n FROM external_action_settlements WHERE action_id=?").bind(action.actionId).first("n"),0);
+  // A link that is not a full https address is named as such, and nothing is recorded.
+  for(const bad of ["https://","http://example.com/post","javascript:alert(1)"])
+    assert.ok((await (await post(posted,{postUrl:bad})).text()).includes("That link is not a full https:// address"),bad);
+  assert.equal(await database.prepare("SELECT count(*) n FROM external_action_settlements WHERE action_id=?").bind(action.actionId).first("n"),0);
   const recorded=await (await post(posted,{postUrl:url})).text();
   assert.ok(recorded.includes("Recorded. Weave keeps what you found with this action"),recorded);
   const row=await database.prepare("SELECT finding,post_url,settled_by FROM external_action_settlements WHERE action_id=?").bind(action.actionId).first<{finding:string;post_url:string;settled_by:string}>();

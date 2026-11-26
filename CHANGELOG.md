@@ -25,6 +25,7 @@ Production must apply this table in the next release, or the deploy stops before
 - The owner's action page records, once, what the owner found on the platform for their own action whose outcome is
   `unknown`: "It was posted" (optional `https` link) or "It was not posted", with who and when. The action stays
   `unknown` and is never sent again (#560 option 1, S2).
+  A link that is not a full `https://` address is named as such on the page, and nothing is recorded.
 
 ## 0.5.0 — 2026-11-26
 
