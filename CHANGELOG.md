@@ -6,6 +6,12 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ## Unreleased
 
+## 0.5.0 — 2026-11-26
+
+Everything merged after 0.4.0 (`9439ead`) up to and including #590: the first A2A steps of roadmap #586. No schema
+change and no opt-in on the production dispatch. A new HTTP route and an additive directory field; no published HTTP or
+MCP contract changes incompatibly, hence a minor version.
+
 ### Added
 
 - A2A v1.0 `SendMessage` (JSON-RPC 2.0) at `POST /a2a/{addressId}`: an accepted contact can send to a public address
