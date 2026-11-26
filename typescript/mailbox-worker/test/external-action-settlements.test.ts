@@ -112,3 +112,15 @@ test('settleAction_AnotherHumansOrFrozenOrNotUnknown_Refused', () => scenario(as
     assert.deepEqual(await decide(h, humanId, {kind: 'settle-action', requestId: actionId, finding: 'not_posted', postUrl: null}), {ok: false, reason: 'frozen'});
     assert.equal(await settlement(h, actionId), null);
 }));
+
+test('settleAction_ConcurrentFindings_ExactlyOneRecorded', () => scenario(async ({h, respond, calls}) => {
+    const {humanId, actionId} = await unknownAction(h, respond);
+    const findings = ['posted', 'not_posted', 'posted'] as const;
+    const results = await Promise.all(findings.map(finding =>
+        decide(h, humanId, {kind: 'settle-action', requestId: actionId, finding, postUrl: null})));
+    assert.equal(results.filter(r => (r as {ok: boolean}).ok).length, 1, JSON.stringify(results));
+    for (const r of results) if (!(r as {ok: boolean}).ok) assert.deepEqual(r, {ok: false, reason: 'not-pending'});
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM external_action_settlements WHERE action_id=?').bind(actionId).first<number>('n')), 1);
+    assert.equal(await status(h, actionId), 'unknown');
+    assert.equal(calls.length, 1);
+}));

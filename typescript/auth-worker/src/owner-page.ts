@@ -378,7 +378,7 @@ function sentDetails(settled:SettledActionView):string{
 
 /**
  * For the owner's own action whose outcome is unknown: what they recorded finding on the platform, or, while nothing is recorded,
- * the two forms that record it once. The link is the owner's own input, shown only as text when it is a well-formed https URL.
+ * the two forms that record it once. The link is the owner's own input: linked (escaped) only when it is a well-formed https URL.
  */
 function settlementSection(settlement:SettlementView|null|undefined,actionId:string,tokens:ReadonlyMap<string,string>):string{
   if(settlement){
