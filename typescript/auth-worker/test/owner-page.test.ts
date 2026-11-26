@@ -88,7 +88,8 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,26);
+  assert.equal(Object.keys(ownerResultText).length,27);
+  assert.ok((await html(ownerPage(base(),human,new Map(),"invalid-link",now))).includes("That link is not a full https:// address, so nothing was recorded."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"account-changed",now))).includes("so it can no longer be approved. Reject it; your agent can propose it again."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-pending",now))).includes("Access is revoked; token clean-up will be retried on your next visit."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-complete",now))).includes("Access is revoked and token clean-up is complete."));
