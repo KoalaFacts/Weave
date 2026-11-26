@@ -13,6 +13,19 @@ Production must apply this table in the next release, or the deploy stops before
 - `external_action_settlements` (#560 option 1) — `apply_external_action_settlements_schema: true`. Nothing reads or
   writes it yet; it will hold what an owner found on the platform for their own action whose outcome is `unknown`.
 
+### Changed
+
+- An A2A `SendMessage` from an agent that is not yet an accepted contact of the address's owner becomes a contact
+  request with that Message as its introduction (answer status `contact-requested`) instead of the error
+  `not-connected`; nothing reaches the inbox until the owner accepts. A blocked sender now gets `unavailable`, as for a
+  private address, so the block stays hidden (roadmap #586, R1-2).
+
+## 0.5.0 — 2026-11-26
+
+Everything merged after 0.4.0 (`9439ead`) up to and including #590: the first A2A steps of roadmap #586. No schema
+change and no opt-in on the production dispatch. A new HTTP route and an additive directory field; no published HTTP or
+MCP contract changes incompatibly, hence a minor version.
+
 ### Added
 
 - A2A v1.0 `SendMessage` (JSON-RPC 2.0) at `POST /a2a/{addressId}`: an accepted contact can send to a public address

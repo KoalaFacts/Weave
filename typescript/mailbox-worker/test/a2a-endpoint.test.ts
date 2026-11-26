@@ -103,16 +103,55 @@ test('a2aSendMessage_RetryAfterBlockOrAck_ReportsTheReceiptAsItStands',async()=>
     }finally{await h.close();}
 });
 
-test('a2aSendMessage_NotAContactOrBlockedOrNotPublic_RefusedAndNothingStored',async()=>{
+test('a2aSendMessage_UnknownSender_BecomesContactRequestUntilAccepted',async()=>{
     const h=await start();
     try{
         const {a,b}=await pair(h);
-        const notConnected=await send(h,a,b.cardId,rpc(userMessage('hi')));
-        assert.equal(notConnected.status,200);assert.equal(notConnected.body.error.code,-32000);assert.equal(notConnected.body.error.data.code,'not-connected');
+        const intro=userMessage('hello, may I write to you?',randomUUID(),{contextId:'ctx-intro'});
+        const first=await send(h,a,b.cardId,rpc(intro));
+        assert.equal(first.status,200);assert.equal(first.body.error,undefined);
+        const reply=first.body.result.message;
+        assert.equal(reply.role,'ROLE_AGENT');assert.equal(reply.contextId,'ctx-intro');assert.equal(first.body.result.task,undefined);
+        assert.equal(reply.parts[1].data.weave.status,'contact-requested');
+        assert.match(reply.parts[0].text,/contact request/);assert.match(reply.parts[0].text,/must accept/);assert.doesNotMatch(reply.parts[0].text,/Queued/);
+        const receipt=reply.parts[1].data.weave.receipt;
+        assert.equal(receipt.isConnected,false);assert.equal(receipt.request.status,'pending');
+        assert.equal(receipt.request.requesterMailboxId,a.accountId);assert.equal(receipt.request.recipientMailboxId,b.accountId);
+        assert.equal(JSON.stringify(first.body).includes('connectionToken'),false,'channel tokens never leave the server');
+        // The owner sees a pending contact request whose introduction is the A2A Message; nothing is an ordinary message.
+        const requests=(await h.ok('/v1/contacts/requests',b)).items.filter((item:any)=>item.requesterMailboxId===a.accountId);
+        assert.equal(requests.length,1);assert.equal(requests[0].status,'pending');assert.equal(requests[0].requestId,receipt.request.requestId);
+        // A retry with the same messageId reports the same request and creates nothing new.
+        const retry=await send(h,a,b.cardId,rpc(intro));
+        assert.equal(retry.body.result.message.parts[1].data.weave.status,'contact-requested');
+        assert.equal(retry.body.result.message.parts[1].data.weave.receipt.request.requestId,receipt.request.requestId);
+        assert.equal((await h.ok('/v1/contacts/requests',b)).items.filter((item:any)=>item.requesterMailboxId===a.accountId).length,1);
+        // While the request is pending, a different Message is refused instead of opening a second request.
+        const another=await send(h,a,b.cardId,rpc(userMessage('again?')));
+        assert.equal(another.body.error.code,-32000);assert.equal(another.body.error.data.code,'conflict');
+        // Once the owner accepts, A2A messages reach the inbox as before.
+        await h.ok('/v1/contacts/requests/'+receipt.request.requestId+'/decision',b,'POST',
+            {requesterAccountId:a.accountId,expectedGeneration:receipt.generation,status:'accepted',reply:null});
+        const after=await send(h,a,b.cardId,rpc(userMessage('now a contact')));
+        assert.equal(after.body.result.message.parts[1].data.weave.status,'queued');
+        // A late retry of the introduction reports the request as it stands now, not "must accept".
+        const late=(await send(h,a,b.cardId,rpc(intro))).body.result.message;
+        assert.equal(late.parts[1].data.weave.status,'contact-requested');assert.match(late.parts[0].text,/now accepted/);
+        assert.deepEqual((await inboxFrom(h,b,a)).map(item=>item.body.parts[0].text).filter(text=>text==='now a contact'),['now a contact']);
+    }finally{await h.close();}
+});
+
+test('a2aSendMessage_BlockedOrNotPublic_RefusedAndNothingStored',async()=>{
+    const h=await start();
+    try{
+        const {a,b}=await pair(h);
         const generation=await connect(h,a,b);
         await h.ok('/v1/contacts/blocks',b,'PUT',{peerAccountId:a.accountId,expectedGeneration:generation});
+        // A blocked sender is answered like a private address, so the block stays hidden, and no new request is made.
+        const requestsBefore=(await h.ok('/v1/contacts/requests',b)).items.length;
         const blocked=await send(h,a,b.cardId,rpc(userMessage('hi')));
-        assert.equal(blocked.body.error.code,-32000);assert.equal(blocked.body.error.data.code,'not-connected');assert.equal(blocked.body.result,undefined);
+        assert.equal(blocked.body.error.code,-32000);assert.equal(blocked.body.error.data.code,'unavailable');assert.equal(blocked.body.result,undefined);
+        assert.equal((await h.ok('/v1/contacts/requests',b)).items.length,requestsBefore);
         // A private address and an unknown one answer like the directory: unavailable.
         assert.equal((await send(h,a,a.cardId,rpc(userMessage('x')))).body.error.data.code,'unavailable');
         assert.equal((await send(h,a,randomUUID(),rpc(userMessage('x')))).body.error.data.code,'unavailable');
