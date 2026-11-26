@@ -10,7 +10,7 @@ import {consentPage,manageScope,ownerConsentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
 import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
-import {readOwnerAction,readConnectForm,destructiveKinds,ownerActionToken} from "./owner-forms.ts";
+import {readActionPageForm,readOwnerAction,readConnectForm,destructiveKinds,ownerActionToken} from "./owner-forms.ts";
 import {actionDecisionPage,actionPage,actionPagePath,ownerFormTokens,ownerPage,recoveryCodePage,type PendingActionView} from "./owner-page.ts";
 import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
 import {beginYoutubeConnect,completeYoutubeConnect,youtubeCallbackPath,type YoutubeConnectEnv} from "./youtube-connect.ts";
@@ -317,6 +317,8 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
   if(action.kind==="connect-youtube")return beginYoutubeConnect(env,session,action.agentId,now);
   // Connecting a platform needs the values its own form at /account/connect carries.
   if(action.kind==="connect-account")return accountRedirect("not-found");
+  // Settling an unknown outcome is offered only on the action's own page, with the link field its form carries.
+  if(action.kind==="settle-action")return accountRedirect("not-found");
   let result:OwnerActionResult;
   try{result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});}
   catch{return directoryUnavailable();}
@@ -380,6 +382,10 @@ async function actionApproval(req:Request,env:Env,actionId:string):Promise<Respo
       }else if(!view.frozen&&view.settled?.status==="approved"){
         // An approval the agent has not used yet can be withdrawn; the mailbox refuses it once sending has started.
         tokens.set("reject-action:"+actionId,await ownerActionToken(env.HUMAN_SESSION_KEY,session.humanId,{kind:"reject-action",requestId:actionId},now));
+      }else if(!view.frozen&&view.settled?.status==="unknown"&&view.settled.settlement===null){
+        // An unknown outcome the owner has not settled yet: they may record once what they found on the platform.
+        for(const finding of ["posted","not_posted"] as const)
+          tokens.set("settle-action:"+finding+":"+actionId,await ownerActionToken(env.HUMAN_SESSION_KEY,session.humanId,{kind:"settle-action",requestId:actionId,finding},now));
       }
     }catch{
       console.error(failureLog.formSigning);
@@ -387,14 +393,18 @@ async function actionApproval(req:Request,env:Env,actionId:string):Promise<Respo
     }
     return actionPage(view,session,actionId,tokens,now);
   }
-  const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
-  if(action==="expired")return actionDecisionPage(session,actionId,"form-expired");
+  const posted=await readActionPageForm(env.HUMAN_SESSION_KEY,req,session,now);
+  if(posted==="expired")return actionDecisionPage(session,actionId,"form-expired");
+  const action=posted?.action;
   // Only a decision on this page's action is taken here; any other signed form belongs to the owner page.
-  if(!action||(action.kind!=="confirm-action"&&action.kind!=="reject-action")||action.requestId!==actionId)return actionDecisionPage(session,actionId,"not-found");
+  if(!action||(action.kind!=="confirm-action"&&action.kind!=="reject-action"&&action.kind!=="settle-action")||action.requestId!==actionId)return actionDecisionPage(session,actionId,"not-found");
   let result:OwnerActionResult;
-  try{result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});}
+  try{
+    result=await env.MAILBOX.ownerAction(action.kind==="settle-action"?{humanId:session.humanId,authAt:session.authAt,...action,postUrl:posted.postUrl}:
+      {humanId:session.humanId,authAt:session.authAt,...action});
+  }
   catch{return directoryUnavailable();}
-  return actionDecisionPage(session,actionId,result.ok?(action.kind==="confirm-action"?"approved":"rejected"):result.reason);
+  return actionDecisionPage(session,actionId,result.ok?(action.kind==="confirm-action"?"approved":action.kind==="settle-action"?"settled":"rejected"):result.reason);
 }
 const mediaPath=/^\/account\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 /** GET /account/media/{actionId}/{mediaId}: a file an action of the owner's agent names, for the approval preview. */

@@ -521,3 +521,25 @@ test("actionPage_FailedWithKnownCode_ExplainsWhatHappenedAndWhatToDo",async()=>{
     assert.ok(!body.includes("could not open")&&!body.includes("Reason:"),status+": "+body);
   }
 });
+
+// The owner's own unknown action offers the two settle forms once, posting back to its page; a recorded finding is shown instead.
+test("actionPage_UnknownOutcome_OffersSettleFormsUntilRecorded",async()=>{
+  const actionId=randomUUID();
+  const tokens=new Map([["settle-action:posted:"+actionId,"posted<token>"],["settle-action:not_posted:"+actionId,"not<token>"]]);
+  const page=async(settled:SettledActionView,map:ReadonlyMap<string,string>=tokens)=>html(actionPage({frozen:false,action:null,settled},human,actionId,map,now));
+  const open=await page({status:"unknown",failure:null,settlement:null});
+  const target='<form method="post" action="/account/actions/'+actionId+'">';
+  assert.ok(open.includes(target+'<input type="hidden" name="action" value="posted&#60;token&#62;"><label>Link to the post (optional) <input type="url" name="postUrl" maxlength="2048" pattern="https://.+" placeholder="https://"></label> <button type="submit">It was posted</button></form>'),open);
+  assert.ok(open.includes(target+'<input type="hidden" name="action" value="not&#60;token&#62;"><button type="submit">It was not posted</button></form>'),open);
+  for(const status of ["approved","rejected","expired","dispatching","completed","failed"]){
+    const body=await page({status,failure:null,settlement:null});
+    assert.ok(!body.includes("It was posted")&&!body.includes("What did you find"),status+": "+body);
+  }
+  assert.ok(!(await page({status:"unknown",failure:null,settlement:null},new Map())).includes("<form"),"no token, no form");
+  const posted=await page({status:"unknown",failure:null,settlement:{finding:"posted",postUrl:"https://x.com/a/status/1?<b>",settledAt:"2026-11-25T23:00:00.000Z"}});
+  assert.ok(posted.includes("You recorded on 2026-11-25T23:00:00.000Z that it was posted.")&&posted.includes('href="https://x.com/a/status/1?&#60;b&#62;"')&&!posted.includes("<form"),posted);
+  const notPosted=await page({status:"unknown",failure:null,settlement:{finding:"not_posted",postUrl:null,settledAt:"2026-11-25T23:00:00.000Z"}});
+  assert.ok(notPosted.includes("that it was not posted.")&&!notPosted.includes("<form"),notPosted);
+  const unsafe=await page({status:"unknown",failure:null,settlement:{finding:"posted",postUrl:"javascript:alert(1)",settledAt:"2026-11-25T23:00:00.000Z"}});
+  assert.ok(unsafe.includes("that it was posted.")&&!unsafe.includes("javascript:"),unsafe);
+});

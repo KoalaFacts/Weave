@@ -10,8 +10,8 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 Production must apply this table in the next release, or the deploy stops before any change:
 
-- `external_action_settlements` (#560 option 1) — `apply_external_action_settlements_schema: true`. Nothing reads or
-  writes it yet; it will hold what an owner found on the platform for their own action whose outcome is `unknown`.
+- `external_action_settlements` (#560 option 1) — `apply_external_action_settlements_schema: true`. It
+  holds what an owner found on the platform for their own action whose outcome is `unknown`.
 
 ### Changed
 
@@ -19,6 +19,12 @@ Production must apply this table in the next release, or the deploy stops before
   request with that Message as its introduction (answer status `contact-requested`) instead of the error
   `not-connected`; nothing reaches the inbox until the owner accepts. A blocked sender now gets `unavailable`, as for a
   private address, so the block stays hidden (roadmap #586, R1-2).
+
+### Added
+
+- The owner's action page records, once, what the owner found on the platform for their own action whose outcome is
+  `unknown`: "It was posted" (optional `https` link) or "It was not posted", with who and when. The action stays
+  `unknown` and is never sent again (#560 option 1, S2).
 
 ## 0.5.0 — 2026-11-26
 

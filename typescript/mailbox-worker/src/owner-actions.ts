@@ -6,7 +6,7 @@ import { limits } from './limits.ts';
 import { rejectKeyRequest } from './key-requests.ts';
 import { maxLiveOwnerGrants, revokeGrantIn, stopAppDecisionsIn } from './client-grants.ts';
 import { maxLiveWebhooks, type WebhookView } from './app-webhooks.ts';
-import { confirmExternalAction, pendingActionsShownToOwner, pendingForOwner, recentActionsShownToOwner, recentForOwner, rejectExternalAction, type OwnerExternalAction, type OwnerRecentAction } from './external-actions.ts';
+import { confirmExternalAction, pendingActionsShownToOwner, pendingForOwner, recentActionsShownToOwner, recentForOwner, rejectExternalAction, settleExternalAction, settlementUrlMaxLength, type OwnerExternalAction, type OwnerRecentAction, type SettlementFinding } from './external-actions.ts';
 import { ownedCredentials, revokeExternalCredential, type OwnerCredential } from './external-credentials.ts';
 import { publishingAdapter, publishingAdapters } from './external-providers.ts';
 import { ownerConnector, type OwnerConnector } from './publishing.ts';
@@ -49,6 +49,7 @@ export type OwnerAction = {humanId: string; authAt: number} & (
     | {kind: 'confirm-binding'; requestId: string; keysDigest: string}
     | {kind: 'confirm-action'; requestId: string; planDigest: string}
     | {kind: 'reject-binding' | 'confirm-key' | 'reject-key' | 'reject-action'; requestId: string}
+    | {kind: 'settle-action'; requestId: string; finding: SettlementFinding; postUrl: string | null}
     | {kind: 'revoke-key'; agentId: string; kid: string}
     | {kind: 'issue-recovery-code'; agentId: string}
     | {kind: 'revoke-grant' | 'stop-app-decisions'; grantId: string}
@@ -68,7 +69,8 @@ const kidPattern = /^[A-Za-z0-9_-]{43}$/;
 const digestPattern = /^[A-Za-z0-9_-]{43}$/;
 /** A credential reference as agents name it and the store keeps it: the provider, ':' and the account's own id. */
 export const credentialRefPattern = /^[A-Za-z0-9._:-]{1,64}$/;
-const destructive = new Set<string>(['confirm-binding', 'confirm-key', 'revoke-key', 'issue-recovery-code', 'confirm-action']);
+// settle-action records a finding that cannot be changed afterwards, so it needs a fresh sign-in like an approval.
+const destructive = new Set<string>(['confirm-binding', 'confirm-key', 'revoke-key', 'issue-recovery-code', 'confirm-action', 'settle-action']);
 const notFound: OwnerFailure = {ok: false, reason: 'not-found'};
 const unavailable: OwnerFailure = {ok: false, reason: 'unavailable'};
 
@@ -182,12 +184,22 @@ function validShape(input: unknown): OwnerAction | null {
         case 'confirm-binding': return uuid(action.requestId) && typeof action.keysDigest === 'string' && digestPattern.test(action.keysDigest) ? input as OwnerAction : null;
         case 'confirm-action': return uuid(action.requestId) && typeof action.planDigest === 'string' && digestPattern.test(action.planDigest) ? input as OwnerAction : null;
         case 'reject-binding': case 'confirm-key': case 'reject-key': case 'reject-action': return uuid(action.requestId) ? input as OwnerAction : null;
+        case 'settle-action': return uuid(action.requestId) && validSettlement(action.finding, action.postUrl) ? input as OwnerAction : null;
         case 'revoke-key': return uuid(action.agentId) && typeof action.kid === 'string' && kidPattern.test(action.kid) ? input as OwnerAction : null;
         case 'issue-recovery-code': return uuid(action.agentId) ? input as OwnerAction : null;
         case 'revoke-grant': case 'stop-app-decisions': return typeof action.grantId === 'string' && grantIdPattern.test(action.grantId) ? input as OwnerAction : null;
         case 'revoke-credential': return uuid(action.agentId) && typeof action.credentialRef === 'string' && credentialRefPattern.test(action.credentialRef) ? input as OwnerAction : null;
         default: return null;
     }
+}
+
+/** `posted` with no link or an https link of at most 2048 characters; `not_posted` with no link. */
+function validSettlement(finding: unknown, postUrl: unknown): boolean {
+    if (finding === 'not_posted') return postUrl === null;
+    if (finding !== 'posted') return false;
+    if (postUrl === null) return true;
+    if (typeof postUrl !== 'string' || postUrl.length > settlementUrlMaxLength || !postUrl.startsWith('https://')) return false;
+    try { return new URL(postUrl).protocol === 'https:'; } catch { return false; }
 }
 
 type DecidedAction = Exclude<OwnerAction, {kind: 'issue-recovery-code'}>;
@@ -203,6 +215,7 @@ async function decide(env: Env, tx: Transaction, input: DecidedAction, at: bigin
         case 'reject-key': return rejectKeyRequest(tx, input.humanId, input.requestId, at);
         case 'confirm-action': return confirmExternalAction(env, tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.planDigest, at);
         case 'reject-action': return rejectExternalAction(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
+        case 'settle-action': return settleExternalAction(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.finding, input.postUrl, at);
         case 'revoke-key': return revokeKeyForOwner(tx, input.humanId, input.agentId, input.kid, at);
         // A protective action: no re-authentication window. The worst a stolen session does is disconnect the owner's own clients.
         case 'revoke-grant': return revokeGrantIn(tx, input.humanId, input.grantId);

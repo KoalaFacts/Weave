@@ -760,6 +760,44 @@ test("actionPage_OwnActionApprovedFailedOrUnknown_SaysWhatBecameOfIt",{timeout:6
   assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0);
 });
 
+// An unknown outcome can be settled once on the action's own page: it records what the owner found and never sends it again.
+test("actionPage_SettleUnknownOutcome_RecordedOnceAndNeverSent",{timeout:60_000},async()=>{
+  const human=await seedHuman(),{agent,action}=await proposeAction(human,"settle "+randomUUID());
+  const cookie=await sessionCookie(human);
+  await postActionPage(action.actionId,await pageToken(human,action.actionId,"Approve and allow sending once"),cookie);
+  const database=await db();
+  await database.prepare("UPDATE external_actions SET status='unknown',dispatched_at=decided_at WHERE action_id=?").bind(action.actionId).run();
+  const page=await (await actionPage(action.actionId,cookie)).text();
+  assert.ok(page.includes("What did you find on the platform?"),page);
+  assert.deepEqual(forms(page).map(x=>x.label),["It was not posted"]);
+  const posted=/name="action" value="([^"]+)"><label>Link to the post/.exec(page)?.[1];
+  assert.ok(posted,page);
+  const notPosted=forms(page)[0].token;
+  const url="https://www.linkedin.com/feed/update/urn:li:share:7";
+  const post=(token:string,fields:Record<string,string>={},from:string|null=issuer)=>shared.mf.dispatchFetch(issuer+"/account/actions/"+action.actionId,{method:"POST",redirect:"manual",
+    headers:{"Content-Type":"application/x-www-form-urlencoded",...from?{Origin:from}:{},Cookie:cookie},body:new URLSearchParams({action:token,...fields}).toString()});
+  // Another origin, or another human's session, records nothing.
+  assert.equal((await post(posted,{postUrl:url},"https://evil.example")).status,403);
+  const strangerCookie=await sessionCookie(await seedHuman());
+  const theirs=await shared.mf.dispatchFetch(issuer+"/account/actions/"+action.actionId,{method:"POST",redirect:"manual",headers:{"Content-Type":"application/x-www-form-urlencoded",
+    Origin:issuer,Cookie:strangerCookie},body:new URLSearchParams({action:posted,postUrl:url}).toString()});
+  assert.ok((await theirs.text()).includes("That request, key or connected client was not found."),"another human's session cannot use the owner's form");
+  // The owner page at /account does not take the action page's settle token.
+  assert.equal(result(await postAccount(notPosted,cookie)),"not-found");
+  assert.equal(await database.prepare("SELECT count(*) n FROM external_action_settlements WHERE action_id=?").bind(action.actionId).first("n"),0);
+  const recorded=await (await post(posted,{postUrl:url})).text();
+  assert.ok(recorded.includes("Recorded. Weave keeps what you found with this action"),recorded);
+  const row=await database.prepare("SELECT finding,post_url,settled_by FROM external_action_settlements WHERE action_id=?").bind(action.actionId).first<{finding:string;post_url:string;settled_by:string}>();
+  assert.deepEqual({...row},{finding:"posted",post_url:url,settled_by:human.humanId});
+  // Once only: the other form, opened before, changes nothing.
+  assert.ok((await (await post(notPosted)).text()).includes("This action is no longer waiting for a decision"));
+  assert.equal((await database.prepare("SELECT finding FROM external_action_settlements WHERE action_id=?").bind(action.actionId).first("finding")),"posted");
+  const after=await (await actionPage(action.actionId,cookie)).text();
+  assert.ok(after.includes("that it was posted.")&&after.includes('href="'+url+'"')&&!after.includes("<form"),after);
+  assert.equal((await executeAction(agent,action.actionId)).status,"unknown");
+  assert.equal(providerCalls.filter(call=>call.actionId===action.actionId).length,0,"settling never sends");
+});
+
 // An approval the agent has not used yet can be withdrawn on the action's page, and then nothing is ever sent.
 test("actionPage_WithdrawApprovalBeforeSending_RejectedAndNeverSent",{timeout:60_000},async()=>{
   const human=await seedHuman(),{agent,action}=await proposeAction(human,"withdraw "+randomUUID());
