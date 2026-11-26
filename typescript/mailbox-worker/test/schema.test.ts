@@ -19,10 +19,10 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
     const db=await database();
     try {
         const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);
-        assert.deepEqual(tables,['account_addresses','accounts','address_agent_cards','agent_access_tokens','agent_assertions','agent_keys','app_webhook_deliveries','app_webhooks','binding_requests','client_grants','contact_cards','contact_requests','contacts','counters','data_migrations','external_action_keys','external_actions','external_credentials','external_media','external_publications','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','mcp_idempotency','message_delivery','owner_grant_approvals','owner_grant_decisions','owner_grants','rate_limits','recovery_codes','stream_cursors','stream_leases']);
+        assert.deepEqual(tables,['account_addresses','accounts','address_agent_cards','agent_access_tokens','agent_assertions','agent_keys','app_webhook_deliveries','app_webhooks','binding_requests','client_grants','contact_cards','contact_requests','contacts','counters','data_migrations','external_action_keys','external_action_settlements','external_actions','external_credentials','external_media','external_publications','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','mcp_idempotency','message_delivery','owner_grant_approvals','owner_grant_decisions','owner_grants','rate_limits','recovery_codes','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),275);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),280);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
         // The archived legacy rows are never looked up by the removed account credential.
@@ -223,6 +223,23 @@ test('owner_grant_approvals keeps one row per grant and refuses unknown grants o
     } finally { db.close(); }
 });
 
+test('external_action_settlements keeps one settlement per action and refuses unknown actions or humans, other findings and bad post links',async()=>{
+    const db=await database();
+    try {
+        db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES('h1','github','42','2020-01-01T00:00:00Z','alice',0,0)").run();
+        db.prepare("INSERT INTO accounts(account_id,human_id,created_at) VALUES('a1','h1',0)").run();
+        for(const id of ['x1','x2','x3','x4'])db.prepare("INSERT INTO external_actions(action_id,account_id,provider,contract_revision,operation,content,credential_ref,credential_revision,target_account,plan_digest,status,created_at,expires_at,updated_at,decided_at,decided_by) VALUES(?,'a1','p','r','o','{}','c','1','t','d','rejected',1,100,20,20,'h1')").run(id);
+        const insert=db.prepare('INSERT INTO external_action_settlements(action_id,finding,post_url,settled_by,settled_at) VALUES(?,?,?,?,30)');
+        insert.run('x1','posted','https://example.com/p/1','h1');insert.run('x2','not_posted',null,'h1');insert.run('x3','posted',null,'h1');
+        for(const row of [['x1','not_posted',null,'h1'],['missing','posted',null,'h1'],['x1','posted',null,'missing'],['x1','maybe',null,'h1'],['x1','posted',null,null],
+            ['x2','not_posted','https://example.com/p/2','h1'],['x2','posted','http://example.com/p/2','h1'],['x2','posted','https://'+'a'.repeat(2041),'h1']])
+            assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        assert.throws(()=>db.prepare("INSERT INTO external_action_settlements(action_id,finding,settled_by) VALUES('x4','posted','h1')").run(),/NOT NULL constraint/i,'no default time');
+        assert.throws(()=>db.prepare("DELETE FROM external_actions WHERE action_id='x1'").run(),/constraint/i,'a settled action keeps its settlement');
+        assert.throws(()=>db.prepare("DELETE FROM humans WHERE human_id='h1'").run(),/constraint/i,'the settling owner is never deleted');
+        assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='external_action_settlements_human'").get()?.name,'external_action_settlements_human');
+    } finally { db.close(); }
+});
 test('owner_grant_decisions keeps one approval and one rejection per action and refuses unknown actions or grants and other decisions',async()=>{
     const db=await database();
     try {

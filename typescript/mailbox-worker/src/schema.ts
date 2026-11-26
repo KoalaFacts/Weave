@@ -303,6 +303,21 @@ export const ownerGrantDecisions = sqliteTable("owner_grant_decisions", {
     check("owner_grant_decisions_decision",sql`decision IN ('approved','rejected')`)
 ]);
 
+// What the owner found on the platform for one of their own external actions whose outcome is `unknown` (owner-approved
+// option 1 on #560, 2026-11-25): written only from the owner's own action page, at most once per action. The action keeps
+// status 'unknown' and is never re-sent; a retry still needs a new proposal and approval. post_url is only for 'posted'.
+export const externalActionSettlements = sqliteTable("external_action_settlements", {
+    action_id: text("action_id").notNull().primaryKey().references(() => externalActions.action_id, {onDelete:"restrict"}),
+    finding: text("finding").notNull(),
+    post_url: text("post_url"),
+    settled_by: text("settled_by").notNull().references(() => humans.human_id, {onDelete:"restrict"}),
+    settled_at: exactInteger("settled_at").notNull(),
+}, t => [
+    index("external_action_settlements_human").on(t.settled_by),
+    check("external_action_settlements_finding",sql`finding IN ('posted','not_posted')`),
+    check("external_action_settlements_post_url",sql`post_url IS NULL OR (finding='posted' AND post_url LIKE 'https://%' AND length(post_url)<=2048)`)
+]);
+
 // An https callback that the app holding one owner grant registers for status changes of the external actions of the
 // agents that grant may act for (push webhook W1, owner-approved 2026-11-23). secret_sealed is the per-webhook HMAC
 // secret, sealed at rest and shown to the app once. Rows are never deleted: revoked_at records the end, so every

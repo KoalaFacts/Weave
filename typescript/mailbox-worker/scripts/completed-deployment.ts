@@ -8,9 +8,10 @@ import { appWebhooksChange } from './approved-app-webhooks.ts';
 import { appWebhookDeliveriesChange } from './approved-app-webhook-deliveries.ts';
 import { ownerGrantApprovalsChange } from './approved-owner-grant-approvals.ts';
 import { ownerGrantDecisionsChange } from './approved-owner-grant-decisions.ts';
+import { externalActionSettlementsChange } from './approved-external-action-settlements.ts';
 
 const migrationGateSql="SELECT 1 found FROM sqlite_master WHERE type='trigger' AND name='data_migration_write_gate'";
-const metadataSql=new Set([ledgerTableSql,ledgerSql,migrationGateSql,...[externalActionKeysChange,ownerGrantsChange,appWebhooksChange,appWebhookDeliveriesChange,ownerGrantApprovalsChange,ownerGrantDecisionsChange].map(change=>change.liveTriggerSql),
+const metadataSql=new Set([ledgerTableSql,ledgerSql,migrationGateSql,...[externalActionKeysChange,ownerGrantsChange,appWebhooksChange,appWebhookDeliveriesChange,ownerGrantApprovalsChange,ownerGrantDecisionsChange,externalActionSettlementsChange].map(change=>change.liveTriggerSql),
     "SELECT name FROM sqlite_master WHERE type='table'",liveSchemaSql]);
 
 // Do not pass the underlying database or statements to schema inspection. Even

@@ -13,6 +13,7 @@ import { appWebhooksChange } from './approved-app-webhooks.ts';
 import { appWebhookDeliveriesChange } from './approved-app-webhook-deliveries.ts';
 import { ownerGrantApprovalsChange } from './approved-owner-grant-approvals.ts';
 import { ownerGrantDecisionsChange } from './approved-owner-grant-decisions.ts';
+import { externalActionSettlementsChange } from './approved-external-action-settlements.ts';
 import type { ApprovedSchemaChange } from './approved-schema-change.ts';
 
 interface WorkerConfig {
@@ -84,7 +85,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     // one-time OAuth bootstrap, and checked before any external operation.
     // Each approved additive schema change has its own opt-in; read all of them, so an ambiguous value fails before anything.
     const approved:ApprovedSchemaChange[]=[];
-    for(const [change,value] of [[externalActionKeysChange,env.WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA],[ownerGrantsChange,env.WEAVE_APPROVED_OWNER_GRANTS_SCHEMA],[appWebhooksChange,env.WEAVE_APPROVED_APP_WEBHOOKS_SCHEMA],[appWebhookDeliveriesChange,env.WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA],[ownerGrantApprovalsChange,env.WEAVE_APPROVED_OWNER_GRANT_APPROVALS_SCHEMA],[ownerGrantDecisionsChange,env.WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA]] as const)
+    for(const [change,value] of [[externalActionKeysChange,env.WEAVE_APPROVED_EXTERNAL_ACTION_KEYS_SCHEMA],[ownerGrantsChange,env.WEAVE_APPROVED_OWNER_GRANTS_SCHEMA],[appWebhooksChange,env.WEAVE_APPROVED_APP_WEBHOOKS_SCHEMA],[appWebhookDeliveriesChange,env.WEAVE_APPROVED_APP_WEBHOOK_DELIVERIES_SCHEMA],[ownerGrantApprovalsChange,env.WEAVE_APPROVED_OWNER_GRANT_APPROVALS_SCHEMA],[ownerGrantDecisionsChange,env.WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA],[externalActionSettlementsChange,env.WEAVE_APPROVED_EXTERNAL_ACTION_SETTLEMENTS_SCHEMA]] as const)
         if(change.optIn(value))approved.push(change);
     const names=approved.map(change=>change.table).join(' and ');
     if(approved.length&&databaseMode!=='completed-only')throw Error('The '+names+' schema opt-in requires completed-only mode; no mutation attempted.');

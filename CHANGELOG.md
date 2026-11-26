@@ -6,6 +6,13 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ## Unreleased
 
+### Schema (additive, behind its own opt-in on the production dispatch)
+
+Production must apply this table in the next release, or the deploy stops before any change:
+
+- `external_action_settlements` (#560 option 1) — `apply_external_action_settlements_schema: true`. Nothing reads or
+  writes it yet; it will hold what an owner found on the platform for their own action whose outcome is `unknown`.
+
 ### Changed
 
 - An A2A `SendMessage` from an agent that is not yet an accepted contact of the address's owner becomes a contact

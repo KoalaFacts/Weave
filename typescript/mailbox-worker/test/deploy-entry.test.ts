@@ -208,3 +208,20 @@ test('the owner_grant_decisions schema opt-in is a default-off manual input gate
     assert.doesNotMatch(repository,/OWNER_GRANT_DECISIONS/,'repository-scope and publish/demo releases never opt in');
     assert.equal((workflow.match(/WEAVE_APPROVED_OWNER_GRANT_DECISIONS_SCHEMA:/g)||[]).length,1);
 });
+
+test('the external_action_settlements schema opt-in is a default-off manual input gated twice and passed only to the production deploy',()=>{
+    const workflow=readFileSync(path,'utf8');
+    assert.match(workflow,/apply_external_action_settlements_schema:\n(?:\s+\w+:.*\n)*?\s+type: boolean\n\s+default: false/);
+    const verify=workflow.split(/^  verify:/m)[1].split(/^  deploy-repository:/m)[0];
+    const repository=workflow.split(/^  deploy-repository:/m)[1].split(/^  deploy-production:/m)[0];
+    const production=workflow.split(/^  deploy-production:/m)[1];
+    const gate=/WEAVE_RELEASE_EXTERNAL_ACTION_SETTLEMENTS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_external_action_settlements_schema \|\| 'false' \}\}/;
+    assert.match(verify,gate);assert.match(production,gate);
+    const gated=verify.indexOf('run: node typescript/mailbox-worker/scripts/approved-external-action-settlements.ts'),revalidated=production.indexOf('run: node scripts/approved-external-action-settlements.ts');
+    assert.ok(gated>=0&&gated<verify.indexOf('require-ci-success.ts'),'gated before other release work');
+    assert.ok(revalidated>=0&&revalidated<production.indexOf('node scripts/deploy.ts'),'revalidated inside production before the deploy');
+    assert.match(production,/WEAVE_APPROVED_EXTERNAL_ACTION_SETTLEMENTS_SCHEMA: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.apply_external_action_settlements_schema == true && 'true' \|\| 'false' \}\}/,
+        'an owner comment can never opt in');
+    assert.doesNotMatch(repository,/EXTERNAL_ACTION_SETTLEMENTS/,'repository-scope and publish/demo releases never opt in');
+    assert.equal((workflow.match(/WEAVE_APPROVED_EXTERNAL_ACTION_SETTLEMENTS_SCHEMA:/g)||[]).length,1);
+});
