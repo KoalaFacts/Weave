@@ -151,6 +151,7 @@ statements and refuses each weakened variant; `test/deploy.test.ts` applies exac
 refuses a missing opt-in, an extra index, an ambiguous value, maintain mode and the OAuth bootstrap before any external
 operation; `test/deploy-entry.test.ts` checks the workflow input is default-off and passed only to the production deploy.
 
+<<<<<<< HEAD
 S2a (2026-11-25) adds the mailbox's half of S2: the owner RPC `ownerAction` takes `settle-action` (`requestId`,
 `finding` `posted`/`not_posted`, `postUrl` an `https` link of at most 2048 characters for `posted`, else null) and
 `settleExternalAction` writes the row for the owner's own agent's action only while its stored status is `unknown`
@@ -167,6 +168,8 @@ recorded (the link only when it is a well-formed `https` URL) instead of the for
 `test/owner-page.test.ts` and the two-worker `actionPage_SettleUnknownOutcome_RecordedOnceAndNeverSent` in
 `test/workerd-owner-page.test.ts` (which also checks `/account` refuses the token), with mutation checks recorded on its PR. Next: S3 the agent's reads and the inbox notice.
 
+=======
+>>>>>>> origin/main
 ## Verification
 
 auth-worker workerd tests, against the real mailbox and authorization Workers:
