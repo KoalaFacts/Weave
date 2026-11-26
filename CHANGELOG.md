@@ -6,6 +6,14 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ## Unreleased
 
+## 0.6.0 — 2026-11-26
+
+Everything merged after 0.5.0 (`6c7cf3e`) up to and including #596: A2A contact requests (roadmap #586, R1-2) and the
+owner's record of what became of an `unknown` action (#560 option 1, S1 and S2). One additive table behind its own
+opt-in on the production dispatch. No published HTTP or MCP contract changes incompatibly: a new owner page form, a new
+table, and an A2A request that used to be refused with `not-connected` now becomes a contact request, hence a minor
+version.
+
 ### Schema (additive, behind its own opt-in on the production dispatch)
 
 Production must apply this table in the next release, or the deploy stops before any change:
