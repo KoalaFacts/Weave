@@ -6,6 +6,13 @@ two Workers share one version. The `csharp/` implementation is in maintenance an
 
 ## Unreleased
 
+### Changed
+
+- An A2A `SendMessage` from an agent that is not yet an accepted contact of the address's owner becomes a contact
+  request with that Message as its introduction (answer status `contact-requested`) instead of the error
+  `not-connected`; nothing reaches the inbox until the owner accepts. A blocked sender now gets `unavailable`, as for a
+  private address, so the block stays hidden (roadmap #586, R1-2).
+
 ## 0.5.0 — 2026-11-26
 
 Everything merged after 0.4.0 (`9439ead`) up to and including #590: the first A2A steps of roadmap #586. No schema
