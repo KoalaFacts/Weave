@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {subscribe} from "node:diagnostics_channel";
 import {createHash,randomBytes,randomUUID} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {mkdtemp,rm} from "node:fs/promises";
@@ -187,8 +188,23 @@ async function start(authEnv?:Record<string,unknown>):Promise<Instance>{
 async function stop(instance:Instance){await instance.mf.dispose();await rm(instance.storage,{recursive:true,force:true});}
 
 let shared:Instance;
-before(async()=>{shared=await start();},{timeout:60_000});
-after(async()=>{await stop(shared);});
+// workerd closing a connection to the shared instance while the suite runs means a request left something unread (as the
+// execute body once did): undici can hand the next request to that closing socket and fail it with ECONNRESET. The
+// last test asserts none was closed; closes from disposing an instance are not counted.
+const serverClosed:string[]=[];
+const lastRequest=new WeakMap<object,string>();
+let sharedPort="";
+subscribe("undici:client:sendHeaders",message=>{
+  const {socket,request}=message as {socket:object;request:{method:string;path:string}};
+  lastRequest.set(socket,request.method+" "+request.path);
+});
+subscribe("undici:client:connected",message=>{
+  const {socket,connectParams}=message as {socket:import("node:net").Socket;connectParams:{port:string|number}};
+  if(String(connectParams.port)!==sharedPort)return;
+  socket.once("end",()=>{if(sharedPort)serverClosed.push(lastRequest.get(socket)??"(no request)");});
+});
+before(async()=>{shared=await start();sharedPort=new URL(String(await shared.mf.ready)).port;},{timeout:60_000});
+after(async()=>{sharedPort="";await stop(shared);});
 const db=()=>shared.mf.getD1Database("db",mailboxName);
 
 // ---- humans, sessions and owner-page requests -------------------------------------------------------------------------
@@ -274,8 +290,11 @@ async function proposeAction(human:Human,content:string):Promise<{agent:Agent;ac
 }
 const readAction=async(agent:Agent,actionId:string)=>
   (await agentFetch(agent,"/v1/external-actions/"+actionId)).json() as Promise<ActionView>;
+// Execute takes no request body (OpenAPI documents none) and the Worker never reads one. Sending `{}` left it unread, so
+// workerd closed that connection right after answering; undici could hand the next request to the closing socket and
+// fail it with ECONNRESET (the intermittent "fetch failed" in account_SentExternalAction_ListedUnderRecentActionsForItsOwnerOnly).
 const executeAction=async(agent:Agent,actionId:string)=>
-  (await agentFetch(agent,"/v1/external-actions/"+actionId+"/execute",{method:"POST",body:{}})).json() as Promise<ActionView>;
+  (await agentFetch(agent,"/v1/external-actions/"+actionId+"/execute",{method:"POST"})).json() as Promise<ActionView>;
 
 // ---- tests ---------------------------------------------------------------------------------------------------------------
 test("account_NoSession_RedirectsToGithubReturningToAccount",{timeout:30_000},async()=>{
@@ -1095,4 +1114,9 @@ test("account_MoreAgentsThanOnePage_LinksThroughEveryAgent",{timeout:180_000},as
   const odd=await shared.mf.dispatchFetch(issuer+"/account?agents=not-a-cursor",{redirect:"manual",headers:{Cookie:cookie}});
   assert.equal(odd.status,200,"an unusable cursor shows the first page");
   assert.ok((await odd.text()).includes(ids[0]!));
+});
+
+// Runs last: no request in this file made workerd close its connection (see serverClosed above).
+test("suite_NoRequestLeavesWorkerdClosingTheConnection",()=>{
+  assert.deepEqual(serverClosed,[],"workerd closed the connection after these requests");
 });
