@@ -11,7 +11,7 @@ import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubL
 import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
 import {readActionPageForm,readOwnerAction,readConnectForm,destructiveKinds,ownerActionToken} from "./owner-forms.ts";
-import {actionDecisionPage,actionPage,actionPagePath,ownerFormTokens,ownerPage,recoveryCodePage,type PendingActionView} from "./owner-page.ts";
+import {actionDecisionPage,actionPage,actionPagePath,ownerFormTokens,ownerPage,publishedLink,recoveryCodePage,type PendingActionView} from "./owner-page.ts";
 import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
 import {beginYoutubeConnect,completeYoutubeConnect,youtubeCallbackPath,type YoutubeConnectEnv} from "./youtube-connect.ts";
 export {ConsentNonce} from "./nonce-do.ts";
@@ -398,6 +398,8 @@ async function actionApproval(req:Request,env:Env,actionId:string):Promise<Respo
   const action=posted?.action;
   // Only a decision on this page's action is taken here; any other signed form belongs to the owner page.
   if(!action||(action.kind!=="confirm-action"&&action.kind!=="reject-action"&&action.kind!=="settle-action")||action.requestId!==actionId)return actionDecisionPage(session,actionId,"not-found");
+  // The mailbox refuses such a link too; checking it here names the problem instead of "not found".
+  if(action.kind==="settle-action"&&posted.postUrl!==null&&publishedLink(posted.postUrl)===null)return actionDecisionPage(session,actionId,"invalid-link");
   let result:OwnerActionResult;
   try{
     result=await env.MAILBOX.ownerAction(action.kind==="settle-action"?{humanId:session.humanId,authAt:session.authAt,...action,postUrl:posted.postUrl}:

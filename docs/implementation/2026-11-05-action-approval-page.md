@@ -160,10 +160,10 @@ stays `unknown` and is never sent again. S2b puts it on the owner's own action p
 for their `unknown` action with nothing recorded, the page shows "It was posted" (with an optional link field) and "It
 was not posted", each a signed `settle-action` token bound to the finding, posting back to the page (same-origin and
 fresh sign-in rules as approving; `/account` refuses the token). `readActionPageForm` accepts the link only with the
-`posted` token, at most 2048 characters, a blank field meaning no link. `ownerPendingAction`'s `settled` carries
+`posted` token, at most 2048 characters, a blank field meaning no link; a link that is not a well-formed `https` URL gets the page's own `invalid-link` message ("not a full https:// address") with nothing sent to the mailbox, instead of the generic not-found (#595 review follow-up). `ownerPendingAction`'s `settled` carries
 `settlement` (`finding`, `postUrl`, `settledAt`, or null) for an `unknown` action, and the page then shows what was
 recorded (the link only when it is a well-formed `https` URL) instead of the forms. Verification:
-`mailbox-worker/test/external-action-settlements.test.ts` (5 tests on real D1), auth-worker `test/owner-forms.test.ts`,
+`mailbox-worker/test/external-action-settlements.test.ts` (6 tests on real D1, including concurrent findings: exactly one recorded, the rest `not-pending`), auth-worker `test/owner-forms.test.ts`,
 `test/owner-page.test.ts` and the two-worker `actionPage_SettleUnknownOutcome_RecordedOnceAndNeverSent` in
 `test/workerd-owner-page.test.ts` (which also checks `/account` refuses the token), with mutation checks recorded on its PR. Next: S3 the agent's reads and the inbox notice.
 
